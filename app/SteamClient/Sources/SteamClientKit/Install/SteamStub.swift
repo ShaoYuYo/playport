@@ -16,11 +16,10 @@ import Darwin
 /// and is XOR-chained dword by dword, its first dword being the key; a
 /// variant 3 header decrypts to the signature 0xC0DEC0DF. The header names
 /// the original entry point, the app ID and, when the stub also encrypts the
-/// game's code, the code section's AES key. Only what a real executable has
-/// been checked against is unwrapped: variant 3.1, x64, code not encrypted
-/// (En Garde!: docs/evidence/2026-09-27-gbe-steam-api-build.md,
-/// docs/plans/finished.md#en-garde). Others are recognised and reported,
-/// and left alone.
+/// game's code, the code section's AES key. Only unencrypted variant 3.1 images are modified. The x64 path
+/// was validated with En Garde! (docs/evidence/2026-09-27-gbe-steam-api-build.md);
+/// x86 shares its 3.1 header offsets and is tested with synthetic PE32 files.
+/// Encrypted code and older variants remain unsupported and are left alone.
 ///
 /// Like SteamAPISwap, the game's executable is kept as `<name>.orig` and a
 /// copy without the stub takes its place (an APFS clone plus a few header
@@ -43,7 +42,7 @@ public enum SteamStub {
 
         /// What Playport can take off; nil when it can, else why not.
         public var unsupported: String? {
-            if variant != "3.1" || arch != "x64" { return "SteamStub \(variant) \(arch) is not supported yet" }
+            if variant != "3.1" { return "SteamStub \(variant) \(arch) is not supported yet" }
             if encrypted { return "SteamStub \(variant) \(arch) with encrypted code is not supported yet" }
             return nil
         }
@@ -64,17 +63,20 @@ public enum SteamStub {
                   let raw = try? h.read(upToCount: size), raw.count == size else { continue }
             let head = decodeHeader([UInt8](raw))
             guard u32(head, 4) == signature else { continue }
-            if !pe.is64 {
-                return Info(variant: variant, arch: "x86", appID: 0, originalEntryPoint: 0, encrypted: true, flags: 0)
-            }
-            // The 3.1 x64 layout; a 3.0 header is recognised but not read further.
+            let arch = pe.is64 ? "x64" : "x86"
+            // SteamStub 3.1 uses the same 0xF0-byte header field offsets for
+            // PE32 and PE32+. Earlier variants are identified but not unwrapped.
             guard variant == "3.1" else {
-                return Info(variant: variant, arch: "x64", appID: 0, originalEntryPoint: 0, encrypted: true, flags: 0)
+                return Info(variant: variant, arch: arch, appID: 0, originalEntryPoint: 0, encrypted: true, flags: 0)
             }
             let oep = u64(head, 0x20)
-            return Info(variant: variant, arch: "x64", appID: u32(head, 0x38),
+            let flags = u32(head, 0x3C)
+            // NoEncryption is bit 2. Do not modify a game unless the flag
+            // explicitly permits it AND no encrypted-code region is declared.
+            let encrypted = flags & 0x4 == 0 || u64(head, 0x48) != 0 || u64(head, 0x50) != 0
+            return Info(variant: variant, arch: arch, appID: u32(head, 0x38),
                         originalEntryPoint: UInt32(truncatingIfNeeded: oep),
-                        encrypted: u64(head, 0x48) != 0 || u64(head, 0x50) != 0, flags: u32(head, 0x3C))
+                        encrypted: encrypted, flags: flags)
         }
         return nil
     }

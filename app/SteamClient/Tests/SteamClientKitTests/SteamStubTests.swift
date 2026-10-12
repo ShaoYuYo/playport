@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import SteamClientKit
 
-/// A made-up PE32+ image wrapped the way SteamStub 3.1 x64 wraps one: .text,
+/// A made-up PE32/PE32+ image wrapped like SteamStub 3.1: .text,
 /// .data, then a .bind section whose entry point follows an encoded stub
 /// header. No byte of it comes from a real executable.
 struct WrappedImage {
@@ -109,6 +109,40 @@ final class SteamStubTests: XCTestCase {
         XCTAssertEqual(info, .init(variant: "3.1", arch: "x64", appID: 1_654_660, originalEntryPoint: 0x1000, encrypted: false, flags: 6))
         XCTAssertNil(info.unsupported)
         XCTAssertEqual(info.label, "SteamStub 3.1 x64")
+    }
+
+    func testInspectAndUnwrapAnUnencrypted31x86Stub() throws {
+        let original = WrappedImage(is64: false).build()
+        let src = try write("Game32.exe", original)
+        let info = try XCTUnwrap(SteamStub.inspect(src))
+        XCTAssertEqual(info, .init(variant: "3.1", arch: "x86", appID: 1_654_660,
+                                   originalEntryPoint: 0x1000, encrypted: false, flags: 6))
+        XCTAssertNil(info.unsupported)
+
+        let dst = dir.appendingPathComponent("Game32.unwrapped.exe")
+        try SteamStub.unwrap(src, to: dst)
+        XCTAssertNil(SteamStub.inspect(dst))
+        let out = [UInt8](try Data(contentsOf: dst))
+        XCTAssertEqual(Array(out[0x200..<0x200 + WrappedImage.text.count]), WrappedImage.text)
+        let h = try FileHandle(forReadingFrom: dst)
+        let pe = try PEImage.read(h)
+        try h.close()
+        XCTAssertFalse(pe.is64)
+        XCTAssertEqual(pe.entryPoint, WrappedImage.oep)
+        XCTAssertEqual(pe.sections.map(\.name), [".text", ".data"])
+        XCTAssertEqual([UInt8](try Data(contentsOf: src)), original, "never change the owned original")
+    }
+
+    func testEncrypted31x86StubIsNeverModified() throws {
+        let src = try write("Game32-protected.exe", WrappedImage(codeEncrypted: true, is64: false).build())
+        let info = try XCTUnwrap(SteamStub.inspect(src))
+        XCTAssertEqual(info.arch, "x86")
+        XCTAssertEqual(info.appID, 1_654_660)
+        XCTAssertTrue(info.encrypted)
+        XCTAssertNotNil(info.unsupported)
+        let dest = dir.appendingPathComponent("unwrapped.exe")
+        XCTAssertThrowsError(try SteamStub.unwrap(src, to: dest))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.path))
     }
 
     func testAnImageWithoutAStubIsNone() throws {
