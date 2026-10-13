@@ -4,6 +4,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/../lib.sh"
+python3 "$HERE/sdk-clang-headers.py"
 mkdir -p "$PLAYPORT_BUILD/run/logs"
 status="$PLAYPORT_BUILD/run/logs/sdk-status.txt"
 "$XTOOL" sdk status | tee "$status"

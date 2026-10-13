@@ -88,3 +88,28 @@ actually successful, `verify-ipa` passed and a nonempty downloadable
 disable this hourly task. Do not turn a running job or SDK probe into a claim
 of final success. Automated checks cannot be scheduled more than hourly here;
 there is no separate ten-minute ordinary-Chat process.
+
+## Run 20: SDK discovery passed; Swift builtin headers corrected
+
+- Run [38419518137](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38419518137)
+  used source `5b590e68c4606ed1533e68291d91783ef6f5e93e` and workflow
+  `4cca2a6506ddf8290e3011527cb2d0d72db47a9d`.
+- Cloud Swift SteamStub/depot/GameLanguage tests and the eight Python tests
+  passed. Mesa preflight passed. Both xtool SDK status and SwiftPM SDK discovery
+  now passed under the same repository-local XDG configuration directory.
+- At 2026-10-13 15:21 UTC, the real SwiftUI probe failed before native compilation:
+  `_Builtin_intrinsics` / `arm_neon.h` emitted `__builtin_bit_cast` size errors.
+  The importer referenced the SDK's `usr/lib/clang/21/include/module.modulemap`.
+- This matches [xtool issue 273](https://github.com/xtool-org/xtool/issues/273):
+  pinned xtool 1.20.1 installs PATH Clang 22 headers, while Swift 6.4 embeds
+  Clang 21. [Upstream fix 274](https://github.com/xtool-org/xtool/pull/274) derives
+  the builtin headers from `swiftc -print-target-info` instead.
+- `build/toolchain/sdk-clang-headers.py` applies that header selection without
+  changing the native LLVM 22 compiler. It replaces stale existing headers at
+  both the Swift resource path and canonical versioned Clang module-map path.
+  The SDK probe and normal pipeline use the same helper; the prior pipeline
+  only copied versioned headers when missing, leaving stale existing files.
+- Regression coverage exercises existing incompatible files, symlinked resource
+  paths, obsolete-file removal, repeated setup and missing-header rejection.
+  Cloud compilation is still required: local fixtures do not prove SwiftUI
+  linking or final IPA success. Keep the hourly task enabled.

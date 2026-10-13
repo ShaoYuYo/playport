@@ -179,21 +179,8 @@ stage_inputs() {
         bash "$HERE/toolchain/rust.sh" > "$RUN/logs/rust.log" 2>&1 || { say "build/toolchain/rust.sh failed"; missing=1; }
     fi
     [ "$missing" = 0 ] || exit 1
-    # The Swift frontend needs its *own* clang resource headers inside the SDK.
-    # Do not hard-code /usr/lib/swift/lib/clang: Swift installations on GitHub
-    # runners and swift.org toolchains use other prefixes, and an unmatched
-    # glob becomes a literal path that causes rsync to fail with exit 23.
-    local swift_clang swift_resource d v inc
-    swift_clang="$(dirname "$(readlink -f "$(command -v swiftc)")")/clang"
-    [ -x "$swift_clang" ] || { say "missing clang beside swiftc: $swift_clang"; exit 1; }
-    swift_resource="$("$swift_clang" -print-resource-dir)"
-    d="$swift_resource/include"
-    [ -f "$d/arm_neon.h" ] || { say "no Swift clang resource headers at $d"; exit 1; }
-    v=$(basename "$swift_resource")
-    inc=$DARWIN_SDK/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/$v/include
-    [ -f "$inc/arm_neon.h" ] ||
-        { say "copying Swift clang $v resource headers into the SDK"; mkdir -p "$inc"; rsync -a --delete "$d/" "$inc/"; }
-    [ -f "$inc/arm_neon.h" ] || { say "Swift clang SDK header staging failed: $inc"; exit 1; }
+    # Align both builtin module-map locations with the active Swift frontend.
+    python3 "$HERE/toolchain/sdk-clang-headers.py"
     grep -q INCREASED_MEMORY_LIMIT "$XTOOL" ||
         { say "XTOOL lacks the increased-memory-limit patch (build/toolchain/xtool.sh)"; exit 1; }
     {
