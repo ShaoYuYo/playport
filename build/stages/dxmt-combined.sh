@@ -46,25 +46,47 @@ test "$(ls "$DXMT_UNIX"/obj/*.o | wc -l)" = 23
 "$TBLGEN" --version | grep -q 'LLVM version 15.0.7'
 mkdir -p "$ROOT" "$(dirname "$LLVM_IOS")"
 
-echo "== llvm-ios (LLVM 15.0.7 static libraries for $TARGET)"
-cmake -G Ninja -S "$LLVM_PROJECT/llvm" -B "$LLVM_IOS" \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$SDK" \
-    -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 \
-    -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
-    -DCMAKE_C_COMPILER_TARGET=$TARGET -DCMAKE_CXX_COMPILER_TARGET=$TARGET -DCMAKE_ASM_COMPILER_TARGET=$TARGET \
-    -DCMAKE_AR="$(command -v llvm-ar)" -DCMAKE_RANLIB="$(command -v llvm-ranlib)" \
-    -DCMAKE_EXE_LINKER_FLAGS="--ld-path=$LD64" -DCMAKE_SHARED_LINKER_FLAGS="--ld-path=$LD64" \
-    -DCMAKE_C_FLAGS="$MAP" -DCMAKE_CXX_FLAGS="$MAP -stdlib++-isystem $SDK/usr/include/c++/v1" \
-    -DLLVM_HOST_TRIPLE=$TARGET -DLLVM_TABLEGEN="$TBLGEN" \
-    -DLLVM_TARGETS_TO_BUILD="" -DLLVM_ENABLE_ASSERTIONS=On \
-    -DLLVM_ENABLE_ZSTD=Off -DLLVM_ENABLE_ZLIB=Off -DLLVM_ENABLE_TERMINFO=Off -DLLVM_ENABLE_LIBXML2=Off \
-    -DLLVM_ENABLE_LIBEDIT=Off -DLLVM_ENABLE_LIBPFM=Off -DLLVM_ENABLE_FFI=Off \
-    -DLLVM_BUILD_TOOLS=Off -DLLVM_BUILD_UTILS=Off -DLLVM_INCLUDE_TOOLS=Off -DLLVM_INCLUDE_UTILS=Off \
-    -DLLVM_INCLUDE_TESTS=Off -DLLVM_INCLUDE_BENCHMARKS=Off -DLLVM_INCLUDE_EXAMPLES=Off \
-    -DLLVM_INCLUDE_DOCS=Off -DLLVM_INCLUDE_RUNTIMES=Off \
-    > "$LLVM_IOS.configure.log"
-ninja -C "$LLVM_IOS" -j "${JOBS:-$(nproc)}" $(ninja -C "$LLVM_IOS" -t targets all | grep -oE '^lib/libLLVM[A-Za-z0-9]+\.a' | sort -u) \
-    > "$LLVM_IOS.build.log"
+# Save only the finished static libraries, not the entire LLVM build tree.
+# On GitHub Actions the latter occupies many GB and makes caching impractical.
+# A validated cache skips ~1.5 hours of redundant LLVM compilation.
+CACHE_MANIFEST="$LLVM_IOS/.playport-static-libs.sha256"
+CACHE_ID="$LLVM_IOS/.playport-static-libs.input"
+INPUT_ID="$(printf '%s\n' "$LLVM_TAG" "$TARGET" "$(basename "$SDK")" "$(clang --version | head -1)" | sha256sum | cut -d' ' -f1)"
+cache_ok=0
+if [ -f "$CACHE_MANIFEST" ] && [ -f "$CACHE_ID" ] &&
+    [ "$(cat "$CACHE_ID")" = "$INPUT_ID" ]; then
+    if (cd "$LLVM_IOS" && sha256sum -c .playport-static-libs.sha256 >/dev/null 2>&1); then
+        count=$(find "$LLVM_IOS/lib" -maxdepth 1 -name 'libLLVM*.a' -type f | wc -l)
+        if [ "$count" -ge 20 ]; then
+            cache_ok=1
+            echo "== llvm-ios: reusing $count verified LLVM 15 static archives"
+        fi
+    fi
+fi
+if [ "$cache_ok" != 1 ]; then
+    echo "== llvm-ios (LLVM 15.0.7 static libraries for $TARGET)"
+    cmake -G Ninja -S "$LLVM_PROJECT/llvm" -B "$LLVM_IOS" \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$SDK" \
+        -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 \
+        -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+        -DCMAKE_C_COMPILER_TARGET=$TARGET -DCMAKE_CXX_COMPILER_TARGET=$TARGET -DCMAKE_ASM_COMPILER_TARGET=$TARGET \
+        -DCMAKE_AR="$(command -v llvm-ar)" -DCMAKE_RANLIB="$(command -v llvm-ranlib)" \
+        -DCMAKE_EXE_LINKER_FLAGS="--ld-path=$LD64" -DCMAKE_SHARED_LINKER_FLAGS="--ld-path=$LD64" \
+        -DCMAKE_C_FLAGS="$MAP" -DCMAKE_CXX_FLAGS="$MAP -stdlib++-isystem $SDK/usr/include/c++/v1" \
+        -DLLVM_HOST_TRIPLE=$TARGET -DLLVM_TABLEGEN="$TBLGEN" \
+        -DLLVM_TARGETS_TO_BUILD="" -DLLVM_ENABLE_ASSERTIONS=On \
+        -DLLVM_ENABLE_ZSTD=Off -DLLVM_ENABLE_ZLIB=Off -DLLVM_ENABLE_TERMINFO=Off -DLLVM_ENABLE_LIBXML2=Off \
+        -DLLVM_ENABLE_LIBEDIT=Off -DLLVM_ENABLE_LIBPFM=Off -DLLVM_ENABLE_FFI=Off \
+        -DLLVM_BUILD_TOOLS=Off -DLLVM_BUILD_UTILS=Off -DLLVM_INCLUDE_TOOLS=Off -DLLVM_INCLUDE_UTILS=Off \
+        -DLLVM_INCLUDE_TESTS=Off -DLLVM_INCLUDE_BENCHMARKS=Off -DLLVM_INCLUDE_EXAMPLES=Off \
+        -DLLVM_INCLUDE_DOCS=Off -DLLVM_INCLUDE_RUNTIMES=Off \
+        > "$LLVM_IOS.configure.log"
+    ninja -C "$LLVM_IOS" -j "${JOBS:-$(nproc)}" $(ninja -C "$LLVM_IOS" -t targets all | grep -oE '^lib/libLLVM[A-Za-z0-9]+\.a' | sort -u) \
+        > "$LLVM_IOS.build.log"
+    (cd "$LLVM_IOS" && sha256sum lib/libLLVM*.a > .playport-static-libs.sha256)
+    printf '%s\n' "$INPUT_ID" > "$CACHE_ID"
+    echo "== llvm-ios: static libraries built and checksummed"
+fi
 
 echo "== libdxmt_combined.a"
 rm -f "$ROOT/libdxmt_combined.a"
