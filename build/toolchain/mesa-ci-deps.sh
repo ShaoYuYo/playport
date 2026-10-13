@@ -11,14 +11,15 @@ test -x /usr/lib/llvm-22/bin/llvm-config
 test -x /usr/lib/llvm-22/bin/clang
 sudo apt-get install -y --no-install-recommends \
     python3-venv python3-pip libclang-22-dev libclc-22-dev \
-    spirv-tools libelf-dev libexpat1-dev libzstd-dev
+    spirv-tools glslang-tools libdrm-dev libudev-dev \
+    libelf-dev libexpat1-dev libzstd-dev
 
 # Mesa's own KosmicKrisp documentation specifies 1.9.1+, whereas
 # Ubuntu 24.04's apt package provides only 1.3.x.
 ENV_ROOT="${PLAYPORT_MESA_VENV:-$PWD/.work/inputs/mesa-venv}"
 python3 -m venv "$ENV_ROOT"
 "$ENV_ROOT/bin/pip" install --disable-pip-version-check --no-cache-dir \
-    "meson==1.9.1" "mako" "PyYAML" "packaging"
+    "meson==1.9.1" "mako" "PyYAML" "packaging" "ply"
 export PATH="$ENV_ROOT/bin:$PATH"
 echo "$ENV_ROOT/bin" >> "${GITHUB_PATH:-/dev/null}"
 meson --version
