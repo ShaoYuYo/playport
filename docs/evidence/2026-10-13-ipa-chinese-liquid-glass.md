@@ -136,3 +136,22 @@ there is no separate ten-minute ordinary-Chat process.
   build is reused. The sanitized result is re-snapshotted and verified before
   app compilation. A new cloud run must still pass `verify-ipa` and upload the
   nonempty `PlayPort-unsigned-IPA` artifact before completion is claimed.
+
+## Run 22: path check passed; restore compact verifier input
+
+- Run [38454659961](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38454659961)
+  restored and checksum-verified all 1,614 checkpoint files. Wine/FEX/DXMT and
+  the remaining native stages were skipped. The sanitizer removed 103 path
+  occurrences from the expected 16 files, then the new 1,614-file snapshot
+  verified successfully.
+- The same-size rewrite reached a second successful 673,341,569-byte IPA. The
+  previous workstation-path failure did not recur. Verification instead raised
+  `FileNotFoundError` for the generated, include-expanded
+  `dxmt_command.metal`: the compact checkpoint kept DXMT PE outputs but omitted
+  the Meson build-tree reference used to verify their embedded shader source.
+- The exact 21,378-byte generated reference (SHA-256
+  `78cc2261e4259f43dd1478c2055031b2446aa40acfb2e47187c464397274323a`,
+  already pinned by `verify-ipa.py`) is now committed. Checkpoint restoration
+  places it at both verifier-expected build paths without restoring the large
+  disposable Meson trees. It is excluded from the native cache identity because
+  it is verification data for already-built bytes, not a native input.

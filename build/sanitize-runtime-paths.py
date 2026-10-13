@@ -14,6 +14,7 @@ REPO = Path(__file__).resolve().parent.parent
 MANIFEST = REPO / 'app/artifacts.tsv'
 RUNTIME = REPO / 'app/Sources/S1Probe/Runtime'
 DXMT = REPO / '.work/run/dxmt-patched/pe'
+MSL_SHA256 = '78cc2261e4259f43dd1478c2055031b2446aa40acfb2e47187c464397274323a'
 
 
 def digest(path):
@@ -70,6 +71,17 @@ def sanitize(repo=REPO, prefix=None):
         out.append('\t'.join(row) + '\n')
     manifest.write_text(''.join(out))
     shutil.copyfile(manifest, runtime / 'artifacts.tsv')
+
+    # verify-ipa compares DXMT's embedded, include-expanded Metal source with
+    # this pinned reference. A compact checkpoint retains PE outputs, not the
+    # multi-GB Meson trees that originally generated the source.
+    reference = repo / 'build/dxmt-command-inlined.metal'
+    if not reference.is_file() or digest(reference) != MSL_SHA256:
+        raise ValueError(f'invalid pinned DXMT Metal reference: {reference}')
+    for arch in ('aarch64', 'arm64ec'):
+        target = repo / f'.work/run/dxmt-patched/build-{arch}/src/dxmt/dxmt_command.metal'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(reference, target)
 
     remaining = []
     for path in sorted(runtime.rglob('*')):

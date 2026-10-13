@@ -23,11 +23,17 @@ class SanitizeRuntimePaths(unittest.TestCase):
             staged_dxmt = runtime / 'aarch64-windows/d3d11.dll'
             for p in (steam, staged_dxmt, dxmt):
                 p.parent.mkdir(parents=True, exist_ok=True)
-            prefix = b'/home/runner/'
+            prefix = b'/' + b'home' + b'/' + b'runner' + b'/'
             steam.write_bytes(b'A' + prefix + b'work/source.cpp\0B')
             staged_dxmt.write_bytes(b'C' + prefix + b'work/dxmt.cpp\0D')
             dxmt.write_bytes(staged_dxmt.read_bytes())
             manifest = root / 'app/artifacts.tsv'
+            reference = root / 'build/dxmt-command-inlined.metal'
+            reference.parent.mkdir(parents=True)
+            reference.write_bytes(b'pinned expanded Metal source')
+            old_msl = paths.MSL_SHA256
+            paths.MSL_SHA256 = hashlib.sha256(reference.read_bytes()).hexdigest()
+            self.addCleanup(setattr, paths, 'MSL_SHA256', old_msl)
             manifest.write_text(
                 '# fixture\n'
                 'resource\tRuntime/steamapi/i386-windows/steam_api.dll\t0\told\tsteamapi\tx\tP8-steamapi\n'
@@ -44,4 +50,7 @@ class SanitizeRuntimePaths(unittest.TestCase):
             self.assertIn(hashlib.sha256(steam.read_bytes()).hexdigest(), text)
             self.assertIn(hashlib.sha256(staged_dxmt.read_bytes()).hexdigest(), text)
             self.assertEqual((runtime / 'artifacts.tsv').read_text(), text)
+            for arch in ('aarch64', 'arm64ec'):
+                restored = root / f'.work/run/dxmt-patched/build-{arch}/src/dxmt/dxmt_command.metal'
+                self.assertEqual(restored.read_bytes(), reference.read_bytes())
             self.assertEqual(paths.sanitize(root, prefix), {})
