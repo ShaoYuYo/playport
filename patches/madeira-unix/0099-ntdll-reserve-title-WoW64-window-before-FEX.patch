@@ -1,0 +1,111 @@
+From 3c90d2dce438fc53b7b10efb9f03dbe48a34e1d2 Mon Sep 17 00:00:00 2001
+From: The Playport authors <dev@playport.dev>
+Date: Wed, 14 Oct 2026 01:32:20 +0200
+Subject: [PATCH] ntdll: reserve the title WoW64 window before the FEX arena
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-14-senren-windows-launch.md
+Offered-upstream: no
+---
+ build/ntdll-unix/virtual_ios.c | 57 +++++++++++++++++++++++++++++++++-
+ 1 file changed, 56 insertions(+), 1 deletion(-)
+
+diff --git a/build/ntdll-unix/virtual_ios.c b/build/ntdll-unix/virtual_ios.c
+index c64eeb6..21a4dc4 100644
+--- a/build/ntdll-unix/virtual_ios.c
++++ b/build/ntdll-unix/virtual_ios.c
+@@ -15851,6 +15851,54 @@ static uint32_t ios_wow64_alias_session_view( uintptr_t window, const void *host
+     return guest;
+ }
+ 
++/* The selected executable's COFF machine, set by the host before runtime
++ * startup. SessionRoot is x64 even for an i386 game, so its own image is not
++ * sufficient to decide which address reservations the title will require. */
++static USHORT ios_title_machine;
++static struct file_view *ios_wow64_title_window;
++
++void ios_set_title_machine( unsigned short machine )
++{
++    ios_title_machine = machine;
++}
++
++/* Reserve the complete guest address space before FEX takes the largest
++ * available hole. Keep this as a registered Wine view: both Wine and the
++ * native allocator must leave it held until the i386 owner takes it. No
++ * temporary unmap, no truncated guest space, and no PEB32 is published yet. */
++static NTSTATUS ios_wow64_prepare_title_window(void)
++{
++    NTSTATUS status;
++    sigset_t sigset;
++    struct file_view *view;
++
++    if (ios_title_machine != IMAGE_FILE_MACHINE_I386 || ios_wow64_title_window)
++        return STATUS_SUCCESS;
++    server_enter_uninterrupted_section( &virtual_mutex, &sigset );
++    status = map_view( &view, NULL, IOS_WOW64_WINDOW_SIZE, 0, 0, 0, 0, 0 );
++    if (!status && !ios_wow64_valid_base( (uintptr_t)view->base ))
++    {
++        delete_view( view );
++        status = STATUS_CONFLICTING_ADDRESSES;
++    }
++    if (!status) ios_wow64_title_window = view;
++    server_leave_uninterrupted_section( &virtual_mutex, &sigset );
++    dprintf( 2, "[wow64-window] title pre-reservation status=%#x base=%p size=0x100000000\n",
++             status, status ? NULL : view->base );
++    return status;
++}
++
++/* virtual_mutex is held. Only the first i386 owner consumes the pending
++ * view; additional child processes still need their own isolated window. */
++static NTSTATUS ios_wow64_take_title_window( struct file_view **view )
++{
++    if (!ios_wow64_title_window)
++        return map_view( view, NULL, IOS_WOW64_WINDOW_SIZE, 0, 0, 0, 0, 0 );
++    *view = ios_wow64_title_window;
++    ios_wow64_title_window = NULL;
++    return STATUS_SUCCESS;
++}
++
+ static NTSTATUS ios_wow64_reserve_window( void *owner )
+ {
+     unsigned int i, slot = IOS_WOW64_WINDOWS_MAX;
+@@ -15869,7 +15917,7 @@ static NTSTATUS ios_wow64_reserve_window( void *owner )
+     if (slot == IOS_WOW64_WINDOWS_MAX) goto done;
+ 
+     server_enter_uninterrupted_section( &virtual_mutex, &sigset );
+-    status = map_view( &view, NULL, IOS_WOW64_WINDOW_SIZE, 0, 0, 0, 0, 0 );
++    status = ios_wow64_take_title_window( &view );
+     if (!status && !ios_wow64_valid_base( (uintptr_t)view->base ))
+     {
+         delete_view( view );
+@@ -19847,6 +19895,7 @@ void ios_reserve_fex_arena(void)
+         { 0x0400000000ull, 0x07ffffffffull, 0x100000000ull, "4GB @16-32G"              },
+         { 0x0200000000ull, 0x03ffffffffull, 0x100000000ull, "4GB @8-16G"               },
+         { 0x0200000000ull, 0x0fbfffffffull, 0x080000000ull, "2GB anywhere low"         },
++        { 0x0200000000ull, 0x0fbfffffffull, 0x040000000ull, "1GB WoW64 host fallback"   },
+     };
+     unsigned i;
+     unsigned long long arena_task_max = 0;
+@@ -19855,6 +19904,11 @@ void ios_reserve_fex_arena(void)
+     if (done) return;
+     done = 1;
+ 
++    /* A 32-bit title needs all 4 GiB independently of the emulator's host
++     * structures. Reserve it first, then select the largest FEX arena that
++     * really fits in what is left. x64 titles keep the established ladder. */
++    ios_wow64_prepare_title_window();
++
+     /* ml757: OPT-IN. This reservation is only half the design.
+      *
+      * FEX still runs ios_fex_band_select() and picks its own band, and on
+@@ -19994,6 +20048,7 @@ void ios_reserve_fex_arena(void)
+ 
+     for (i = 0; i < ARRAY_SIZE(plan); i++)
+     {
++        if (plan[i].size < 0x080000000ull && ios_title_machine != IMAGE_FILE_MACHINE_I386) continue;
+         if (arena_size_cap && (unsigned long long)plan[i].size > arena_size_cap)
+         {
+             dprintf( 2, "[fex-arena] ml995 SKIP %s (%llu MB) -- over the %llu MB cap\n",
+-- 
+2.51.1
+

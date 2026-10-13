@@ -73,6 +73,10 @@ int wine_host_selfcheck(const void *rx, const void *rw, size_t size, char *repor
  * refused: the reference layer cannot run guest code without one. */
 int wine_host_init(const wine_host_config *config);
 
+/* Before runtime startup, tell the allocator the selected title's actual
+ * COFF machine so an i386 title's full address window is reserved first. */
+unsigned short wine_host_prepare_title(const char *unix_path);
+
 /* Start the session root, playport-session.exe (app/SessionRoot), as the
  * process's one __wine_main, and wait up to timeout_ms for it to be ready.
  * The root starts the title as its child (session_protocol.h), so that a

@@ -9,6 +9,7 @@
 #include "title_path.h"
 
 #include <dirent.h>
+#include <stdint.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +20,25 @@
  * MAX_PATH-character buffer (ntdll env.c build_initial_params), with a
  * trailing backslash, so the working directory must fit in 259 characters. */
 #define DOS_MAX_PATH 260
+
+unsigned short title_path_machine(const char *unix_path)
+{
+    if (!unix_path) return 0;
+    FILE *f = fopen(unix_path, "rb");
+    if (!f) return 0;
+    unsigned char dos[64], pe[6];
+    unsigned short machine = 0;
+    if (fread(dos, 1, sizeof(dos), f) == sizeof(dos) && dos[0] == 'M' && dos[1] == 'Z') {
+        uint32_t offset = (uint32_t)dos[60] | (uint32_t)dos[61] << 8 |
+                          (uint32_t)dos[62] << 16 | (uint32_t)dos[63] << 24;
+        if (offset >= sizeof(dos) && fseek(f, (long)offset, SEEK_SET) == 0 &&
+            fread(pe, 1, sizeof(pe), f) == sizeof(pe) &&
+            pe[0] == 'P' && pe[1] == 'E' && !pe[2] && !pe[3])
+            machine = (unsigned short)(pe[4] | (unsigned short)pe[5] << 8);
+    }
+    fclose(f);
+    return machine;
+}
 
 static int fail(char *msg, size_t msglen, int rc, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
 static int fail(char *msg, size_t msglen, int rc, const char *fmt, ...)

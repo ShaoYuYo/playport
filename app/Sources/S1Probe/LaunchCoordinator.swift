@@ -313,6 +313,10 @@ enum LaunchCoordinator {
         guard resolved == 0 else {
             return Outcome(kind: .refused, line: "launch=refused resolve=\(resolved) reason=\(reason)")
         }
+        let machine = withUnsafePointer(to: &tp.unix_path) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 2048) { wine_host_prepare_title($0) }
+        }
+        log(String(format: "selected executable: COFF machine %#x; reserve WoW64 before FEX=%d", machine, machine == 0x14c ? 1 : 0))
 
         // The backend's builtins go before the runtime's own (wine_host_init,
         // WINEDLLPATH). One this build does not carry refuses the launch

@@ -37,4 +37,8 @@ typedef struct {
  * regular file), -4 (too long); msg gets a one-line reason either way. */
 int title_path_resolve(const char *prefix_dir, const char *path, title_path *out, char *msg, size_t msglen);
 
+/* Read the selected on-disk executable's COFF machine. Returns zero for an
+ * unreadable/truncated/non-PE file; never infers the title from SessionRoot. */
+unsigned short title_path_machine(const char *unix_path);
+
 #endif

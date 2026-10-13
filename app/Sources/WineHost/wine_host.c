@@ -47,6 +47,7 @@ extern void wineserver_set_nls_dir(const char *path);        /* libwineserver.a 
 extern void wineserver_inject_client_fd(int fd);             /* libwineserver.a */
 extern int foreground;                                       /* libwineserver.a */
 extern void __wine_main(int argc, char *argv[]);             /* libntdll_unix.a */
+extern void ios_set_title_machine(unsigned short machine);  /* libntdll_unix.a */
 
 /* --- host state -------------------------------------------------------- */
 
@@ -63,6 +64,13 @@ static char *g_guest_argv[4];
 static int g_guest_argc;
 static const char *g_pe_arch;
 static int g_guest_exit = -1;
+
+unsigned short wine_host_prepare_title(const char *unix_path)
+{
+    unsigned short machine = title_path_machine(unix_path);
+    ios_set_title_machine(machine);
+    return machine;
+}
 static volatile int g_guest_done;
 static pthread_mutex_t g_guest_lock = PTHREAD_MUTEX_INITIALIZER;
 
