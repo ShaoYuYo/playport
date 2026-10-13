@@ -50,7 +50,7 @@ struct PadRow: View {
             HStack(spacing: 6) {
                 if changed { Circle().fill(PP.accent).frame(width: 7, height: 7) }
                 if let value {
-                    Text(value).lineLimit(1)
+                    Text(LocalizedStringKey(value)).lineLimit(1)
                 }
                 switch accessory {
                 case .none: EmptyView()
@@ -77,11 +77,11 @@ struct PadRowBody<Trailing: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 15, weight: .medium))
+                Text(LocalizedStringKey(title)).font(.system(size: 15, weight: .medium))
                     .foregroundStyle(selected ? (destructive ? Color(hex: 0xB0301E) : PP.background)
                                      : destructive ? Color(hex: 0xFF9A8A) : PP.text)
                 if let subtitle {
-                    Text(subtitle).font(.system(size: 12)).foregroundStyle(selected ? Color(hex: 0x3A4452) : PP.muted)
+                    Text(LocalizedStringKey(subtitle)).font(.system(size: 12)).foregroundStyle(selected ? Color(hex: 0x3A4452) : PP.muted)
                 }
             }
             .lineLimit(1)
@@ -100,7 +100,7 @@ struct PadSectionHeader: View {
     let text: String
 
     var body: some View {
-        Text(text.uppercased())
+        Text(LocalizedStringKey(text))
             .font(.system(size: 11, weight: .semibold)).tracking(1.1)
             .foregroundStyle(PP.muted)
             .frame(maxWidth: .infinity, alignment: .leading)

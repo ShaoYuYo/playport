@@ -29,6 +29,9 @@ entitlementsPath: S1Probe.entitlements
 # apisetschema.dll) against the executable's directory (Madeira loader_ios.c
 # init_paths, load_ntdll), not against a resource bundle.
 resources:
+  - Localization/en.lproj
+  - Localization/zh-Hant.lproj
+  - Localization/zh-Hans.lproj
   - Sources/S1Probe/Runtime/arm64ec-windows
   - Sources/S1Probe/Runtime/aarch64-windows
   - Sources/S1Probe/Runtime/i386-windows

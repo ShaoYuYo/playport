@@ -251,7 +251,12 @@ final class LibraryModel: ObservableObject {
         let steamAPI = t.appID.map { app in
             LaunchCoordinator.SteamAPI(appID: app, root: Self.paths.games.appendingPathComponent(t.installDir, isDirectory: true),
                                        mode: settings.steamAPI,
-                                       settings: { await service?.emulatorSettings(appID: app) ?? .init(appID: app) },
+                                       settings: {
+                                           var value = await service?.emulatorSettings(appID: app) ?? .init(appID: app)
+                                           let installer = TitleInstaller(layout: Self.paths.layout, session: nil, log: SteamUILog.logger)
+                                           value.language = installer.loadReceipt(app)?.language ?? "english"
+                                           return value
+                                       },
                                        ticket: ticket, tickets: tickets)
         }
         let endTickets = { if tickets != nil { Task { await service?.endPlay() } } }

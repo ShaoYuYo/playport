@@ -18,6 +18,7 @@
 #include "session_protocol.h"
 
 #include <dirent.h>
+#include <CoreText/CoreText.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -26,6 +27,7 @@
 #include <pthread.h>
 #include <setjmp.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -494,6 +496,36 @@ static void link_wow64_farm(const char *name, const char *pe_arch)
 /* Both the native session and WoW64 titles use win32u's prefix font scan.
  * Recreate links before the session starts GDI: bundle paths change on install.
  * Do not remove unrelated user/game-installed fonts. */
+static void link_system_cjk_font(const char *dir)
+{
+    /* Use the OS font already licensed and installed on this iPhone.
+     * No Apple font is redistributed in the IPA. CoreText supplies its
+     * actual URL; a hard-coded system-font path breaks across iOS versions. */
+    CTFontRef font = CTFontCreateWithName(CFSTR("PingFangTC-Regular"), 12, NULL);
+    if (!font) return;
+    CFStringRef family = CTFontCopyFamilyName(font);
+    CFTypeRef value = CTFontCopyAttribute(font, kCTFontURLAttribute);
+    char source[2048], target[1400];
+    if (family && CFStringHasPrefix(family, CFSTR("PingFang")) && value &&
+        CFGetTypeID(value) == CFURLGetTypeID() &&
+        CFURLGetFileSystemRepresentation((CFURLRef)value, true, (UInt8 *)source, sizeof(source)) &&
+        access(source, R_OK) == 0) {
+        snprintf(target, sizeof(target), "%s/playport-cjk.ttc", dir);
+        struct stat st;
+        /* Only refresh our link. Never overwrite a font a user installed. */
+        if (lstat(target, &st) != 0 || S_ISLNK(st.st_mode)) {
+            unlink(target);
+            if (symlink(source, target) == 0) host_log("fonts: linked system PingFang CJK fallback");
+            else host_log("fonts: cannot link CJK fallback: %s", strerror(errno));
+        }
+    } else {
+        host_log("fonts: system CJK font file unavailable; game-provided fonts remain usable");
+    }
+    if (value) CFRelease(value);
+    if (family) CFRelease(family);
+    CFRelease(font);
+}
+
 static void link_fonts(void)
 {
     char src_dir[1200], dir[1200];
@@ -504,6 +536,7 @@ static void link_fonts(void)
         return;
     }
     host_log("fonts: %d links -> %s", link_dir_into(src_dir, dir), src_dir);
+    link_system_cjk_font(dir);
 }
 
 /* Point drive_c/windows/system32 at the bundle's PE set. The bundle path
@@ -570,6 +603,11 @@ static void seed_registry(void)
         int n = prefix_registry_seed(seed, hive, msg, sizeof(msg));
         host_log("registry %s: %s%s", hives[i], n < 0 ? "seed failed: " : "", msg);
     }
+    char seed[1200], hive[1200], msg[256];
+    snprintf(seed, sizeof(seed), "%s/registry/cjk-fonts.reg", g_runtime);
+    snprintf(hive, sizeof(hive), "%s/system.reg", g_prefix);
+    int n = prefix_registry_seed(seed, hive, msg, sizeof(msg));
+    host_log("registry CJK fonts: %s%s", n < 0 ? "seed failed: " : "", msg);
 }
 
 /* The guest's Windows user: ntdll reports USER as the user name, and shell32

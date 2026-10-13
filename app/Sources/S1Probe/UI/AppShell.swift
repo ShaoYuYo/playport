@@ -45,10 +45,14 @@ struct AppShell: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !nav.settings && !nav.setup && !nav.signIn && !nav.onGamePage { TopBar(installs: model.installs).openingChrome() }
+            if !nav.settings && !nav.setup && !nav.signIn && !nav.onGamePage {
+                GlassEffectContainer(spacing: 12) {
+                    TopBar(installs: model.installs).openingChrome()
+                }
+            }
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
             if !panelUp {
-                PadFooter(hints: hints).overlay(alignment: .leading) {
+                GlassEffectContainer(spacing: 10) { PadFooter(hints: hints) }.overlay(alignment: .leading) {
                     // The checklist's grey note at the left (Setup.dc.html).
                     if onSetup, !modal.isUp { Text(SetupView.footerNote).font(.system(size: 12)).foregroundStyle(PP.muted).padding(.leading, 44) }
                     if nav.signIn, !modal.isUp { Text(SignInView.footerNote).font(.system(size: 12)).foregroundStyle(PP.muted).padding(.leading, 44) }
@@ -301,9 +305,9 @@ private struct TopBar: View {
                 Button { nav.show(p) } label: {
                     // The Downloads count sits in the page's pill, highlighted with it.
                     HStack(spacing: 5) {
-                        Text(p.title)
+                        Text(LocalizedStringKey(p.title))
                             .font(PP.display(15, .semibold))
-                            .foregroundStyle(nav.page == p ? PP.background : PP.muted)
+                            .foregroundStyle(nav.page == p ? PP.text : PP.soft)
                         if p == .downloads, !installs.jobs.isEmpty {
                             Text("\(installs.jobs.count)")
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(PP.background)
@@ -312,7 +316,7 @@ private struct TopBar: View {
                         }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(nav.page == p ? PP.text : .clear, in: RoundedRectangle(cornerRadius: 8))
+                    .ppGlass(cornerRadius: 12, tint: nav.page == p ? PP.accent.opacity(0.3) : nil)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("page-\(p.rawValue)")
@@ -332,7 +336,7 @@ private struct TopBar: View {
                 Image(systemName: "gearshape").font(.system(size: 15))
                     .foregroundStyle(PP.soft)
                     .frame(width: 30, height: 30)
-                    .background(PP.raised, in: Circle())
+                    .ppGlass(cornerRadius: 15)
             }
             .buttonStyle(.plain)
             .padding(.leading, 10)
@@ -342,7 +346,7 @@ private struct TopBar: View {
     }
 
     private var controllerText: String {
-        guard let c = router.controller else { return "No controller" }
+        guard let c = router.controller else { return NSLocalizedString("No controller", comment: "") }
         guard let b = c.battery else { return c.name }
         return "\(c.name) \(b)%" + (c.charging ? " ⚡︎" : "")
     }

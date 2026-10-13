@@ -2,6 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hant</string>
+		<string>zh-Hans</string>
+	</array>
 	<!-- The release version (pp release VERSION checks it; decision 0036). Keep both plists equal. -->
 	<key>CFBundleShortVersionString</key>
 	<string>0.4.0</string>

@@ -240,7 +240,7 @@ struct InGameMenuView: View {
                 }
                 .font(.system(size: 13)).foregroundStyle(PP.soft)
                 .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(PP.surface, in: Capsule())
+                .ppGlass(cornerRadius: 18, interactive: false)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.trailing, trail).padding(.top, 22)
             }
@@ -271,7 +271,7 @@ struct InGameMenuView: View {
         let ringed = model.menu.ring == item
         return Button { model.choose(item) } label: {
             HStack(spacing: 12) {
-                Text(item.title).font(.system(size: 15, weight: .medium))
+                Text(LocalizedStringKey(item.title)).font(.system(size: 15, weight: .medium))
                     .foregroundStyle(ringed ? PP.background : item == .quit ? Color(hex: 0xFF9A8A) : PP.text)
                 Spacer(minLength: 0)
                 if let v = value(item) {

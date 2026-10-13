@@ -218,6 +218,8 @@ public struct InstallReceipt: Sendable, Codable, Equatable {
     /// Steam's Windows launch executable, relative to the install folder; nil
     /// in a record from before it was kept, or when Steam lists none.
     public var executable: String? = nil
+    /// Missing on older installs; retained so launch matches the downloaded depots.
+    public var language: String? = nil
 }
 
 /// The parsed manifest kept on disk (§6.2 G11): paths, sizes and hashes, no

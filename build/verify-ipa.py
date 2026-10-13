@@ -729,6 +729,13 @@ def main():
         # delivers nothing (2026-09-23). The reference app sets it.
         check(info.get("UIApplicationSupportsIndirectInputEvents") is True,
               "Info.plist: UIApplicationSupportsIndirectInputEvents (mouse through GCMouse, not as touches)")
+        check({"en", "zh-Hant", "zh-Hans"}.issubset(set(info.get("CFBundleLocalizations", []))),
+              "localization: English, Traditional Chinese and Simplified Chinese are declared")
+        for locale in ("en", "zh-Hant", "zh-Hans"):
+            for filename in ("Localizable.strings", "InfoPlist.strings"):
+                resource = app / (locale + ".lproj") / filename
+                check(resource.is_file() and resource.stat().st_size > 0,
+                      f"localization: {locale}/{filename} is packaged at the app root")
         print(f"      bundle id {re.sub(r'^XTL-[A-Z0-9]+', 'XTL-TEAMIDXXXX', info['CFBundleIdentifier'])}, "
               f"version {info.get('CFBundleShortVersionString')} ({info.get('CFBundleVersion')}), "
               f"display name {info.get('CFBundleDisplayName')}")

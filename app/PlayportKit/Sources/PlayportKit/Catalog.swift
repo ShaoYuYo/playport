@@ -110,15 +110,6 @@ public struct InstalledTitle: Codable, Equatable, Identifiable, Sendable {
     /// An i386 (WoW64) title: its default backend is Vulkan (decision 0047).
     public var isI386: Bool { executableMachine == 0x14c }
 
-    /// Inspect the Steam-installed game data without launching the Windows EXE.
-    /// This does not mark the title as playable: a native KRKR2 engine must
-    /// still be bundled and compatibility-checked before routing Play to it.
-    public func kirikiriData(in gamesRoot: URL) -> KirikiriGameData? {
-        guard !installDir.isEmpty, installDir != ".", installDir != "..",
-              !installDir.contains("/"), !installDir.contains("\\") else { return nil }
-        return KirikiriProbe.inspect(directory: gamesRoot.appendingPathComponent(installDir, isDirectory: true))
-    }
-
     public enum Badge: String, Sendable {
         case ready = "Ready"
         case needsRepair = "Needs repair"

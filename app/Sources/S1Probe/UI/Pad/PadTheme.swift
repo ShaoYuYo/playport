@@ -92,12 +92,13 @@ struct PadFooter: View {
                 Button(action: h.action) {
                     HStack(spacing: 6) {
                         PadGlyph(button: h.button)
-                        Text(h.label).font(.system(size: 13)).foregroundStyle(PP.soft)
+                        Text(LocalizedStringKey(h.label)).font(.system(size: 13)).foregroundStyle(PP.soft)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .ppGlass(cornerRadius: 18)
                 .accessibilityIdentifier("hint-\(h.button.rawValue)")
             }
             if leading { Spacer(minLength: 0) }

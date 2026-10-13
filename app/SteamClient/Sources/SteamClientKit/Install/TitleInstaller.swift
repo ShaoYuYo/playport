@@ -98,10 +98,12 @@ public struct TitleInstaller: Sendable {
         sweepStaging(appID: r.appID, buildID: app.publicBuildID)
         if replacing, var old = loadReceipt(r.appID), old.depots == refs, old.buildID == app.publicBuildID {
             let follows = branch == Branch.publicName ? nil : branch
-            if old.branch != follows || (app.launchExecutable != nil && old.executable != app.launchExecutable) {
+            if old.branch != follows || old.language != selection.language ||
+                (app.launchExecutable != nil && old.executable != app.launchExecutable) {
                 // Same content: only which branch it follows, or the launch executable, changes.
                 old.branch = follows
                 old.executable = app.launchExecutable ?? old.executable
+                old.language = selection.language
                 try saveReceipt(old)
             }
             say("install: already installed at Games/\(name) (build \(old.buildID.map(String.init) ?? "?")); run verify to check it")
@@ -140,7 +142,7 @@ public struct TitleInstaller: Sendable {
                                      skippedSymlinks: plan.skippedSymlinks.count,
                                      installedAt: ISO8601DateFormatter().string(from: Date()),
                                      branch: branch == Branch.publicName ? nil : branch,
-                                     executable: app.launchExecutable)
+                                     executable: app.launchExecutable, language: selection.language)
         try commit(tree, to: final, replacing: replacing, receipt: receipt)
         try? FileManager.default.removeItem(at: engine.journalURL)
         try? FileManager.default.removeItem(at: layout.stageBranch(appID: r.appID, buildID: app.publicBuildID))

@@ -96,16 +96,16 @@ struct PadPickerPanel: View {
     private var panel: some View {
         VStack(alignment: .leading, spacing: 3) {
             if let context = session.context {
-                Text(context).font(.system(size: 12)).foregroundStyle(PP.muted).padding(.horizontal, 14)
+                Text(LocalizedStringKey(context)).font(.system(size: 12)).foregroundStyle(PP.muted).padding(.horizontal, 14)
             }
-            Text(session.title).font(PP.display(22)).foregroundStyle(PP.text)
+            Text(LocalizedStringKey(session.title)).font(PP.display(22)).foregroundStyle(PP.text)
                 .padding(.horizontal, 14).padding(.bottom, 8)
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 3) {
                         ForEach(session.options.indices, id: \.self) { i in
                             if let section = session.options[i].section, i == 0 || session.options[i - 1].section != section {
-                                Text(section).font(.system(size: 12, weight: .semibold)).foregroundStyle(PP.muted)
+                                Text(LocalizedStringKey(section)).font(.system(size: 12, weight: .semibold)).foregroundStyle(PP.muted)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal, 14).padding(.top, i == 0 ? 0 : 10).padding(.bottom, 2)
                             }
@@ -113,7 +113,7 @@ struct PadPickerPanel: View {
                                 .onTapGesture { session.pick(i) }
                         }
                         if let note = session.note {
-                            Text(note).font(.system(size: 12)).foregroundStyle(PP.muted).lineSpacing(3)
+                            Text(LocalizedStringKey(note)).font(.system(size: 12)).foregroundStyle(PP.muted).lineSpacing(3)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 14).padding(.top, 10)
                         }
@@ -138,10 +138,10 @@ struct PadPickerPanel: View {
                 .strokeBorder(on ? (current ? PP.background : Color(hex: 0x3A4452)) : (current ? PP.accent : Color(hex: 0x4A5667)),
                               lineWidth: current ? 5 : 2)
                 .frame(width: 16, height: 16)
-            Text(o.label).font(.system(size: 15, weight: .medium))
+            Text(LocalizedStringKey(o.label)).font(.system(size: 15, weight: .medium))
             Spacer(minLength: 8)
             if let d = o.detail {
-                Text(d).font(.system(size: 12)).foregroundStyle(on ? Color(hex: 0x3A4452) : PP.muted).lineLimit(1)
+                Text(LocalizedStringKey(d)).font(.system(size: 12)).foregroundStyle(on ? Color(hex: 0x3A4452) : PP.muted).lineLimit(1)
             }
         }
         .foregroundStyle(on ? PP.background : PP.text)

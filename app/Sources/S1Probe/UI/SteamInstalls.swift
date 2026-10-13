@@ -43,7 +43,9 @@ final class SteamInstalls: DownloadDriver {
         }
         switch job.kind {
         case .install, .update:
-            let r = try await installer.install(.init(appID: appID, branch: job.branch, engine: engine), progress: progress, say: say)
+            let r = try await installer.install(.init(appID: appID,
+                selection: .init(language: GameLanguage.current.rawValue), branch: job.branch, engine: engine),
+                progress: progress, say: say)
             return job.kind == .install ? r.stage?.bytes : r.stage?.downloadedBytes
         case .repair:
             let r = try await installer.repair(appID: appID, engine: engine, progress: progress, say: say)

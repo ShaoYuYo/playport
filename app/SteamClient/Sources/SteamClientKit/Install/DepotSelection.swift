@@ -35,6 +35,8 @@ public struct DepotSelection: Sendable, Equatable {
     /// In install order: a later depot overrides an earlier one by path.
     public var depots: [DepotInfo]
     public var skipped: [Skip]
+    /// The language actually selected, including a supported English fallback.
+    public var language: String = "english"
 
     public static func select(_ app: AppDepots, _ o: Options = Options()) throws -> DepotSelection {
         var chosen: [DepotInfo] = [], skipped: [Skip] = []
@@ -56,17 +58,26 @@ public struct DepotSelection: Sendable, Equatable {
                 }
                 chosen.append(d)
             }
-            return DepotSelection(depots: chosen, skipped: skipped)
+            return DepotSelection(depots: chosen, skipped: skipped, language: o.language)
+        }
+        var options = o
+        if o.language != "english",
+           !app.depots.contains(where: { $0.language == o.language && exclusion($0, o) == nil }) {
+            var fallback = o
+            fallback.language = "english"
+            if app.depots.contains(where: { $0.language == "english" && exclusion($0, fallback) == nil }) {
+                options = fallback
+            }
         }
         for d in app.depots {
-            if let reason = exclusion(d, o) {
+            if let reason = exclusion(d, options) {
                 skipped.append(Skip(depotID: d.depotID, reason: reason))
             } else {
                 chosen.append(d)
             }
         }
         guard !chosen.isEmpty else { throw SteamError.notFound("no installable Windows depot for app \(app.appID)") }
-        return DepotSelection(depots: chosen, skipped: skipped)
+        return DepotSelection(depots: chosen, skipped: skipped, language: options.language)
     }
 
     static func exclusion(_ d: DepotInfo, _ o: Options) -> String? {

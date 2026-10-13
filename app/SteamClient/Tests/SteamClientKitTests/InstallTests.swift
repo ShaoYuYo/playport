@@ -136,6 +136,21 @@ final class DepotSelectionTests: XCTestCase {
         XCTAssertThrowsError(try DepotSelection.select(none))
     }
 
+    func testChineseDepotAndEnglishFallbackRespectOwnership() throws {
+        let title = AppDepots(appID: 10, name: "Chinese title", publicBuildID: 5, changeNumber: nil,
+            depots: [depot(11), depot(12, language: "english"), depot(13, language: "tchinese")],
+            installDir: "Chinese title")
+        let chinese = try DepotSelection.select(title, .init(language: "tchinese"))
+        XCTAssertEqual(chinese.depots.map(\.depotID), [11, 13])
+        XCTAssertEqual(chinese.language, "tchinese")
+        let fallback = try DepotSelection.select(title, .init(language: "schinese"))
+        XCTAssertEqual(fallback.depots.map(\.depotID), [11, 12])
+        XCTAssertEqual(fallback.language, "english")
+        let owned = try DepotSelection.select(title, .init(language: "tchinese", ownedDepots: [11, 12]))
+        XCTAssertEqual(owned.depots.map(\.depotID), [11, 12])
+        XCTAssertEqual(owned.language, "english")
+    }
+
     func testPICSParsingOfSelectionFields() throws {
         let vdf = """
         "4020"

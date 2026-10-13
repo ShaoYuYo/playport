@@ -124,7 +124,8 @@ HEADER = """\
 # Names absent from the P2 manifest are skipped: at the pin that is Madeira's
 # native D3D12 runtime (madeira_d3d12.dll, out of scope, docs/LICENSING.md) and
 # its test programs.
-NLS = ["c_1252.nls", "c_20127.nls", "c_28591.nls", "c_437.nls", "l_intl.nls", "locale.nls",
+NLS = ["c_1252.nls", "c_20127.nls", "c_28591.nls", "c_437.nls",
+       "c_936.nls", "c_950.nls", "c_932.nls", "c_949.nls", "l_intl.nls", "locale.nls",
        "normidna.nls", "normnfc.nls", "normnfd.nls", "normnfkc.nls", "normnfkd.nls", "sortdefault.nls"]
 
 FONTS = ["tahoma.ttf", "tahomabd.ttf"]
@@ -289,7 +290,7 @@ def record():
         add("resource", f"Runtime/nls/{name}", "unix", f"wine/nls/{name}", "nls")
     for name in FONTS:
         add("resource", f"Runtime/fonts/{name}", "unix", f"wine/fonts/{name}", "fonts")
-    for name in ("system.reg", "user.reg"):
+    for name in ("system.reg", "user.reg", "cjk-fonts.reg"):
         add("resource", f"Runtime/registry/{name}", "registry", name, "P7-reg")
     add("resource", "Runtime/certs/cacert.pem", "ca-bundle", "cacert.pem", "ca-bundle")
     for dest, root, source, prov in LINK:
@@ -339,7 +340,7 @@ def stage():
 
 # The release package's links into app/: everything xtool.yml and Package.swift
 # name except the two files it gets its own copies of and Runtime/.
-RELEASE_LINKS = ["Sources", "Staged", "Icon", "HostIOKit", "ContentKit", "GOGClient", "EpicClient", "PlayportKit", "SteamClient", "PlayportJIT",
+RELEASE_LINKS = ["Sources", "Staged", "Icon", "Localization", "HostIOKit", "ContentKit", "GOGClient", "EpicClient", "PlayportKit", "SteamClient", "PlayportJIT",
                  "PlayportJIT-Info.plist", "S1Probe.entitlements"]
 
 

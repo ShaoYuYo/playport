@@ -1,0 +1,15 @@
+WINE REGISTRY Version 2
+;; All keys relative to REGISTRY\\Machine
+
+#arch=win64
+
+;; Add glyph fallback without replacing a user's installed fonts or values.
+;; wine_host.c links the OS PingFang file before GDI starts.
+;; playport:top-up
+[Software\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink]
+"Arial"=str(7):"playport-cjk.ttc,PingFang TC\0"
+"Tahoma"=str(7):"playport-cjk.ttc,PingFang TC\0"
+"Microsoft Sans Serif"=str(7):"playport-cjk.ttc,PingFang TC\0"
+"Microsoft YaHei"=str(7):"playport-cjk.ttc,PingFang TC\0"
+"Microsoft JhengHei"=str(7):"playport-cjk.ttc,PingFang TC\0"
+"SimSun"=str(7):"playport-cjk.ttc,PingFang TC\0"

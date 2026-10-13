@@ -127,7 +127,7 @@ struct PadModalHint: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 PadGlyph(button: button)
-                Text(label).font(.system(size: 13)).foregroundStyle(PP.soft)
+                Text(LocalizedStringKey(label)).font(.system(size: 13)).foregroundStyle(PP.soft)
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .contentShape(Capsule())

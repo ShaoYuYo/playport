@@ -76,7 +76,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 14).padding(.bottom, 10)
             ForEach(SettingsSection.shown, id: \.self) { s in
                 let on = navigation.settingsSection == s
-                Text(s.title)
+                Text(LocalizedStringKey(s.title))
                     .font(.system(size: 15, weight: on ? .semibold : .medium))
                     .foregroundStyle(on ? PP.background : PP.soft)
                     .padding(.horizontal, 14)
@@ -222,7 +222,7 @@ struct SettingsNote: View {
     let text: String
 
     var body: some View {
-        Text(text).font(.system(size: 13)).foregroundStyle(PP.muted).lineSpacing(3)
+        Text(LocalizedStringKey(text)).font(.system(size: 13)).foregroundStyle(PP.muted).lineSpacing(3)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 2).padding(.top, 12).padding(.bottom, 2)
     }
@@ -289,6 +289,7 @@ private struct GraphicsSettings: View {
 // MARK: Downloads
 
 private struct DownloadSettings: View {
+    @AppStorage(GameLanguage.preferenceKey) private var gameLanguage = "automatic"
     @AppStorage(DownloadPreferences.autoUpdateKey) private var autoUpdate = true
     @AppStorage(DownloadPreferences.cellularKey) private var cellular = false
     @AppStorage(DownloadPreferences.dimKey) private var dim = true
@@ -297,6 +298,14 @@ private struct DownloadSettings: View {
 
     var body: some View {
         Color.clear.frame(height: 42)
+        PadRow(id: "set:game-language", title: "Game language",
+               subtitle: "Used for new Steam downloads and the game's Steam API. Unsupported languages fall back to English.",
+               value: GameLanguage(rawValue: gameLanguage)?.title ?? "Follow iPhone language",
+               accessory: .chevron, hint: "Choose") {
+            let options = [PadOption(id: "automatic", label: "Follow iPhone language")]
+                + GameLanguage.allCases.map { PadOption(id: $0.rawValue, label: $0.title) }
+            PadModal.shared.picker(title: "Game language", options: options, selected: gameLanguage) { gameLanguage = $0 }
+        }
         SettingsSwitchRow(id: "autoUpdate", title: "Update games by themselves",
                           subtitle: "Queued when Steam has a new version", on: $autoUpdate)
         SettingsSwitchRow(id: "cellular", title: "Download over cellular",

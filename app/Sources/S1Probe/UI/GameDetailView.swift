@@ -1138,12 +1138,12 @@ private struct PrimaryButton: View {
     var body: some View {
         HStack(spacing: 10) {
             PadGlyph(button: .a, inverted: enabled)
-            Text(title).font(PP.display(20)).lineLimit(1)
+            Text(LocalizedStringKey(title)).font(PP.display(20)).lineLimit(1)
         }
-        .foregroundStyle(enabled ? PP.onAccent : PP.muted)
+        .foregroundStyle(enabled ? PP.text : PP.muted)
         .padding(.leading, 14).padding(.trailing, 26)
         .frame(height: 52)
-        .background(enabled ? PP.accent : PP.raised, in: RoundedRectangle(cornerRadius: 12))
+        .ppGlass(cornerRadius: 14, tint: enabled ? PP.accent : nil)
         .padItem(id, hint: hint, cornerRadius: 12) { if enabled { action() } }
     }
 }
@@ -1161,13 +1161,13 @@ private struct SecondaryButton: View {
     var body: some View {
         HStack(spacing: 8) {
             if let systemImage { Image(systemName: systemImage).font(.system(size: 14)) }
-            Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+            Text(LocalizedStringKey(title)).font(.system(size: 14, weight: .semibold)).lineLimit(1)
             if let glyph { PadGlyph(button: glyph).padding(.leading, 2) }
         }
         .foregroundStyle(enabled ? PP.text : PP.muted)
         .padding(.horizontal, 16)
         .frame(height: 44)
-        .background(PP.surface.opacity(0.92), in: RoundedRectangle(cornerRadius: 10))
+        .ppGlass(cornerRadius: 12)
         .padItem(id, hint: hint, cornerRadius: 10) { if enabled { action() } }
     }
 }
