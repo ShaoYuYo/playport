@@ -11,7 +11,7 @@ test -x /usr/lib/llvm-22/bin/llvm-config
 test -x /usr/lib/llvm-22/bin/clang
 sudo apt-get install -y --no-install-recommends \
     python3-venv python3-pip libclang-22-dev libclc-22-dev \
-    spirv-tools spirv-tools-dev libelf-dev libexpat1-dev libzstd-dev
+    spirv-tools libelf-dev libexpat1-dev libzstd-dev
 
 # Mesa's own KosmicKrisp documentation specifies 1.9.1+, whereas
 # Ubuntu 24.04's apt package provides only 1.3.x.
@@ -24,7 +24,7 @@ echo "$ENV_ROOT/bin" >> "${GITHUB_PATH:-/dev/null}"
 meson --version
 test "$(meson --version)" = 1.9.1
 
-# The packaged SPIR-V Tools must actually provide a recent enough
+# Ubuntu 24.04's spirv-tools *itself* contains headers, static archives,\n# and SPIRV-Tools.pc; no spirv-tools-dev package exists for Noble.\n# The packaged SPIR-V Tools must actually provide a recent enough
 # pkg-config description; command-line spirv-val alone isn't sufficient.
 pkg-config --atleast-version=2024.1 SPIRV-Tools || {
     echo 'Mesa needs SPIRV-Tools >= 2024.1 with development libraries' >&2
