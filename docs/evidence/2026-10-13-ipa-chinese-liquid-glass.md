@@ -113,3 +113,26 @@ there is no separate ten-minute ordinary-Chat process.
   paths, obsolete-file removal, repeated setup and missing-header rejection.
   Cloud compilation is still required: local fixtures do not prove SwiftUI
   linking or final IPA success. Keep the hourly task enabled.
+
+## Run 21: full IPA compiled; distribution path check corrected
+
+- Run [38423143523](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38423143523)
+  passed the real SwiftUI/Liquid Glass IPA preflight, proving the installed SDK,
+  Swift-matched Clang builtins and Apple linker work together. It then completed
+  Wine, FEX, DXMT, Vulkan, Steam API, device support, staging and notices.
+- The completed native runtime was checksum-snapshotted before the final app
+  build. The 673,341,569-byte unsigned IPA compiled successfully and every
+  functional, localization, runtime, signing and notice check passed.
+- The sole verifier failure was reproducibility: 16 native DLLs retained the
+  GitHub runner's home prefix in diagnostic source strings from dependencies
+  outside each component's prefix-map root. No IPA artifact was uploaded.
+- `build/sanitize-runtime-paths.py` replaces only that exact workstation prefix
+  with a same-length relative marker, preserving binary size and offsets. It
+  refreshes staged resource hashes and keeps DXMT's independently compared PE
+  copies byte-identical. Tests cover size preservation, manifest hashes, DXMT
+  synchronization and idempotence.
+- The sanitizer is intentionally excluded from the native input hash: it runs
+  after a verified checkpoint is restored, so the successful multi-hour native
+  build is reused. The sanitized result is re-snapshotted and verified before
+  app compilation. A new cloud run must still pass `verify-ipa` and upload the
+  nonempty `PlayPort-unsigned-IPA` artifact before completion is claimed.
