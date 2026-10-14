@@ -61,6 +61,34 @@ final class LaunchDiagnosticsTests: XCTestCase {
             .contains("data.xp3\tfile\t3 bytes"))
     }
 
+    func testSteamMetadataChecksArchitectureWithoutReadingSettings() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        var pe = Data(repeating: 0, count: 256)
+        pe[0] = 0x4d; pe[1] = 0x5a; pe[60] = 0x80
+        pe[128] = 0x50; pe[129] = 0x45; pe[132] = 0x4c; pe[133] = 1
+        try pe.write(to: root.appendingPathComponent("steam_api.dll"))
+        try Data("private ticket should not appear".utf8).write(to: root.appendingPathComponent("configs.user.ini"))
+        let report = LaunchDiagnostics.steamFiles(in: root)
+        XCTAssertTrue(report.contains("machine=0x014C"))
+        XCTAssertTrue(report.contains("initialization not yet observed"))
+        XCTAssertFalse(report.contains("private ticket"))
+        XCTAssertFalse(report.contains(root.path))
+    }
+
+    func testCodepageProbeIdentifiesActualTableAndMissingWindowsLink() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let nls = root.appendingPathComponent("nls")
+        try FileManager.default.createDirectory(at: nls, withIntermediateDirectories: true)
+        try Data([13, 0, 0x10, 0x27, 1, 0]).write(to: nls.appendingPathComponent("c_10000.nls"))
+        let report = LaunchDiagnostics.codepageFiles(prefix: root.appendingPathComponent("prefix"), runtime: root)
+        XCTAssertTrue(report.contains("bundle/c_10000.nls\ttable=10000"))
+        XCTAssertTrue(report.contains("system32/c_10000.nls\tmissing or unreadable"))
+        XCTAssertFalse(report.contains(root.path))
+    }
+
     func testExternalSymlinksAndOversizeLogsExcluded() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

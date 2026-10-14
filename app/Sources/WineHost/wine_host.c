@@ -547,6 +547,24 @@ static void link_fonts(void)
     link_system_cjk_font(dir);
 }
 
+/* Ad-hoc GetCPInfo/MultiByteToWideChar lookups open NLS through the Windows
+ * system directory, unlike the initial ANSI/OEM tables loaded from runtime/nls.
+ * Refresh all three farms on upgrades; never touch Games, saves or Steam state. */
+static int link_nls_dirs(void)
+{
+    char source[1200], target[1200];
+    snprintf(source, sizeof(source), "%s/nls", g_runtime);
+    const char *dirs[] = { "system32", "syswow64", "sysarm64" };
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+        snprintf(target, sizeof(target), "%s/drive_c/windows/%s", g_prefix, dirs[i]);
+        if (mkdirs(target)) return -1;
+        int count = link_dir_into(source, target);
+        if (count <= 0) { host_log("NLS: no codepage links for %s", dirs[i]); return -1; }
+        host_log("NLS: %d codepage links in %s", count, dirs[i]);
+    }
+    return 0;
+}
+
 /* Point drive_c/windows/system32 at the bundle's PE set. The bundle path
  * changes on every reinstall, so the links are always recreated. A Direct3D
  * backend other than DXMT (PLAYPORT_DLL_OVERLAY, PlayportKit
@@ -592,6 +610,7 @@ static int link_system32(const char *pe_arch)
     if (n > 0) {
         link_wow64_farm("sysarm64", "aarch64");
         link_wow64_farm("syswow64", "i386");
+        if (link_nls_dirs()) return -1;
     }
     return n > 0 ? 0 : -1;
 }

@@ -1,0 +1,53 @@
+From 3eb7e01ca7368fa615dfdf4b5cd555611f9b33f8 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Wed, 14 Oct 2026 23:03:32 +0800
+Subject: [PATCH] wow64: preserve integer class atoms in zero-length Unicode
+ strings
+
+Class: correctness
+
+Evidence: docs/evidence/2026-10-14-windows-compatibility-audit.md; actual header conversion regression and phone USER creation error 6
+
+Offered-upstream: no; downstream iOS guest-window translation fix
+---
+ dlls/wow64/wow64_private.h | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/wow64/wow64_private.h b/dlls/wow64/wow64_private.h
+index 8225b96..de625af 100644
+--- a/dlls/wow64/wow64_private.h
++++ b/dlls/wow64/wow64_private.h
+@@ -153,25 +153,29 @@ static inline void *apc_param_32to64( ULONG func, ULONG context )
+ static inline IO_STATUS_BLOCK *iosb_32to64( IO_STATUS_BLOCK *io, IO_STATUS_BLOCK32 *io32 )
+ {
+     if (!io32) return NULL;
+     io->Pointer = io32;
+     return io;
+ }
+ 
+ static inline UNICODE_STRING *unicode_str_32to64( UNICODE_STRING *str, const UNICODE_STRING32 *str32 )
+ {
+     if (!str32) return NULL;
+     str->Length = str32->Length;
+     str->MaximumLength = str32->MaximumLength;
+-    str->Buffer = wow64_to_host( str32->Buffer );
++    /* A zero-length USER class name can carry an integer atom, not a
++     * dereferenceable string. Keep that value for IS_INTRESOURCE/LOWORD;
++     * adding the window base makes native USER treat it as a string. */
++    str->Buffer = !str32->Length && str32->Buffer <= 0xffff
++                  ? ULongToPtr( str32->Buffer ) : wow64_to_host( str32->Buffer );
+     return str;
+ }
+ 
+ static inline CLIENT_ID *client_id_32to64( CLIENT_ID *id, const CLIENT_ID32 *id32 )
+ {
+     if (!id32) return NULL;
+     id->UniqueProcess = LongToHandle( id32->UniqueProcess );
+     id->UniqueThread = LongToHandle( id32->UniqueThread );
+     return id;
+ }
+ 
+ static inline SECURITY_DESCRIPTOR *secdesc_32to64( SECURITY_DESCRIPTOR *out, const SECURITY_DESCRIPTOR *in )
+-- 
+2.51.1
+

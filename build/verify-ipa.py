@@ -776,6 +776,10 @@ def main():
         empty = [p for p in app.rglob("*") if p.is_dir() and not any(p.iterdir())]
         check(not empty, "resources: no empty directories")
 
+        nls_required = {"c_932.nls", "c_936.nls", "c_950.nls", "c_10000.nls"}
+        check(all(rt("Runtime/nls/" + name).is_file() for name in nls_required),
+              "nls: Japanese, Chinese and requested Mac Roman tables are packaged")
+
         # DXMT: both halves from the patched fork
         n, slots, syms, names = unix_table(exe)
         h = names.get("__MTLDevice_newLibraryWithSource")

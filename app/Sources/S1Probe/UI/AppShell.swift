@@ -37,6 +37,7 @@ struct AppShell: View {
     @ObservedObject private var opening = AppOpening.shared
     @Environment(\.launchingFromPage) private var launchingFromPage
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var importing = false
     /// What the one Files picker is open for: a pairing file, or a game (UI/Import.swift).
     @State private var importingGame = false
@@ -89,7 +90,7 @@ struct AppShell: View {
             }
         }
         // The controller keyboard or a picker, over everything with its own footer.
-        .overlay { PadModalHost().animation(.easeOut(duration: 0.15), value: modal.isUp) }
+        .overlay { PadModalHost().animation(reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.25), value: modal.isUp) }
         // Download mode: black, over everything, until a button or a tap (DownloadsView.swift).
         .overlay { DownloadModeView(installs: model.installs) }
         // The opening animation, over everything until Home's cards have landed (UI/AppOpening.swift).
@@ -300,7 +301,9 @@ private struct TopBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Button { router.send(.lb) } label: { PadGlyph(button: .lb) }.buttonStyle(.plain)
+            Button { router.send(.lb) } label: { PadGlyph(button: .lb).frame(minWidth: 44, minHeight: 44) }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Previous page")
             ForEach(AppNavigation.Page.allCases, id: \.self) { p in
                 Button { nav.show(p) } label: {
                     // The Downloads count sits in the page's pill, highlighted with it.
@@ -315,13 +318,16 @@ private struct TopBar: View {
                                 .background(PP.accent, in: RoundedRectangle(cornerRadius: 8))
                         }
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 5)
-                    .ppGlass(cornerRadius: 12, tint: nav.page == p ? PP.accent.opacity(0.3) : nil)
+                    .padding(.horizontal, 8).frame(minHeight: 28)
                 }
-                .buttonStyle(.plain)
+                .ppGlassButton(prominent: nav.page == p)
+                .frame(minHeight: 44)
+                .accessibilityAddTraits(nav.page == p ? .isSelected : [])
                 .accessibilityIdentifier("page-\(p.rawValue)")
             }
-            Button { router.send(.rb) } label: { PadGlyph(button: .rb) }.buttonStyle(.plain)
+            Button { router.send(.rb) } label: { PadGlyph(button: .rb).frame(minWidth: 44, minHeight: 44) }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Next page")
             Spacer(minLength: 8)
             if nav.page == .downloads {
                 StorageBar()
@@ -335,10 +341,10 @@ private struct TopBar: View {
             Button { _ = nav.open("settings") } label: {
                 Image(systemName: "gearshape").font(.system(size: 15))
                     .foregroundStyle(PP.soft)
-                    .frame(width: 30, height: 30)
-                    .ppGlass(cornerRadius: 15)
+                    .frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
+            .ppGlassButton()
+            .frame(minWidth: 44, minHeight: 44)
             .padding(.leading, 10)
             .accessibilityLabel("Settings")
         }

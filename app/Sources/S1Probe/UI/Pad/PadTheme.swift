@@ -84,6 +84,8 @@ struct PadHint: Identifiable {
 struct PadFooter: View {
     let hints: [PadHint]
     var leading = false
+    @Namespace private var glassNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 10) {
@@ -94,16 +96,18 @@ struct PadFooter: View {
                         PadGlyph(button: h.button)
                         Text(LocalizedStringKey(h.label)).font(.system(size: 13)).foregroundStyle(PP.soft)
                     }
-                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .padding(.horizontal, 4).frame(minHeight: 28)
                     .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
-                .ppGlass(cornerRadius: 18)
+                .ppGlassButton()
+                .frame(minHeight: 44)
+                .glassEffectID(h.button.rawValue, in: glassNamespace)
                 .accessibilityIdentifier("hint-\(h.button.rawValue)")
             }
             if leading { Spacer(minLength: 0) }
         }
-        .frame(height: 36)
+        .frame(height: 44)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hints.map(\.button))
         .overlay(alignment: .top) {
             // The rule runs to the screen's edges, past the landscape safe area.
             if !leading { Rectangle().fill(PP.raised).frame(height: 1).ignoresSafeArea(edges: .horizontal) }

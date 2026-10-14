@@ -104,10 +104,11 @@ final class PadModal: ObservableObject {
 /// Draws the modal that is up over the whole shell.
 struct PadModalHost: View {
     @ObservedObject private var modal = PadModal.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         switch modal.content {
-        case .keyboard(let k): PadKeyboardView(session: k).transition(.move(edge: .bottom))
+        case .keyboard(let k): PadKeyboardView(session: k).transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
         case .picker(let p): PadPickerPanel(session: p).transition(.opacity)
         case .cloud(let c): CloudConflictView(session: c).transition(.opacity)
         case .launchFailure(let f): LaunchFailureView(session: f).transition(.opacity)
@@ -129,10 +130,11 @@ struct PadModalHint: View {
                 PadGlyph(button: button)
                 Text(LocalizedStringKey(label)).font(.system(size: 13)).foregroundStyle(PP.soft)
             }
-            .padding(.horizontal, 8).padding(.vertical, 4)
+            .padding(.horizontal, 4).frame(minHeight: 28)
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .ppGlassButton()
+        .frame(minHeight: 44)
         .accessibilityIdentifier("hint-\(button.rawValue)")
     }
 }

@@ -111,6 +111,7 @@ struct PadSectionHeader: View {
 /// The design's switch: amber with a dark knob at the right when on, grey at the left when off.
 struct PadSwitch: View {
     let on: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: on ? .trailing : .leading) {
@@ -118,6 +119,6 @@ struct PadSwitch: View {
             Circle().fill(on ? PP.onAccent : PP.muted).frame(width: 16, height: 16).padding(3)
         }
         .frame(width: 40, height: 22)
-        .animation(.easeOut(duration: 0.12), value: on)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: on)
     }
 }

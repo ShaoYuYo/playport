@@ -71,6 +71,7 @@ def pin(name):
 
 
 ROOTS = {
+    "nls-extra": REPO / "app/WindowsNLS",
     "wine-build": Path(os.environ.get("WINE_BUILD", RUN / "pe" / "staged")),
     "fex": Path(os.environ.get("FEX_DLL", RUN / "fex/build-arm64ec/Bin/libarm64ecfex.dll")).parent,
     "fex-wow64": Path(os.environ.get("FEX_WOW64_DLL", RUN / "fex/build-wow64/Bin/libwow64fex.dll")).parent,
@@ -127,6 +128,8 @@ HEADER = """\
 NLS = ["c_1252.nls", "c_20127.nls", "c_28591.nls", "c_437.nls",
        "c_936.nls", "c_950.nls", "c_932.nls", "c_949.nls", "l_intl.nls", "locale.nls",
        "normidna.nls", "normnfc.nls", "normnfd.nls", "normnfkc.nls", "normnfkd.nls", "sortdefault.nls"]
+
+EXTRA_NLS = ["c_10000.nls"]
 
 FONTS = ["tahoma.ttf", "tahomabd.ttf"]
 
@@ -288,6 +291,8 @@ def record():
     add("resource", "Runtime/arm64ec-windows/playport-url-opener.exe", "session", "playport-url-opener.exe", "P9-url-opener")
     for name in NLS:
         add("resource", f"Runtime/nls/{name}", "unix", f"wine/nls/{name}", "nls")
+    for name in EXTRA_NLS:
+        add("resource", f"Runtime/nls/{name}", "nls-extra", name, "nls")
     for name in FONTS:
         add("resource", f"Runtime/fonts/{name}", "unix", f"wine/fonts/{name}", "fonts")
     for name in ("system.reg", "user.reg", "cjk-fonts.reg"):

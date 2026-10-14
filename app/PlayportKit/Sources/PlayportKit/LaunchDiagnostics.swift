@@ -106,6 +106,54 @@ public enum LaunchDiagnostics {
         return report
     }
 
+    /// Metadata records the game's API DLL architecture and backup layout.
+    /// It does not claim SteamAPI_Init succeeded, and never reads account or ticket files.
+    public static func steamFiles(in root: URL) -> String {
+        let files = entries(in: root).filter {
+            ["steam_api.dll", "steam_api64.dll", "steam_api.dll.orig", "steam_api64.dll.orig"].contains($0.url.lastPathComponent.lowercased())
+        }
+        var text = "Steam API file metadata (initialization not yet observed):\n"
+        if files.isEmpty { text += "No Steam API DLL found in the bounded game-folder scan.\n" }
+        for file in files {
+            text += "\(file.relative)\t\(file.size) bytes\tmachine=\(peMachine(file.url).map { String(format: "0x%04X", $0) } ?? "unreadable PE")\n"
+        }
+        return text
+    }
+
+    private static func peMachine(_ url: URL) -> UInt16? {
+        guard let file = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? file.close() }
+        do {
+            guard let dos = try file.read(upToCount: 64), dos.count == 64, dos[0] == 0x4d, dos[1] == 0x5a else { return nil }
+            let offset = dos[60..<64].enumerated().reduce(UInt64(0)) { $0 | (UInt64($1.element) << (8 * $1.offset)) }
+            guard offset <= 16 << 20 else { return nil }
+            try file.seek(toOffset: offset)
+            guard let pe = try file.read(upToCount: 6), pe.count == 6, Array(pe.prefix(4)) == [0x50, 0x45, 0, 0] else { return nil }
+            return UInt16(pe[4]) | (UInt16(pe[5]) << 8)
+        } catch { return nil }
+    }
+
+    /// Inspect the exact bundle and Windows-directory codepage headers, without paths or contents.
+    public static func codepageFiles(prefix: URL, runtime: URL) -> String {
+        var text = "Windows codepage file probes (table ID, no private paths):\n"
+        for dir in ["bundle", "system32", "syswow64", "sysarm64"] {
+            for id in [932, 936, 950, 10000] {
+                let base = dir == "bundle" ? runtime.appendingPathComponent("nls") : prefix.appendingPathComponent("drive_c/windows/" + dir)
+                let url = base.appendingPathComponent("c_\(id).nls")
+                guard let file = try? FileHandle(forReadingFrom: url) else {
+                    text += "\(dir)/c_\(id).nls\tmissing or unreadable\n"; continue
+                }
+                let data = try? file.read(upToCount: 6)
+                try? file.close()
+                if let bytes = data, bytes.count == 6 {
+                    let found = Int(bytes[2]) | (Int(bytes[3]) << 8)
+                    text += "\(dir)/c_\(id).nls\ttable=\(found)\n"
+                } else { text += "\(dir)/c_\(id).nls\ttruncated header\n" }
+            }
+        }
+        return text
+    }
+
     private struct Entry {
         var url: URL
         var relative: String
@@ -114,23 +162,26 @@ public enum LaunchDiagnostics {
 
     private static func entries(in root: URL) -> [Entry] {
         let fm = FileManager.default
-        let original = root.standardizedFileURL
-        let base = original.resolvingSymlinksInPath()
-        guard let rootValues = try? original.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
-              rootValues.isDirectory == true, rootValues.isSymbolicLink != true,
-              let walk = fm.enumerator(at: base, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey],
-                                       options: [.skipsHiddenFiles]) else { return [] }
-        let prefix = base.path + "/"
+        let base = root.standardizedFileURL
+        // URL resource-values enumeration returned nothing after Wine startup on
+        // the phone while direct stat succeeded. Use the same direct metadata API.
+        guard let attr = try? fm.attributesOfItem(atPath: base.path),
+              attr[.type] as? FileAttributeType == .typeDirectory,
+              let walk = fm.enumerator(atPath: base.path) else { return [] }
         var result: [Entry] = [], visited = 0
-        for case let url as URL in walk {
+        for case let relative as String in walk {
             visited += 1
             if visited > 2048 { break }
-            guard url.path.hasPrefix(prefix), walk.level <= 4 else { walk.skipDescendants(); continue }
-            guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
-                  values.isSymbolicLink != true else { walk.skipDescendants(); continue }
-            guard values.isRegularFile == true else { continue }
-            let name = String(url.path.dropFirst(prefix.count)).replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\t", with: "\\t")
-            result.append(Entry(url: url, relative: name, size: values.fileSize ?? 0))
+            guard !relative.split(separator: "/").contains(where: { $0.hasPrefix(".") }), walk.level <= 4 else {
+                walk.skipDescendants(); continue
+            }
+            let url = base.appendingPathComponent(relative)
+            guard let values = try? fm.attributesOfItem(atPath: url.path),
+                  let type = values[.type] as? FileAttributeType else { walk.skipDescendants(); continue }
+            if type == .typeSymbolicLink { walk.skipDescendants(); continue }
+            guard type == .typeRegular else { continue }
+            let name = relative.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\t", with: "\\t")
+            result.append(Entry(url: url, relative: name, size: (values[.size] as? NSNumber)?.intValue ?? 0))
         }
         return result.sorted { $0.relative < $1.relative }
     }

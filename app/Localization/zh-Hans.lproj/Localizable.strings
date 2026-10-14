@@ -213,3 +213,6 @@
 "The Steam API or executable could not be prepared. The game was not started." = "无法完成 Steam API 或可执行文件的准备，游戏尚未启动。";
 "Windows message: %@" = "Windows 消息：%@";
 "Share a problem report before trying again. Game files and saves are kept." = "请先分享问题报告，再尝试启动。游戏文件与存档会保留。";
+
+"Previous page" = "上一页";
+"Next page" = "下一页";

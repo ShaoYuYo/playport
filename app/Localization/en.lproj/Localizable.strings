@@ -213,3 +213,6 @@
 "The Steam API or executable could not be prepared. The game was not started." = "The Steam API or executable could not be prepared. The game was not started.";
 "Windows message: %@" = "Windows message: %@";
 "Share a problem report before trying again. Game files and saves are kept." = "Share a problem report before trying again. Game files and saves are kept.";
+
+"Previous page" = "Previous page";
+"Next page" = "Next page";

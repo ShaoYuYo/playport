@@ -1229,7 +1229,12 @@ enum ProblemReport {
                 try fm.copyItem(at: u, to: folder.appendingPathComponent(name))
             }
             if let root = gameRoot {
-                try LaunchDiagnostics.inventory(in: root, steamAppID: steamAppID).write(to: folder.appendingPathComponent("game-files.txt"), atomically: true, encoding: .utf8)
+                let inventory = LaunchDiagnostics.inventory(in: root, steamAppID: steamAppID) + "\n" + LaunchDiagnostics.steamFiles(in: root)
+                try inventory.write(to: folder.appendingPathComponent("game-files.txt"), atomically: true, encoding: .utf8)
+                if let runtime = Manifest.runtime {
+                    let nls = LaunchDiagnostics.codepageFiles(prefix: WineHostRuntime.shared.prefixURL, runtime: runtime)
+                    try nls.write(to: folder.appendingPathComponent("windows-codepages.txt"), atomically: true, encoding: .utf8)
+                }
             }
         } catch {
             LibraryModel.log("report a problem: could not gather the logs: \(error)")

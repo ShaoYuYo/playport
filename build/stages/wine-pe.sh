@@ -51,8 +51,13 @@ configured() { [ -f "$WINE/$1/Makefile" ] && [ "$(cat "$WINE/$1/.pp-configured" 
 # 2. Native (Linux) Wine build tools: makedep, winebuild, winegcc, widl, wrc,
 #    wmc, sfnt2fon, make_xftmpl. wrc resolves nls/locale.nls relative to the
 #    tools tree, so create that link too.
-GST=$(bash "$HERE/gstreamer.sh" fetch)
-KEY=$({ sha256sum "$HERE/wine-pe.sh" "$WINE/configure"; echo "$M $MACSDK $GST"
+if [ "${PLAYPORT_WOW64_ONLY:-0}" = 1 ]; then
+    # Only the two audited bridge DLLs: no multimedia headers are used by them.
+    GST=$OUT/no-gstreamer
+else
+    GST=$(bash "$HERE/gstreamer.sh" fetch)
+fi
+KEY=$({ sha256sum "$HERE/wine-pe.sh" "$WINE/configure"; echo "$M $MACSDK $GST ${PLAYPORT_WOW64_ONLY:-0}"
         /usr/bin/clang --version; "$M/bin/clang" --version; } | sha256sum | cut -c1-16)
 if configured build-tools; then
     echo "build-tools: configured as before; make rebuilds what changed"
@@ -125,6 +130,14 @@ configure_tree() {
           > "$OUT/config-$1.log" 2>&1 ) && echo "$KEY" > "$WINE/$1/.pp-configured"
 }
 configure_tree build-macos i386,aarch64
+if [ "${PLAYPORT_WOW64_ONLY:-0}" = 1 ]; then
+    ( cd "$WINE/build-macos" && make -j"$JOBS" \
+          dlls/wow64/aarch64-windows/wow64.dll \
+          dlls/wow64win/aarch64-windows/wow64win.dll \
+          > "$OUT/make-wow64-only.log" 2>&1 )
+    echo "Built only aarch64 wow64.dll and wow64win.dll from the actual Wine tree."
+    exit 0
+fi
 configure_tree build-arm64ec arm64ec
 # widl maps ARM64EC to the aarch64-windows dir when importing typelibs
 # (tools.h get_arch_dir); a pure arm64ec tree has none, so point it at ours.
