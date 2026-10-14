@@ -381,3 +381,19 @@ Scope remains the two authorized repositories; reference downloads are read-only
 as explicitly authorized by the user. No original StikDebug app changes and no
 other user project changes. Repository evidence remains the task handoff within
 that scope.
+
+The UI-driver result checker also accepted any zero-code exit. It now rejects
+an explicit `first_frame=0` result, even after a long run: an automatic play
+cannot claim it worked without a drawable. Legacy result lines remain readable.
+`tools.tests.test_ui`: 19 tests passed, including zero exits with/without a frame,
+long no-frame runs, crash codes, and exhausted pools. This is a tooling-only
+follow-up; it does not alter the app pinned for the currently running build.
+
+Cloud run 28 (`38559406026`), pinned app source
+`5309f015ee0ac49ae826a2d21d8a796df43272da`, has passed Swift 6.4 tests:
+43 Steam/AES/codec/depot cases (one existing real-EXE fixture test skipped because
+no game EXE is available in CI), 2 game-language cases, 4 diagnostics cases,
+and 17 Python checks. Mesa preflight passed. The full native checkpoint was
+restored and SHA256 validation passed; app compilation and IPA verification
+are still pending at this checkpoint. Do not substitute these host checks for
+a successful phone play.

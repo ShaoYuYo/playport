@@ -311,7 +311,10 @@ def ui_env(nonce, verify=None, play=None, extra=(), settings=None, step=False, p
 
 def title_ok(done):
     outcome = " " + done.get("outcome", "") + " "
-    return " exit=0x00000000 " in outcome and " pool=exhausted:" not in outcome
+    # New app results explicitly record whether a drawable was requested. A zero
+    # exit without one is not evidence that a UI-driven play worked.
+    return (" exit=0x00000000 " in outcome and " pool=exhausted:" not in outcome
+            and " first_frame=0 " not in outcome)
 
 
 POOL_RE = re.compile(r"\bpool: (size_mb=.*)$")

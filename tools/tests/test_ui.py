@@ -209,6 +209,13 @@ class UiEnvTest(unittest.TestCase):
         self.assertTrue(m.title_ok({"outcome": "exit=0x00000000 after_s=12"}))
         self.assertFalse(m.title_ok({"outcome": "pool=exhausted:head exit=0x00000000 after_s=12"}))
 
+    def test_zero_exit_without_a_drawable_is_not_a_successful_play(self):
+        m = load()
+        for seconds in (1, 60):
+            self.assertFalse(m.title_ok({"outcome": f"exit=0x00000000 after_s={seconds} first_frame=0"}))
+        self.assertTrue(m.title_ok({"outcome": "exit=0x00000000 after_s=1 first_frame=1"}))
+        self.assertFalse(m.title_ok({"outcome": "exit=0xc0000005 after_s=1 first_frame=1"}))
+
     def test_sigterm_ends_the_app_inside_the_lock(self):
         m = load()
         calls = []
