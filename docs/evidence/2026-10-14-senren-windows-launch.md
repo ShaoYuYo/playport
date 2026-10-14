@@ -61,3 +61,34 @@ on source `750a37f124ab08ea2f2673d0553184fae6810aae` completed all jobs,
 IPA SHA-256: `3274b88fb2e32ab56b1f64afb2318428d30184d986af4350ab6694e808de76cb`.
 The device report establishes why build/distribution verification alone was
 not evidence that this 32-bit game could launch.
+
+## Run 24: corrected native object and verified IPA
+
+Run [38485465819](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38485465819)
+on source `7bc174df31f1c15953377a526ceed55257e2ffb7` and workflow
+`0307cf814c7031027ac0cbb26bd85a45ce135af4` completed all three jobs.
+The restored 1,614-file snapshot passed SHA-256 verification. The cloud
+compiled the actual patched `virtual_ios.c`, replaced only `virtual.o` in
+`libntdll_unix.a`, and saved/reverified the migrated native checkpoint.
+All other native outputs were retained; the heavy stages were skipped.
+
+The app compiled and `verify-ipa` passed **85 checks, zero failures**, including
+all resources, Chinese strings, Wine i386/WoW64, Steam, DXMT, signatures and
+notices. IPA size: **673,342,641 bytes**. IPA SHA-256:
+`d24e80f55f3f0ee36611319db1266425d5b6e92657584a3cecb773855e497105`.
+The nonexpired downloadable artifact is
+[PlayPort-unsigned-IPA](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38485465819/artifacts/11860741302).
+Its outer ZIP is 673,342,925 bytes.
+
+The companion build-evidence artifact was downloaded and independently checked
+against SHA-256 `3dd95a88bde3869b4cd31ff0c221b4e4bca58865512739eaab7b3b9997ffe5dd`.
+Its verification log and source/series provenance match this run. The exact
+generated `app/artifacts.tsv` and Wine PE records are committed with this
+evidence. This follow-up changes only generated records and documentation;
+the downloadable IPA's compiled source remains the SHA above.
+
+**Device validation remains open:** install the new IPA over the existing app,
+preserving its container, then launch Senren Banka again. The expected new
+diagnostics are a successful `title pre-reservation`, an owned 4 GiB WoW64
+window and a FEX arena selected from the remaining space. Only the phone can
+establish whether the game proceeds to its first frame and Chinese rendering.
