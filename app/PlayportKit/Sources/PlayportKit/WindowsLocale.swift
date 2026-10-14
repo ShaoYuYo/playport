@@ -15,4 +15,14 @@ public enum WindowsLocale {
             return nil
         }
     }
+
+    /// Steam API strings are UTF-8. A legacy game that assumes Shift-JIS
+    /// for every narrow string can reject a non-ASCII Steam persona. Keep
+    /// this experimental compatibility alias scoped to Senren Banka.
+    /// The actual Steam account and SteamID never change.
+    public static func compatiblePersona(steamAppID: UInt32, original: String?) -> String? {
+        guard steamAppID == 1144400, let original,
+              original.unicodeScalars.contains(where: { $0.value > 127 }) else { return original }
+        return "Player"
+    }
 }
