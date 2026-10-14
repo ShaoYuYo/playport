@@ -255,6 +255,10 @@ final class LibraryModel: ObservableObject {
                                            var value = await service?.emulatorSettings(appID: app) ?? .init(appID: app)
                                            let installer = TitleInstaller(layout: Self.paths.layout, session: nil, log: SteamUILog.logger)
                                            value.language = installer.loadReceipt(app)?.language ?? "english"
+                                           // This changes only the game's emulator-visible
+                                           // display alias, never the signed-in Steam account.
+                                           value.personaName = WindowsLocale.compatiblePersona(
+                                               steamAppID: app, original: value.personaName)
                                            return value
                                        },
                                        ticket: ticket, tickets: tickets)
