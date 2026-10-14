@@ -23,6 +23,8 @@
 set -euo pipefail
 
 ROOT=$(realpath -m "${1:?usage: $0 ROOT}")
+MODES=${2:-"arm64ec wow64"}
+case "$MODES" in "arm64ec wow64"|arm64ec|wow64) ;; *) echo "invalid FEX build mode: $MODES" >&2; exit 1 ;; esac
 . "$(dirname "$0")/../lib.sh"
 PIN=$(pin fex)
 RPM=$(pin rpmalloc)
@@ -66,7 +68,7 @@ MAP="-ffile-prefix-map=$F=fex -ffile-prefix-map=$M=llvm-mingw"
 # The epoch is in the flags too, so objects built before it are compiled again.
 export SOURCE_DATE_EPOCH=$(git -C "$F" log -1 --format=%ct "$PIN")
 MAP="$MAP -DPLAYPORT_SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
-for mode in arm64ec wow64; do
+for mode in $MODES; do
     target=arm64ec; dllname=arm64ecfex; machine=ARM64EC; ios_flags=-DFEX_IOS_HOST=1
     # The WoW64 module runs on the iOS host too (fex 0016: JIT pool write
     # offset, the guest window); it links FEX's own CRT, not mingw's (fex 0015).

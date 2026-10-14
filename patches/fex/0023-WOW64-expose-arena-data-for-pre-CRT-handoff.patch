@@ -1,0 +1,30 @@
+From d34bd68a96ac2e0ced0dba0bc0078b63396b6b29 Mon Sep 17 00:00:00 2001
+From: The Playport authors <dev@playport.dev>
+Date: Wed, 14 Oct 2026 15:58:52 +0700
+Subject: [PATCH] WOW64: expose the host allocator band for pre-CRT loader
+ handoff
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-14-senren-windows-launch.md
+Offered-upstream: no
+---
+ Source/Windows/WOW64/libwow64fex.def | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/Source/Windows/WOW64/libwow64fex.def b/Source/Windows/WOW64/libwow64fex.def
+index 5fff39032..9ab0edf9f 100644
+--- a/Source/Windows/WOW64/libwow64fex.def
++++ b/Source/Windows/WOW64/libwow64fex.def
+@@ -1,6 +1,9 @@
+ LIBRARY libwow64fex.dll
+ 
+ EXPORTS
++  ; Set by the iOS native loader before the first rpmalloc allocation.
++  ios_fex_band_base DATA
++  ios_fex_band_end DATA
+   BTCpuFlushInstructionCache2
+   BTCpuFlushInstructionCacheHeavy
+   BTCpuGetBopCode
+-- 
+2.51.1
+

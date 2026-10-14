@@ -518,6 +518,8 @@ def wow64_checks(rt, rows):
         if name == "xtajit.dll" and path.is_file():
             check({"BTCpuProcessInit", "BTCpuThreadInit", "BTCpuSimulate"} <= pe_table(path, "export"),
                   "wow64: xtajit.dll exports BTCpuProcessInit, BTCpuThreadInit and BTCpuSimulate")
+            check({"ios_fex_band_base", "ios_fex_band_end"} <= pe_table(path, "export"),
+                  "wow64: xtajit.dll exposes both pre-CRT FEX arena DATA channels")
             # A CRT import loads kernelbase.dll into the WoW64 process before its NLS tables exist.
             dlls = pe_import_dlls(path)
             check(dlls == {"ntdll.dll", "wow64.dll"},

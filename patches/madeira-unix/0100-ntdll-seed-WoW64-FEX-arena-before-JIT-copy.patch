@@ -1,0 +1,177 @@
+From ba16e20ace1b4a34cefb6d3162e9890cd00d4f6e Mon Sep 17 00:00:00 2001
+From: The Playport authors <dev@playport.dev>
+Date: Wed, 14 Oct 2026 15:59:47 +0700
+Subject: [PATCH] ntdll: hand the host arena to WoW64 FEX before its CRT
+ allocator starts
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-14-senren-windows-launch.md
+Offered-upstream: no
+---
+ build/ntdll-unix/virtual_ios.c     | 44 ++++++++++++++++
+ build/ntdll-unix/wow64_fex_arena.h | 84 ++++++++++++++++++++++++++++++
+ 2 files changed, 128 insertions(+)
+ create mode 100644 build/ntdll-unix/wow64_fex_arena.h
+
+diff --git a/build/ntdll-unix/virtual_ios.c b/build/ntdll-unix/virtual_ios.c
+index 21a4dc4..c14f139 100644
+--- a/build/ntdll-unix/virtual_ios.c
++++ b/build/ntdll-unix/virtual_ios.c
+@@ -9238,6 +9238,43 @@ const char *ios_pe_module_name( const void *image_base, size_t image_size )
+ }
+ 
+ 
++#include "wow64_fex_arena.h"
++/* The WoW64 CRT initializes rpmalloc before BTCpuProcessInit can use normal
++ * PE APIs. Seed its exported data in the native backing BEFORE any JIT copy
++ * or DLL entry point. Copies and later IAT/data sync therefore retain exactly
++ * the same pre-set band. No getenv/Win32/CRT call can allocate prematurely. */
++static int ios_wow64_seed_fex_arena(void *image, size_t size)
++{
++    uint32_t slots[2];
++    uint64_t values[2] = {ios_fex_arena_base_unix, ios_fex_arena_end_unix};
++    if (strcmp(ios_pe_module_name(image, size), "libwow64fex.dll")) return 1;
++    if (!values[0] && !values[1]) return 1; /* unchanged legacy no-arena path */
++    if (!ios_wow64_fex_arena_valid(values[0], values[1]) ||
++        !ios_wow64_fex_arena_slots(image, size, slots))
++    {
++        dprintf(2, "[wow64-fex-arena] REJECTED: invalid published band or missing writable DATA exports\n");
++        return 0;
++    }
++    values[1]--; /* rpmalloc's highest address is inclusive, native end exclusive */
++    for (unsigned i = 0; i < 2; i++)
++    {
++        uintptr_t page = ((uintptr_t)image + slots[i]) & ~(uintptr_t)host_page_mask;
++        if (mprotect((void *)page, host_page_mask + 1, PROT_READ | PROT_WRITE))
++        {
++            dprintf(2, "[wow64-fex-arena] DATA protection failed errno=%d\n", errno);
++            return 0;
++        }
++    }
++    /* All protections succeeded before either field changes. The loader's
++     * serialization prevents a consumer observing a half-published pair. */
++    memcpy((char *)image + slots[0], &values[0], sizeof(values[0]));
++    memcpy((char *)image + slots[1], &values[1], sizeof(values[1]));
++    dprintf(2, "[wow64-fex-arena] pre-CRT handoff base=%#llx inclusive_end=%#llx before JIT copy\n",
++            (unsigned long long)values[0], (unsigned long long)values[1]);
++    return 1;
++}
++
++
+ /* task #34 .text sharing: pre-scan a SOURCE PE (before the pool memcpy) for
+  * the x18 trampoline budget, so the trampoline region can be folded into the
+  * image's own pool allocation at a FIXED image-relative offset. Fixed-offset
+@@ -10569,6 +10606,12 @@ static inline int mprotect_exec( void *base, size_t size, int unix_prot )
+                 return -1;
+             }
+ 
++            if (!ios_wow64_seed_fex_arena(image_base, image_size))
++            {
++                errno = EINVAL;
++                return -1;
++            }
++
+             /* Copy ENTIRE PE image to JIT pool (code + data + headers).
+              * This preserves ADRP-based PC-relative references between sections. */
+             ios_jit_scan_nonexec( "pre-memcpy", ios_pe_module_name( image_base, image_size ),
+@@ -11318,6 +11361,7 @@ int ios_jit_copy_module_for_child(void *module_addr, void *child_peb)
+     rx_dest = (char *)ios_jit_rx_base_global + offset;
+     src = (char *)m->pe_base;
+ 
++    if (!ios_wow64_seed_fex_arena((void *)src, m->size)) { errno = EINVAL; return -1; }
+     memcpy(rw_dest, src, m->size);
+     /* task #34: verify HERE, before relocations/x18 patching legitimately
+      * diverge the copy from its source. This is the path that produces the
+diff --git a/build/ntdll-unix/wow64_fex_arena.h b/build/ntdll-unix/wow64_fex_arena.h
+new file mode 100644
+index 0000000..7c59740
+--- /dev/null
++++ b/build/ntdll-unix/wow64_fex_arena.h
+@@ -0,0 +1,84 @@
++/* SPDX-License-Identifier: LGPL-2.1-or-later */
++/* Bounded PE32+ data-export lookup, shared with the host regression test. */
++#ifndef IOS_WOW64_FEX_ARENA_H
++#define IOS_WOW64_FEX_ARENA_H
++#include <stdint.h>
++#include <stddef.h>
++#include <string.h>
++
++static inline uint32_t ios_fex_u32(const unsigned char *p)
++{
++    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
++}
++static inline uint16_t ios_fex_u16(const unsigned char *p)
++{
++    return (uint16_t)(p[0] | (uint16_t)p[1] << 8);
++}
++static inline int ios_fex_span(size_t size, uint32_t off, size_t bytes)
++{
++    return off <= size && bytes <= size - off;
++}
++static inline int ios_wow64_fex_arena_valid(uint64_t base, uint64_t end)
++{
++    return base >= UINT64_C(0x100000000) && end > base &&
++           !(base & 0xffff) && !(end & 0xffff) && end - base >= UINT64_C(0x40000000);
++}
++
++/* Only writable, non-executable, non-forwarded, distinct 64-bit DATA slots.
++ * No output changes on rejection and no allocations or PE/CRT calls. */
++static int ios_wow64_fex_arena_slots(const void *image, size_t size, uint32_t result[2])
++{
++    const unsigned char *b = image, *pe, *exp, *section;
++    static const char *const wanted[2] = {"ios_fex_band_base", "ios_fex_band_end"};
++    uint32_t po, er, es, functions, names, ordinals, nf, nn, slots[2] = {0, 0};
++    uint16_t ns, os;
++    unsigned found = 0;
++    if (!b || !result || size < 64 || b[0] != 'M' || b[1] != 'Z') return 0;
++    po = ios_fex_u32(b + 60);
++    if (!ios_fex_span(size, po, 0x90)) return 0;
++    pe = b + po;
++    if (memcmp(pe, "PE\0\0", 4) || ios_fex_u16(pe + 4) != 0xaa64 ||
++        ios_fex_u16(pe + 24) != 0x20b || !ios_fex_u32(pe + 0x84)) return 0;
++    ns = ios_fex_u16(pe + 6); os = ios_fex_u16(pe + 20);
++    if (os < 120 || !ios_fex_span(size, po, 24 + (size_t)os + (size_t)ns * 40)) return 0;
++    section = pe + 24 + os;
++    er = ios_fex_u32(pe + 0x88); es = ios_fex_u32(pe + 0x8c);
++    if (!er || es < 40 || !ios_fex_span(size, er, es)) return 0;
++    exp = b + er;
++    nf = ios_fex_u32(exp + 20); nn = ios_fex_u32(exp + 24);
++    functions = ios_fex_u32(exp + 28); names = ios_fex_u32(exp + 32); ordinals = ios_fex_u32(exp + 36);
++    if (!nf || !nn || nf > size / 4 || nn > size / 4 ||
++        !ios_fex_span(size, functions, (size_t)nf * 4) ||
++        !ios_fex_span(size, names, (size_t)nn * 4) || !ios_fex_span(size, ordinals, (size_t)nn * 2)) return 0;
++    for (uint32_t i = 0; i < nn; i++)
++    {
++        uint32_t name = ios_fex_u32(b + names + (size_t)i * 4);
++        for (unsigned k = 0; k < 2; k++)
++        {
++            size_t length = strlen(wanted[k]) + 1;
++            uint16_t ordinal;
++            uint32_t rva;
++            int writable = 0;
++            if (!ios_fex_span(size, name, length) || memcmp(b + name, wanted[k], length)) continue;
++            if (found & (1u << k)) return 0;
++            ordinal = ios_fex_u16(b + ordinals + (size_t)i * 2);
++            if (ordinal >= nf) return 0;
++            rva = ios_fex_u32(b + functions + (size_t)ordinal * 4);
++            if (!rva || (rva & 7) || !ios_fex_span(size, rva, 8) ||
++                (rva >= er && rva - er < es)) return 0;
++            for (unsigned s = 0; s < ns; s++)
++            {
++                const unsigned char *sh = section + (size_t)s * 40;
++                uint32_t va = ios_fex_u32(sh + 12), bytes = ios_fex_u32(sh + 8), flags = ios_fex_u32(sh + 36);
++                if ((flags & 0x80000000u) && !(flags & 0x20000000u) &&
++                    rva >= va && rva - va <= bytes && 8 <= bytes - (rva - va)) writable = 1;
++            }
++            if (!writable) return 0;
++            slots[k] = rva; found |= 1u << k;
++        }
++    }
++    if (found != 3 || slots[0] == slots[1]) return 0;
++    result[0] = slots[0]; result[1] = slots[1];
++    return 1;
++}
++#endif
+-- 
+2.51.1
+

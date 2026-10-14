@@ -92,3 +92,42 @@ preserving its container, then launch Senren Banka again. The expected new
 diagnostics are a successful `title pre-reservation`, an owned 4 GiB WoW64
 window and a FEX arena selected from the remaining space. Only the phone can
 establish whether the game proceeds to its first frame and Chinese rendering.
+
+
+## Afternoon device report: WoW64 FEX allocator handoff
+
+The owner's `Playport-report-app-1144400-20261014-164846.zip` includes two
+new launches. The morning reservation repair worked: the selected machine is
+i386, the native host owns the complete 4 GiB guest window, and FEX reserves a
+separate 1 GiB arena. The game maps at guest address `0x400000` and the session
+launch returns success. Nevertheless WoW64 FEX's first allocator initialization
+probes the old hardcoded arena bands, reports `NO BAND`, and faults writing
+through a null allocation. This is a second defect after the repaired window
+allocation, not evidence of a missing game or failed Steam download.
+
+The native arena channel reaches ARM64EC FEX but the WoW64 DLL did not export
+its corresponding DATA slots. `InitCRTProcess()` initializes rpmalloc before
+normal FEX startup, so handing the values over later is too late. Patch 0023
+exports those two existing globals. Native patch 0100 validates their mapped
+PE DATA locations and writes the host's already-reserved arena into the backing
+image before the parent or child JIT copy. The consumer's end is inclusive;
+the native channel's exclusive end is converted with `end - 1`. Later backing
+and IAT synchronization retains the same pair. No early Win32/CRT/environment
+call is added. Malformed exports or a partial protection failure reject module
+loading before either DATA value is written.
+
+The checkpoint migration now accepts only this precise native patch append,
+WoW64 export append and matching build/verifier changes. It verifies run 24's
+snapshot, rebuilds only `virtual.o` and WoW64 FEX, updates only their artifact
+records and saves/reverifies a new snapshot. ARM64EC FEX, Wine PE, DXMT, Mesa,
+Steam and notices remain cached. The actual newly linked WoW64 DLL is mapped
+on the build host and validated with the same bounded native DATA parser before
+staging; IPA verification additionally requires both exports.
+
+The host regression test compiles the production parser and handoff wrapper
+with undefined-behavior checks, covers the reported 1 GiB range and inclusive
+end, backing-to-JIT copy, invalid/forwarded/aliased/executable/out-of-bounds
+exports, truncated headers and partial protection failure. Manifest tests
+ensure only the two changed native outputs are recorded. This source repair
+still requires cloud native compilation, IPA verification and another phone
+launch; no first frame or Chinese game rendering is claimed here.
