@@ -273,3 +273,42 @@ with the computed four blocks. The literal is corrected as four explicit
 length before computing end addresses; this is fixed before accepting the
 source. The IPA job was skipped by the failed-test gate. No verifier was disabled
 and the source has not yet been promoted to main.
+
+
+## Run 27: encrypted x86 preparation IPA verified
+
+Run [38552645635](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38552645635)
+on source `cdee994d2b98edd318a13146e69ff49d5167121a` and workflow
+`65d77b18e94f6da16a98d1dabf2f0a8cf4461875` completed all three jobs successfully
+on 2026-10-14 at 19:12 Taiwan time. Swift 6.4 CI ran 43 AES/codec/depot/SteamStub
+tests with zero failures and the existing real-executable sample test skipped
+because the owner's EXE is not present on the runner. Both GameLanguage tests
+and all 17 focused Python tests passed. The source branch was promoted to main
+only after these checks succeeded. NIST/OpenSSL vectors, padding-shaped code,
+reversible preparation, original checksum verification, TLS safety and malformed
+UINT64_MAX rejection are included in the passing tests.
+
+The 1,614-file native runtime snapshot was restored and checksum-verified;
+there was no native rebuild or migration and no workstation path replacement.
+All four generated artifact/Wine PE records remain byte-identical to run 25.
+The production SwiftUI/Liquid Glass preflight and the actual full release app
+compilation both succeeded. Final `verify-ipa`: **86 checks passed, zero failed**.
+The unsigned IPA is **673,345,953 bytes**, SHA-256
+`5e576367d7ecd3708f65fd58edd7a2485d3752d914ea53312e3ef8de59b57f02`.
+[PlayPort-unsigned-IPA](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38552645635/artifacts/11889795240)
+is nonexpired; outer ZIP size is 673,346,237 bytes and its digest is
+`c3783d9e45eb6888c890f5752bf39edbdb5dd196897694a5edbd9e7422ad27fa`.
+The 226,839-byte build-evidence ZIP was downloaded and independently verified
+against digest `e70019f3eb579da0d6e0fdbcd8ad900e219262510223453254351b1e2c1c1e08`.
+Its provenance names the exact source SHA and unchanged native patch series;
+its IPA checksum agrees with the completed build log. This follow-up records
+the outcome only and does not require another app build.
+
+**Actual game validation remains open:** upgrade in place, preserving the Wine
+prefix, Steam login, game and saves, then launch Senren Banka through its Play UI.
+The new launch should report `steamstub: ... removed encrypted=1` with its
+original entry point and should execute decrypted game code instead of the
+wrapper that faulted at guest EIP `0x8db75f`. If preparation rejects this EXE's
+layout, its original bytes remain intact and the precise reason is logged.
+No first frame, Chinese rendering or absence of later FEX/game faults is claimed
+from the host tests or successful IPA build.
