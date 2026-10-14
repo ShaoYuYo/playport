@@ -110,3 +110,25 @@ title. The useful next observation is first_frame=1 with continued play, or a
 new bounded report containing Windows dialog, NLS probes and Steam DLL metadata.
 Until then, title 1144400 remains **Broken on the last observed phone build**.
 Do not disable the hourly repair watch merely because IPA compilation succeeds.
+
+## Cloud attempt and local check limits (23:23 Taipei)
+
+Source `f7168612b50b249c83643c3a14f58703ebce2948`, private workflow
+`9ec597c23b1025e94ee54908c0246907bc2da46d`,
+[run 31 / 38588812883](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38588812883)
+was created at 15:23:00 UTC and ended at 15:23:04 UTC. Both Ubuntu preflight jobs
+failed before any steps were recorded; build-ipa was skipped. The job log fetch
+returns BlobNotFound. Check metadata reports one annotation for each failed
+preflight, but the available connector rejects the annotations endpoint.
+**The exact runner-side explanation is not yet readable; do not infer a billing
+failure or a compiler error from this alone.** No new IPA exists for this source.
+
+22 focused production-C/Python tests pass. A broader local `pp test --quick`
+ran 538 tool tests but did not fully pass: three sanitizer probes fail because
+this executor cannot read process task metadata, four phone-mux socket tests
+cannot create AF_UNIX sockets, and the WoW64 build gate / host C commands need
+clang, which is not installed in this pruned workspace. Three tests were skipped
+by their existing prerequisites. Do not mark the full suite as green.
+The new patch's Class label was corrected to the permitted `ios-port` value;
+the patch body and tested conversion are unchanged. Public source-only CI and
+real Apple/PE compilation remain separate required observations.

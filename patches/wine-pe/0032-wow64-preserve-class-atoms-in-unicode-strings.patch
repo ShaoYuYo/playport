@@ -4,7 +4,7 @@ Date: Wed, 14 Oct 2026 23:03:32 +0800
 Subject: [PATCH] wow64: preserve integer class atoms in zero-length Unicode
  strings
 
-Class: correctness
+Class: ios-port
 
 Evidence: docs/evidence/2026-10-14-windows-compatibility-audit.md; actual header conversion regression and phone USER creation error 6
 
