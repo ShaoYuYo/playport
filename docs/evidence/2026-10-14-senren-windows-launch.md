@@ -131,3 +131,50 @@ exports, truncated headers and partial protection failure. Manifest tests
 ensure only the two changed native outputs are recorded. This source repair
 still requires cloud native compilation, IPA verification and another phone
 launch; no first frame or Chinese game rendering is claimed here.
+
+
+## Run 25: pre-CRT handoff build completed
+
+Run [38540569334](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38540569334)
+on source `1c206116709728c7dc4fa00a145e8c05b7772781` and workflow
+`200a1c59a91ebd702cedd94844cc98e2e49151d4` completed all three jobs successfully
+on 2026-10-14 at 17:52 Taiwan time. The native migration compiled the actual
+patched Wine object and WoW64 FEX DLL. The production parser verified the new
+DATA RVAs `0x3d14f0` and `0x3d14f8` before staging. Its 1,614-file checkpoint
+was saved and reverified under the new native key ending
+`ea40aa39a41a054f38899634b21b9ba6432a1059881cdb6a508c70b88a353f9f`.
+The full Wine/DXMT/Mesa rebuild stages were skipped because their cached
+outputs had passed SHA-256 verification.
+
+Cloud Swift tests ran 18 SteamStub/depot tests with zero failures and the
+existing real-sample test skipped because no `STEAMSTUB_SAMPLE` fixture was
+provided; both GameLanguage tests and all 17 focused Python tests passed.
+The real production SwiftUI/Liquid Glass IPA preflight passed as well.
+FEX's upstream host-only SVE probe printed a nonfatal Python error on the x86
+runner's missing ARM CPU feature field. CMake treats its nonzero result as the
+conservative SVE-disabled `cortex-a78` fallback; actual compilation, DLL
+validation and final verification all completed. No validation gate was removed.
+
+Final `verify-ipa`: **86 checks passed, zero failed**. The new check confirms
+both WoW64 FEX arena DATA channels are present in the bundled `xtajit.dll`.
+The verified unsigned IPA is **673,342,689 bytes**; its SHA-256 is
+`c0c3db30a494896dbb5c42fe77d6d85e3da1908999ef660e75cf571aedbcd8fa`.
+[PlayPort-unsigned-IPA](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38540569334/artifacts/11883499647)
+is nonexpired; its outer ZIP is **673,342,973 bytes**, digest
+`936fc23b78d414e64dffd55fe7a625a926d8007ce69278be12755c30b2f0e40e`.
+
+The 226,838-byte companion build-evidence ZIP was downloaded and independently
+verified against SHA-256
+`120500d18c3022f73f9ba3fed5969a115fbdbe6b3ed90fad29ffa6f4c81212be`.
+Its `provenance.txt` names the exact source SHA above and the updated series;
+its `SHA256SUMS` agrees with the completed job log. The generated manifest
+changes only the Wine archive and WoW64 FEX hashes; all other artifact rows
+and Wine PE records remain byte-identical. These exact records accompany this
+evidence-only follow-up; the downloadable IPA still comes from source `1c206116`.
+
+**Phone validation is still open.** Upgrade over the existing app to preserve
+the Wine prefix, Steam session and installed game. The next fresh Senren Banka
+launch should show `[wow64-fex-arena] pre-CRT handoff` before FEX's allocator
+initializes. Check the latest launch block rather than historical errors in an
+appended report. A first frame and correct Chinese rendering must still be
+established on the owner's iPhone; neither is claimed from build success.

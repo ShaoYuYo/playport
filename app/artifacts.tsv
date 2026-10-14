@@ -925,7 +925,7 @@ resource	Runtime/i386-windows/xmllite.dll	131072	9c6241bb79e409156f6ca7b9862b7ad
 resource	Runtime/i386-windows/xolehlp.dll	217088	e433dd03690f521e2566c60ec4b852206759cb5057eaec85b2f61fc723bb988f	wine-build	build-macos/dlls/xolehlp/i386-windows/xolehlp.dll	P2
 resource	Runtime/i386-windows/xpsprint.dll	32768	c541f912e7410d784af4fdcc9103657e1712fce9132f1fc3f6c4e010a37d5505	wine-build	build-macos/dlls/xpsprint/i386-windows/xpsprint.dll	P2
 resource	Runtime/i386-windows/xpssvcs.dll	28672	8c9325062a7ec3e86ede2d039f8b5cecbac28c95d95f291c37d87b39cf81fa36	wine-build	build-macos/dlls/xpssvcs/i386-windows/xpssvcs.dll	P2
-resource	Runtime/aarch64-windows/xtajit.dll	5090816	d8795dbce7883446da08d9b0670cd4224b72e0f17aeb247b4f470075448bfccc	fex-wow64	libwow64fex.dll	P1-de
+resource	Runtime/aarch64-windows/xtajit.dll	5090816	be864499422cc79062568767f41d7d2f06926c91887759880230b3b4412ce1b7	fex-wow64	libwow64fex.dll	P1-de
 resource	Runtime/vulkan/arm64ec-windows/d3d8.dll	1830912	c67da9490485f1a8401337ad6c9b5a0e00c125a238fb6c01c59656f812a2c4e1	vulkan-pe	arm64ec-windows/d3d8.dll	P6-vulkan-pe
 resource	Runtime/vulkan/arm64ec-windows/d3d9.dll	7405568	fafdca3792b084f788f52eae8d1d9a43d28cb0abb996c945403b0112809abf3d	vulkan-pe	arm64ec-windows/d3d9.dll	P6-vulkan-pe
 resource	Runtime/vulkan/arm64ec-windows/d3d10core.dll	430080	e59df3579d0faedd3df42719a799e1370d69808fa2c7dc45fceaaeb8a01f704c	vulkan-pe	arm64ec-windows/d3d10core.dll	P6-vulkan-pe
@@ -960,7 +960,7 @@ resource	Runtime/registry/system.reg	506267	10fc366caf0cbaa72fd003adc79dc39c2a49
 resource	Runtime/registry/user.reg	1610	590b70ff4b8a797c3c1d385550b22765d7c8c9ac2e8d0581f679e2b5fd49a75b	registry	user.reg	P7-reg
 resource	Runtime/registry/cjk-fonts.reg	636	d7eac888a403e4e9a5af256ce6963e26a6d889c1b680b1bfa6fef526e1f61b7b	registry	cjk-fonts.reg	P7-reg
 resource	Runtime/certs/cacert.pem	188900	a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505	ca-bundle	cacert.pem	ca-bundle
-link	lib/libntdll_unix.a	3113272	08ba53f6f7fdfeaa8ef52d7410c209c03536dd4fe2811d3dede44db1d6aebbf8	unix	mythic/app/Madeira/libntdll_unix.a	P3
+link	lib/libntdll_unix.a	3115656	62d800dc7e2c689ce3d25376222d59338d2d9f64b4d7f0446916400e96442ce6	unix	mythic/app/Madeira/libntdll_unix.a	P3
 link	lib/libwin32u_unix.a	4122192	15db0738a2bea85078c91a24850e5cbec4a98decdf6b051b7c0edc8f2a676956	unix	mythic/app/Madeira/libwin32u_unix.a	P4-win32u
 link	lib/libwineserver.a	1218648	dac2a2f898b268b7b684cd825e9639d8de33e1c24112818c0a605d5f9e598b10	unix	mythic/app/Madeira/libwineserver.a	P4-server
 link	lib/libgnutls.a	3603280	e9fb697d624bb63d1c89e8569f1a8e0e69e576175407853bf34a6279fa1673b3	unix	mythic/toolchains/gnutls-ios/lib/libgnutls.a	P4-crypto
