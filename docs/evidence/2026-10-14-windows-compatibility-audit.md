@@ -140,3 +140,32 @@ public repository is a fork and has no recorded Actions runs, including after
 the follow-up source push; no public CI result can be claimed either. Enabling
 fork Actions or changing account billing requires administrative access that
 the connected tools do not expose; neither setting was changed.
+
+
+## Latest source confirmation — run 32 (23:56 Taipei)
+
+After the owner's request to continue, the workflow was pinned once to
+`3981c2e3c10b94cb171d5c746f17816ded2b6df6`, which includes the corrected patch
+classification, native Toggle indicators, localized accessible control state and
+latest Liquid Glass changes. Workflow commit
+`7d29e5e9452f881482ba0454d925b3b111db1cfd` changes only
+`.github/workflows/build-playport.yml` (the source pin); no StikDebug app file
+or upstream repository changed.
+
+[Run 32 / 38593715876](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38593715876)
+was created at 15:56:14 UTC. Both preflight jobs ended at 15:56:17 UTC with
+runner_id=0 and steps=[]; build-ipa was skipped. No artifact exists.
+The failed check outputs have no summary/text and one annotation each. The
+connector still does not expose the annotation text, so the exact refusal
+cannot be attributed to a billing issue, SDK, compiler or source code.
+The previous run and other jobs in this private repository show the same
+absence of an allocated runner. No further unchanged attempt is justified
+until new evidence or runner availability changes.
+
+The repeated focused local resource/production helper checks passed (11 tests).
+There is still no real SwiftUI/PE compilation for this source and no new phone
+play result. Keep the complete parent checkpoint and all verification gates;
+do not replace the requested game runtime with a reduced build to obtain a
+nominal success. The owner's latest instruction forbids Apple-account login;
+no further browser credential entry or new-account workaround is part of this
+continuation.
