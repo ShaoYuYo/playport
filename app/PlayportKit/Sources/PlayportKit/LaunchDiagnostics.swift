@@ -42,8 +42,17 @@ public enum LaunchDiagnostics {
 
     /// Names and sizes only: enough to spot a missing archive/plugin or a language depot mismatch.
     public static func inventory(in root: URL) -> String {
-        "Game folder inventory (relative names and bytes; scan limited to 2048 entries, depth 4)\n"
-        + entries(in: root).map { "\($0.size)\t\($0.relative)" }.joined(separator: "\n") + "\n"
+        let heading = "Game folder inventory (relative names and bytes; scan limited to 2048 entries, depth 4)\n"
+        let files = entries(in: root)
+        if files.isEmpty {
+            // An empty inventory was indistinguishable from a failed root
+            // lookup in earlier phone reports. Do not expose container paths.
+            let status = FileManager.default.fileExists(atPath: root.path)
+                ? "(no regular files enumerated; check directory access and install layout)"
+                : "(game directory unavailable when report was created)"
+            return heading + status + "\n"
+        }
+        return heading + files.map { "\($0.size)\t\($0.relative)" }.joined(separator: "\n") + "\n"
     }
 
     private struct Entry {
