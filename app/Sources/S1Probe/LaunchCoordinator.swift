@@ -116,6 +116,8 @@ enum LaunchCoordinator {
             case failed
             /// The title exited with this code (an NTSTATUS crash code stays unsigned).
             case exited(UInt32)
+            /// It exited before any drawable in the first ten seconds, including code zero.
+            case endedBeforeDrawing(UInt32)
             /// The JIT pool ran out (JitPool.Use.exhaustion) before the title ended,
             /// whatever its exit code: its own outcome, not a crash or a failed start.
             case outOfJitMemory(JitPool.Exhaustion)
@@ -126,25 +128,24 @@ enum LaunchCoordinator {
         var line: String
         /// The JIT pool the launch had, in MiB; 0 when it never got one.
         var poolMB: Int = 0
+        var detail: String? = nil
     }
 
     fileprivate static func log(_ line: String) { WineHostRuntime.appendLog("title: " + line) }
 
     /// Puts the game's steam_api in the launch's mode: the emulator with its
     /// settings written and SteamStub taken off the executables Playport can
-    /// unwrap, or the game's own of both. A failure is logged and the launch
-    /// goes on: the game then meets whichever files are in place.
-    private static func prepareSteamAPI(_ s: SteamAPI) {
+    /// unwrap, or the game's own of both. Preparation must finish before starting Wine.
+    private static func prepareSteamAPI(_ s: SteamAPI, selectedExecutable: String) throws {
         final class Box: @unchecked Sendable { var settings: SteamAPISwap.Settings? }
         let box = Box(), done = DispatchSemaphore(value: 0)
         Task.detached { box.settings = await s.settings(); done.signal() }
         let settings = done.wait(timeout: .now() + 10) == .timedOut ? nil : box.settings
         let fields = settings.map { t in
-            "persona \(t.personaName == nil ? "none" : "set"), steamid \(t.steamID == nil ? "none" : "set"), \(t.dlc.count) DLC"
+            "persona \(t.personaName == nil ? "none" : "set"), steamid \(t.steamID == nil ? "none" : "set"), \(t.dlc.count) DLC, language=\(t.language)"
         } ?? "no settings in 10 s: app ID only"
         guard let runtime = Manifest.runtime else {
-            log("steamapi: no staged runtime; the game's own steam_api stays")
-            return
+            throw NSError(domain: "Playport.SteamPreparation", code: 1, userInfo: [NSLocalizedDescriptionKey: "The Steam runtime is missing from this build."])
         }
         // A ticket a crash or a kill left behind goes before anything else (decision 0017).
         removeTicket(s, when: "before the launch")
@@ -171,6 +172,11 @@ enum LaunchCoordinator {
                 for site in try SteamStub.remove(in: s.root) {
                     log("steamstub: \(site.path): \(site.info.label), " + (site.info.unsupported ?? (site.removed ? "removed" : "kept"))
                         + " encrypted=\(site.info.encrypted ? 1 : 0) app=\(site.info.appID) oep=0x\(String(site.info.originalEntryPoint, radix: 16)) flags=0x\(String(site.info.flags, radix: 16))")
+                    if !site.removed,
+                       s.root.appendingPathComponent(site.path).resolvingSymlinksInPath().path == URL(fileURLWithPath: selectedExecutable).resolvingSymlinksInPath().path {
+                        throw NSError(domain: "Playport.SteamPreparation", code: 2,
+                                      userInfo: [NSLocalizedDescriptionKey: site.info.unsupported ?? "The selected executable still has its Steam wrapper."])
+                    }
                     stub = site.removed ? "removed" : "unsupported"
                 }
             } else if try SteamStub.restore(in: s.root) > 0 {
@@ -185,6 +191,7 @@ enum LaunchCoordinator {
             #if !PLAYPORT_RELEASE
             RunEvents.emit("steamapi", ["mode": s.mode.rawValue, "error": "\(error)"])
             #endif
+            throw error
         }
     }
 
@@ -350,9 +357,19 @@ enum LaunchCoordinator {
             }
         }
 
-        if let s = r.steamAPI { prepareSteamAPI(s) }
-        // However the launch ends from here, the ticket goes with it (decision 0017).
-        defer { if let s = r.steamAPI { removeTicket(s, when: "at exit") } }
+        // Cleanup also covers a refused wrapper or a failed settings/ticket write.
+        defer {
+            if let s = r.steamAPI { removeTicket(s, when: "at exit") }
+            SteamTicketHost.arm(nil)
+        }
+        if let s = r.steamAPI {
+            do {
+                let selected = withUnsafeBytes(of: tp.unix_path) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+                try prepareSteamAPI(s, selectedExecutable: selected)
+            } catch {
+                return Outcome(kind: .failed, line: "launch=failed steamapi=preparation", detail: error.localizedDescription)
+            }
+        }
         if let e = r.epic { prepareEpic(e) }
         // And the ownership token file (decision 0059).
         defer { if let e = r.epic { removeOwnershipFile(e, when: "at exit") } }
@@ -396,6 +413,8 @@ enum LaunchCoordinator {
         Diagnostics.loadBeforeRuntime()
         #endif
         step(.waitingForJit(until: Date().addingTimeInterval(r.jitWait)))
+        // Preserve errors and dialog text in the bounded player log before Wine reads its channels.
+        setenv("WINEDEBUG", "-all,err+all,warn+all,+debugstr,+msgbox", 1)
         let started = runtime.start(poolMB: poolMB, wait: r.jitWait) { step(.startingRuntime) }
         log("runtime: \(started.detail), activation \(String(format: "%.2f", started.activationSeconds)) s")
         mark("runtime started")
@@ -416,11 +435,16 @@ enum LaunchCoordinator {
         #endif
         let environment = applyEnvironment(backend: backend, steamAppID: r.steamAppID, fex: r.fex)
         step(.startingGame)
+        let frame = FirstDrawable()
+        defer { PacedMetalLayer.onFirstFrame { } }
         PacedMetalLayer.onFirstFrame {
+            frame.mark()
             mark("first frame")
             step(.drawing)
         }
         let pool = PoolLog()
+        let t0 = Date()
+        let logOffset = ((try? FileManager.default.attributesOfItem(atPath: AppLog.url.path))?[.size] as? NSNumber)?.uint64Value ?? 0
         let rc = runtime.launch(exe: r.exe, args: args, environment: environment)
         log("wine_host_session_launch -> \(rc)")
         mark("game started")
@@ -429,7 +453,6 @@ enum LaunchCoordinator {
             return pool.end(Outcome(kind: .failed, line: "launch=failed run_exe=\(rc)"), mark: mark)
         }
 
-        let t0 = Date()
         step(.running(since: t0))
         while true {
             // In 2 s slices, so the pool's use is logged as it grows.
@@ -437,7 +460,10 @@ enum LaunchCoordinator {
             let elapsed = Date().timeIntervalSince(t0)
             if w.rc == 0 {
                 let exit = UInt32(bitPattern: w.code)
-                return pool.end(Outcome(kind: .exited(exit), line: "exit=\(String(format: "0x%08x", exit)) after_s=\(Int(elapsed))"),
+                let early = LaunchDiagnostics.endedBeforeDrawing(exitCode: exit, drewFrame: frame.read(), elapsed: elapsed)
+                let kind: Outcome.Kind = early ? .endedBeforeDrawing(exit) : .exited(exit)
+                return pool.end(Outcome(kind: kind, line: "exit=\(String(format: "0x%08x", exit)) after_s=\(Int(elapsed)) first_frame=\(frame.read() ? 1 : 0)",
+                                        detail: LaunchDiagnostics.windowsMessage(in: AppLog.url, after: logOffset)),
                                 mark: mark)
             }
             if w.rc < 0 {
@@ -450,6 +476,13 @@ enum LaunchCoordinator {
                 return pool.end(Outcome(kind: .failed, line: "still-running after_s=\(Int(elapsed))"), mark: mark)
             }
         }
+    }
+
+    private final class FirstDrawable: @unchecked Sendable {
+        private let lock = NSLock()
+        private var drawn = false
+        func mark() { lock.lock(); drawn = true; lock.unlock() }
+        func read() -> Bool { lock.lock(); defer { lock.unlock() }; return drawn }
     }
 
     /// The pool's use during a launch: a `title: pool:` line (and a dev build's

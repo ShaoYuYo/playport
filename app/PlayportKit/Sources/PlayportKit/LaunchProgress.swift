@@ -59,6 +59,7 @@ public enum LaunchProgress {
     public static func failedStage(_ line: String) -> LaunchStage? {
         guard line.hasPrefix("launch=failed ") else { return nil }
         let rest = line.dropFirst("launch=failed ".count)
+        if rest.hasPrefix("steamapi=") { return .preparing }
         if rest.hasPrefix("runtime=JIT pool (") { return .jit }
         if rest.hasPrefix("runtime=") || rest.hasPrefix("selfcheck=") { return .runtime }
         if rest.hasPrefix("run_exe=") || rest.hasPrefix("wait=") { return .game }

@@ -205,3 +205,11 @@
 "on your controller for the Playport menu" = "控制器上的按鈕以開啟 Playport 選單";
 "x87 precision" = "x87 精度";
 "· Update" = "· 更新";
+"Game ended during startup" = "遊戲在啟動期間結束";
+"The game exited before showing its first frame. This can happen even with exit code 0. Share a problem report to see the game and Wine logs." = "遊戲尚未顯示第一個畫面就已退出，即使退出碼為 0 也可能發生。請分享問題報告，以查看遊戲與 Wine 日誌。";
+"Exit code: %@" = "退出碼：%@";
+"Game stopped unexpectedly" = "遊戲意外停止";
+"Steam preparation failed" = "Steam 啟動準備失敗";
+"The Steam API or executable could not be prepared. The game was not started." = "無法完成 Steam API 或執行檔的準備，遊戲尚未啟動。";
+"Windows message: %@" = "Windows 訊息：%@";
+"Share a problem report before trying again. Game files and saves are kept." = "請先分享問題報告，再嘗試啟動。遊戲檔案與存檔會保留。";

@@ -205,3 +205,11 @@
 "on your controller for the Playport menu" = "on your controller for the Playport menu";
 "x87 precision" = "x87 precision";
 "· Update" = "· Update";
+"Game ended during startup" = "Game ended during startup";
+"The game exited before showing its first frame. This can happen even with exit code 0. Share a problem report to see the game and Wine logs." = "The game exited before showing its first frame. This can happen even with exit code 0. Share a problem report to see the game and Wine logs.";
+"Exit code: %@" = "Exit code: %@";
+"Game stopped unexpectedly" = "Game stopped unexpectedly";
+"Steam preparation failed" = "Steam preparation failed";
+"The Steam API or executable could not be prepared. The game was not started." = "The Steam API or executable could not be prepared. The game was not started.";
+"Windows message: %@" = "Windows message: %@";
+"Share a problem report before trying again. Game files and saves are kept." = "Share a problem report before trying again. Game files and saves are kept.";

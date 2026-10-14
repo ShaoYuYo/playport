@@ -312,3 +312,72 @@ wrapper that faulted at guest EIP `0x8db75f`. If preparation rejects this EXE's
 layout, its original bytes remain intact and the precise reason is logged.
 No first frame, Chinese rendering or absence of later FEX/game faults is claimed
 from the host tests or successful IPA build.
+
+## Follow-up: decrypted game exits silently in the 19:34 phone report
+
+The new private report (kept only in `.work/device-reports/1144400-193400/`)
+contains two launches after the encrypted x86 fix. Both log `removed encrypted=1
+app=1144400 oep=0x23b053 flags=0x0`; the pre-CRT arena handoff still succeeds.
+The game creates its own x86 worker threads and reaches a C++ exception
+`e06d7363`, then exits with code zero after 1004 / 970 ms. Neither launch
+records a first frame. There is no new access violation or arena exhaustion.
+A first-chance C++ exception does not by itself identify the fatal error.
+The report contains only Playport's log and the allocator log, with no game
+console log or Windows message-box text. Do not describe this as playable.
+
+Confirmed UI defects: `LaunchMessage` discarded every zero-code exit, and
+Steam preparation caught errors and continued. A failed restart also replaced
+the structured game message with an unstructured restart alert, losing the
+report/retry screen. This change:
+
+- Reports an exit in the first ten seconds without any drawable, even code zero,
+  and preserves unsigned crash codes in the player UI. Normal drawn plays and
+  deliberate Quit keep their previous behavior.
+- Makes Steam preparation fail closed, includes the selected unsupported wrapper
+  in that refusal, and cleans up tickets/broker state on every path.
+- Enables Wine error/warning, debug-string and message-box channels before Wine
+  initializes them; keeps the existing release log cap and omits per-frame tracing.
+- Shows this launch's latest Wine message-box text when available, ignoring older
+  launches and reading at most 128 KiB. Does not treat every C++ throw as fatal.
+- Keeps the structured failure screen through unavailable/failed automatic restart,
+  and adds its direct Report a problem button using the native glass treatment.
+- Exports bounded `.log` files inside the selected game, plus relative file names
+  and sizes to diagnose missing data/plugins or language depot mismatches. It
+  does not export game content, save content, configuration/ticket files, or links
+  outside the selected game's folder. Logs with equal basenames remain distinct.
+- Adds the new player strings in English, Traditional and Simplified Chinese.
+
+Primary references checked for the user's requested research:
+
+- [Valve Steamworks initialization](https://partner.steamgames.com/doc/sdk/api):
+  the Steam client/API, app identity, owned license and working directory matter;
+  RestartAppIfNecessary may deliberately terminate the caller. Playport already
+  sets app IDs and the report confirms the executable's working directory.
+- [Valve Proton](https://github.com/ValveSoftware/Proton): diagnostic logging and
+  Wine integration are required to distinguish launch/API/graphics failures.
+  Its Linux runtime is not an installable replacement for this iOS host.
+- WineHQ `wine-11.19` `dlls/user32/msgbox.c`, read from the upstream mirror:
+  the existing `TRACE_(msgbox)` records the Unicode dialog text. No Wine patch
+  or new native cache key is necessary to enable this channel.
+- Read-only engine reference `krkrz/krkrz` at
+  `fd5c4baa6a2ef5978db1bd043634351f48667daf`: Application.cpp catches engine
+  exceptions and calls MessageBox; DebugIntf.cpp writes `krkr.console.log` on
+  errors. [Engine log-location documentation](https://krkrz.github.io/docs/kirikiriz/j/contents/f_Debug_logLocation.html)
+  describes the data-path log location. This is evidence for collecting logs,
+  not proof that this exact commercial game uses the same revision. No engine
+  implementation is copied, built or added as a native launch path.
+
+Local validation: isolated compilation of the exact production diagnostics and
+launch-progress Swift files with Swift 6.2, four XCTest cases (zero-code early
+exit, drawn/long/invalid-duration exclusions, duplicate nested engine logs and
+Chinese inventory, external-link/size exclusions, current-launch dialog text
+including NUL bytes), all passed. The Chinese packaging/placeholder gates and
+WoW64/checkpoint regressions also pass. Full Swift 6.4 and production SwiftUI
+compilation and the real IPA verifier remain the cloud build gate. The next
+phone play must capture the actual game/dialog error; its cause cannot be
+honestly inferred from a zero exit plus one C++ throw in this report.
+
+Scope remains the two authorized repositories; reference downloads are read-only
+as explicitly authorized by the user. No original StikDebug app changes and no
+other user project changes. Repository evidence remains the task handoff within
+that scope.

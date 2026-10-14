@@ -111,7 +111,8 @@ enum LaunchFix {
 
     static func failed(_ step: LaunchStage, tunnelUp: Bool, method: JitMethod = JitProvider.method) -> String {
         switch step {
-        case .jit, .preparing:
+        case .preparing: NSLocalizedString("Share a problem report before trying again. Game files and saves are kept.", comment: "")
+        case .jit:
             if method == .external {
                 "JIT did not arrive. Enable JIT for Playport in your JIT app, with the universal.js script, then try again."
             } else if !tunnelUp {
@@ -292,7 +293,7 @@ final class LaunchFailureSession: ObservableObject {
 
     init(_ message: LaunchMessage) { self.message = message }
 
-    var offersVPN: Bool { (message.step == .jit || message.step == .preparing) && !tunnelUp && JitProvider.method.usesTunnel }
+    var offersVPN: Bool { message.step == .jit && !tunnelUp && JitProvider.method.usesTunnel }
 
     func press(_ b: NavButton) {
         switch b {
@@ -316,6 +317,12 @@ final class LaunchFailureSession: ObservableObject {
                 AppNavigation.shared.openTitle(id)
             }
         }
+    }
+
+    func shareReport() {
+        guard let id = message.titleID, let t = LibraryModel.shared.catalog.title(id: id) else { return }
+        close()
+        ProblemReport.share(t)
     }
 
     func turnOnVPN() {
@@ -350,7 +357,14 @@ struct LaunchFailureView: View {
                 Spacer()
                 HStack(spacing: 18) {
                     Spacer()
-                    if m.titleID != nil { PadModalHint(button: .a, label: "Try again") { session.press(.a) } }
+                    if m.titleID != nil {
+                        Button { session.shareReport() } label: {
+                            Label("Report a problem", systemImage: "square.and.arrow.up")
+                        }
+                        .ppGlass(cornerRadius: 10)
+                        .accessibilityIdentifier("launch-share-report")
+                        PadModalHint(button: .a, label: "Try again") { session.press(.a) }
+                    }
                     if session.offersVPN { PadModalHint(button: .y, label: "Turn on LocalDevVPN") { session.press(.y) } }
                     PadModalHint(button: .b, label: "Back") { session.press(.b) }
                 }
@@ -396,20 +410,25 @@ struct LaunchMessage: Codable, Equatable, Identifiable {
     static func of(_ outcome: LaunchCoordinator.Outcome, title: String, spent: Bool) -> LaunchMessage? {
         guard var m = message(outcome, title: title, spent: spent) else { return nil }
         if outcome.kind == .failed { m.step = LaunchProgress.failedStage(outcome.line) }
+        if case .endedBeforeDrawing = outcome.kind { m.step = .game }
+        if case .exited(let code) = outcome.kind, code != 0 { m.step = .game }
         return m
     }
 
     private static func message(_ outcome: LaunchCoordinator.Outcome, title: String, spent: Bool) -> LaunchMessage? {
         let line = outcome.line
         switch outcome.kind {
+        case .endedBeforeDrawing(let code):
+            return .init(title: NSLocalizedString("Game ended during startup", comment: ""),
+                         text: NSLocalizedString("The game exited before showing its first frame. This can happen even with exit code 0. Share a problem report to see the game and Wine logs.", comment: "")
+                            + "\n" + String(format: NSLocalizedString("Exit code: %@", comment: ""), String(format: "0x%08X", code))
+                            + (outcome.detail.map { "\n" + String(format: NSLocalizedString("Windows message: %@", comment: ""), $0) } ?? ""))
         case .exited(0):
             return nil
         case .exited(let code):
-            #if PLAYPORT_RELEASE
-            return .init(title: "\(title) stopped unexpectedly", text: "The game ended with an error.")
-            #else
-            return .init(title: "\(title) stopped unexpectedly", text: "It exited with code \(String(format: "0x%08X", code)).")
-            #endif
+            return .init(title: NSLocalizedString("Game stopped unexpectedly", comment: ""),
+                         text: String(format: NSLocalizedString("Exit code: %@", comment: ""), String(format: "0x%08X", code))
+                            + (outcome.detail.map { "\n" + String(format: NSLocalizedString("Windows message: %@", comment: ""), $0) } ?? ""))
         case .refused where MemoryNeed.parseRefusal(line) != nil:
             let m = MemoryNeed.parseRefusal(line)!
             return .init(title: "Not enough memory for \(title)", text: MemoryNote.refused(limitMB: m.limitMB, needMB: m.needMB))
@@ -428,6 +447,10 @@ struct LaunchMessage: Codable, Equatable, Identifiable {
         case .outOfJitMemory(let part):
             return .init(title: "\(title) ran out of JIT memory",
                          text: JitNote.outOfMemory(part, poolMB: outcome.poolMB))
+        case .failed where line.contains("steamapi=preparation"):
+            return .init(title: NSLocalizedString("Steam preparation failed", comment: ""),
+                         text: NSLocalizedString("The Steam API or executable could not be prepared. The game was not started.", comment: "")
+                            + (outcome.detail.map { "\n" + $0 } ?? ""))
         case .failed:
             return .init(title: "\(title) could not start", text: failedText(line, spent: spent))
         }

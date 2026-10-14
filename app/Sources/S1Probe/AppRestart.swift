@@ -68,8 +68,12 @@ final class AppRestart: ObservableObject {
             let how = JitProvider.inLiveContainer
                 ? "To play again, close Playport and launch it again from LiveContainer with JIT."
                 : "To play again, close Playport and open it again."
-            let game = notice.map { "\n\n\($0.title): \($0.text)" } ?? ""
-            TitleLaunch.shared.message = LaunchMessage(title: "Close Playport to play again", text: how + game)
+            if var game = notice {
+                game.text += "\n\n" + how
+                TitleLaunch.shared.message = game
+            } else {
+                TitleLaunch.shared.message = LaunchMessage(title: "Close Playport to play again", text: how)
+            }
             return
         }
         restarting = true
@@ -138,8 +142,12 @@ final class AppRestart: ObservableObject {
         #else
         let detail = "\(why). Check that LocalDevVPN is connected. To play again, close Playport and reopen it from the Home Screen."
         #endif
-        let game = r.notice.map { "\n\n\($0.title): \($0.text)" } ?? ""
-        TitleLaunch.shared.message = LaunchMessage(title: "Playport could not restart itself", text: detail + game)
+        if var game = r.notice {
+            game.text += "\n\n" + detail
+            TitleLaunch.shared.message = game
+        } else {
+            TitleLaunch.shared.message = LaunchMessage(title: "Playport could not restart itself", text: detail)
+        }
     }
 
     private nonisolated static func request(started: Int64) -> String? {
