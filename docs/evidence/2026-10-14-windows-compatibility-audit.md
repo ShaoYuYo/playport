@@ -169,3 +169,38 @@ do not replace the requested game runtime with a reduced build to obtain a
 nominal success. The owner's latest instruction forbids Apple-account login;
 no further browser credential entry or new-account workaround is part of this
 continuation.
+
+## Automatic Action retry requested — 2026-10-15
+
+The owner explicitly requested that Actions run automatically. Private workflow
+commit `e703112812de5765276e9ed8f466d2ab8259d492` adds an hourly
+`17 * * * *` schedule on the default branch and an `auto-build` decision job.
+The source pin remains `3981c2e3c10b94cb171d5c746f17816ded2b6df6`.
+Push/manual requests build immediately; scheduled requests inspect prior runs
+for the same workflow HEAD. They retain active builds, avoid rebuilding when a
+nonempty, unexpired PlayPort-unsigned-IPA exists on a successful run, and stop
+automatic compilation when a build job actually executed and failed. Pre-run
+allocation failures may be retried on the hourly schedule. This supersedes the
+earlier instruction against unchanged allocation retries for this explicit request.
+
+The decision script passed nine executed mock-API scenarios, including skipped
+guard-only runs, expired artifacts, current versus old revisions, an active
+build, allocation refusal, and an executed compilation failure. YAML dependency
+checks passed. An exact reconstruction check confirmed that every existing
+compile/cache/verification/upload step is unchanged. The private compare shows
+only 83 added lines in `.github/workflows/build-playport.yml`; the original
+StikDebug app remains unchanged. Read-only checks permission supports retrieving
+the previous failed check's annotation once a runner executes the decision job.
+
+The push actually triggered [run 33 / 38652811870](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38652811870).
+Its auto-build job 116155425762 again failed with runner_id=0, empty runner_name,
+and steps=[]; both preflight jobs and the IPA job were skipped. This is evidence
+that the trigger works, while runner execution is still unavailable. It does not
+demonstrate that the decision script executed in GitHub, that the first scheduled
+event occurred, or that an updated IPA exists. GitHub schedules may be delayed.
+Do not count a later guard-only success as an IPA build success: require the
+actual build-ipa job and all verification/upload evidence.
+
+Windows runtime, checkpoint hashes, Steam, game data and saves are unchanged.
+Actual iPhone first frame, SteamAPI initialization, and Liquid Glass appearance
+remain unverified for the new source.
