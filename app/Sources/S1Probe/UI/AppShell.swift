@@ -310,7 +310,7 @@ private struct TopBar: View {
                     HStack(spacing: 5) {
                         Text(LocalizedStringKey(p.title))
                             .font(PP.display(15, .semibold))
-                            .foregroundStyle(nav.page == p ? PP.text : PP.soft)
+                            .foregroundStyle(nav.page == p ? PP.onAccent : PP.soft)
                         if p == .downloads, !installs.jobs.isEmpty {
                             Text("\(installs.jobs.count)")
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(PP.background)

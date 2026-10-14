@@ -87,7 +87,8 @@ native glass/glassProminent button styles and system pressed feedback.
 Related footer controls retain stable glass identities inside their existing
 GlassEffectContainer, with a short smooth transition. Hit areas are at least
 44 points. The keyboard uses a fade rather than a slide with Reduce Motion;
-custom switches stop moving, and existing launch zoom/blur respects that setting.
+switch indicators use native Toggle styling (the controller-focusable row still
+handles activation), and existing launch zoom/blur respects that setting.
 Reduce Transparency uses an opaque surface/bordered controls, including the
 previously translucent-tint fallback. No custom imitation shader is introduced.
 
@@ -132,3 +133,10 @@ by their existing prerequisites. Do not mark the full suite as green.
 The new patch's Class label was corrected to the permitted `ios-port` value;
 the patch body and tested conversion are unchanged. Public source-only CI and
 real Apple/PE compilation remain separate required observations.
+The failed jobs' raw API data confirms runner_id=0, empty runner_name and zero
+steps. GitHub's public status at 23:35 Taipei reports all systems operational;
+this does not identify the account/repository-specific pre-run error. This
+public repository is a fork and has no recorded Actions runs, including after
+the follow-up source push; no public CI result can be claimed either. Enabling
+fork Actions or changing account billing requires administrative access that
+the connected tools do not expose; neither setting was changed.

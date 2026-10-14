@@ -61,6 +61,14 @@ struct PadRow: View {
             .font(.system(size: 13)).foregroundStyle(selected ? Color(hex: 0x3A4452) : PP.muted)
         }
         .padItem(id, hint: hint, cornerRadius: 10, reset: reset, ring: style != .plain, action: action)
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var accessibilityValue: Text {
+        if case .toggle(let on) = accessory {
+            return Text(LocalizedStringKey(on ? "On" : "Off"))
+        }
+        return Text(LocalizedStringKey(value ?? ""))
     }
 }
 
@@ -108,17 +116,18 @@ struct PadSectionHeader: View {
     }
 }
 
-/// The design's switch: amber with a dark knob at the right when on, grey at the left when off.
+/// A native switch indicator; the surrounding focusable row handles touch and
+/// controller activation. The system supplies appearance and accessible motion.
 struct PadSwitch: View {
     let on: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ZStack(alignment: on ? .trailing : .leading) {
-            Capsule().fill(on ? PP.accent : PP.line)
-            Circle().fill(on ? PP.onAccent : PP.muted).frame(width: 16, height: 16).padding(3)
-        }
-        .frame(width: 40, height: 22)
-        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: on)
+        Toggle(isOn: .constant(on)) { EmptyView() }
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .tint(PP.accent)
+            .fixedSize()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
