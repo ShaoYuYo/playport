@@ -52,10 +52,22 @@ public struct AES256Decryptor: Sendable {
 
     /// CBC decryption with PKCS#7 padding removal.
     public func decryptCBC(_ data: ArraySlice<UInt8>, iv: [UInt8]) throws -> [UInt8] {
+        var out = try decryptCBCUnpadded(data, iv: iv)
+        let pad = Int(out.last!)
+        guard pad >= 1, pad <= 16, out.suffix(pad).allSatisfy({ Int($0) == pad }) else {
+            throw ClientError.verificationFailed("bad PKCS#7 padding (wrong depot key?)")
+        }
+        out.removeLast(pad)
+        return out
+    }
+
+    /// CBC over complete blocks, preserving every plaintext byte. Executable
+    /// code is not a PKCS#7 message; padding-shaped opcodes must stay intact.
+    public func decryptCBCUnpadded(_ data: ArraySlice<UInt8>, iv: [UInt8]) throws -> [UInt8] {
         guard data.count % 16 == 0, !data.isEmpty else {
             throw ClientError.verificationFailed("ciphertext length \(data.count) is not a positive multiple of 16")
         }
-        precondition(iv.count == 16)
+        guard iv.count == 16 else { throw ClientError.verificationFailed("AES IV must be 16 bytes") }
         var out = Array(data)
         out.withUnsafeMutableBytes { b in
             roundKeys.withUnsafeBufferPointer { rk in
@@ -71,11 +83,6 @@ public struct AES256Decryptor: Sendable {
                 }
             }
         }
-        let pad = Int(out.last!)
-        guard pad >= 1, pad <= 16, out.suffix(pad).allSatisfy({ Int($0) == pad }) else {
-            throw ClientError.verificationFailed("bad PKCS#7 padding (wrong depot key?)")
-        }
-        out.removeLast(pad)
         return out
     }
 

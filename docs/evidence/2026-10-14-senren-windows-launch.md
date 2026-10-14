@@ -221,3 +221,44 @@ was made from this report, and no unchanged IPA rebuild was submitted. Source
 and private workflow still preserve the successful run 25 native checkpoint.
 Only necessary nonprivate diagnostic facts are recorded; the uploaded report
 remains outside version control.
+
+
+## Encrypted x86 wrapper preparation
+
+The owner subsequently authorized downloading other reference code, with edits
+still restricted to PlayPort and its build workflow and any new fork private.
+The format reference was read at public upstream commit
+`cd770bf9749d3e4f438d23ac643917ad1a804257`; its x86 3.1 header declarations
+confirm the same 0xF0 header and offsets already used by PlayPort. Relevant
+format facts are the 32-byte key at 0x58, encrypted 16-byte IV at 0x78,
+stolen first cipher block at 0x88 and declared code RVA/length at 0x48/0x50.
+The reference was not vendored or modified, and no new fork was needed.
+Reference: [x86 header and code-section handling](https://github.com/atom0s/Steamless/tree/cd770bf9749d3e4f438d23ac643917ad1a804257/Steamless.Unpacker.Variant31.x86).
+
+PlayPort's existing portable AES implementation gains unpadded CBC; depot
+chunks and filenames retain their original PKCS#7 behavior. For validated x86
+3.1 images, prepare the first ciphertext block plus the declared raw code,
+decrypt the IV with AES-ECB, decrypt all code blocks with CBC without padding
+removal, and write exactly the declared plaintext length. Restore the original
+entry point after decryption. This uses PlayPort's own AES and PE handling;
+no third-party implementation is incorporated. Encrypted x64 and older
+wrapper variants stay outside this change.
+
+Validate executable section identity, raw/file bounds, aligned positive length,
+a 128 MiB preparation limit, original entry point, nonoverlapping raw ranges
+and TLS callbacks before producing a modified copy. A callback into the wrapper
+is rejected because it would execute before the restored entry; existing
+original TLS data is preserved. Keep the owned executable as `.orig`, retain
+Steam verify/repair's original hash, and make removal idempotent and reversible.
+Malformed inputs must not alter either the original or an existing destination.
+Launch logs record only architecture, flags, app ID and original entry point,
+without keys or executable bytes.
+
+Regression fixtures are wholly synthetic, independently encrypted with OpenSSL
+AES-256-CBC/ECB without padding. They exercise stolen-block restoration, a
+padding-shaped last code block, original/depot verification, repeated preparation,
+restore, kept wrappers/overlays, malformed bounds/sections, source/destination
+aliasing, truncated PE headers and wrapper/original TLS callbacks. NIST
+SP 800-38A F.2.5 separately checks unpadded CBC. Swift tests and a new verified
+IPA still need to complete; real encrypted-game launch remains a phone check.
+The run 25 native cache identity is unchanged by these app-only source changes.

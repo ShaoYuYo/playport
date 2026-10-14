@@ -133,16 +133,142 @@ final class SteamStubTests: XCTestCase {
         XCTAssertEqual([UInt8](try Data(contentsOf: src)), original, "never change the owned original")
     }
 
-    func testEncrypted31x86StubIsNeverModified() throws {
-        let src = try write("Game32-protected.exe", WrappedImage(codeEncrypted: true, is64: false).build())
+    func testMalformedEncrypted31x86BoundsAreNeverModified() throws {
+        var malformed = encryptedImage()
+        changeHeader(&malformed) { SteamStub.put32(&$0, 0x50, 0x201) }
+        let src = try write("Game32-protected.exe", malformed)
         let info = try XCTUnwrap(SteamStub.inspect(src))
         XCTAssertEqual(info.arch, "x86")
-        XCTAssertEqual(info.appID, 1_654_660)
+        XCTAssertEqual(info.appID, 1_144_400)
         XCTAssertTrue(info.encrypted)
-        XCTAssertNotNil(info.unsupported)
+        XCTAssertNil(info.unsupported)
         let dest = dir.appendingPathComponent("unwrapped.exe")
         XCTAssertThrowsError(try SteamStub.unwrap(src, to: dest))
         XCTAssertFalse(FileManager.default.fileExists(atPath: dest.path))
+    }
+
+    /// AES bytes produced with OpenSSL AES-256-CBC/ECB -nopad, never with
+    /// Playport's decryptor. The last plaintext block looks like PKCS#7 padding.
+    private static let cipher = Array(hexString: "74cb883cb1f489bc90d2aa090847090fd54de6b9330b4658dade23f55784d9e0f8cc9e1edf2999fa6a04f9d24a1ce918ee202eb49847460c11d2370934ce4cc8b82f50dd2de084283b3b55f545e165a819c5c23dd868bd77d0ba1b93754d175390a1ddb0a8f0da876a6306a3988321096497f90021bff77e125428d07b1ba2189de9526bc16306360aad8b62995795b9d456a859e2815d99a5b1023b3315d008f989062153b2a32b9b3a305bd4b8cee6c148aa94ddb8aabeaa79d7ea2b4d60eaa398a46fe349d17edb11de4b1845f56a7561ef70c215930c317a31e33505153861c573e29dd1bce9aaae10ca56ecaf2402f8f4dc65bf3c63b8986d7abceec1d9a97b0dc2aa898e9f252823c81214077680f86e8cab8cfead78900ef796202ca45cb5064d6dcef198d2bdbb328ec4a803efbcfd15c7d1b76b9718aa1706b6c4793af174cd454992a6024fe8321f5069008d485a4bbb95e5d37733c0f27e97335327fb564ad30fd3c2e249e1a5fc89cdca02aa0d60242d618d388967ef53886a88fb7d05e8402f831c955ac99c5441c70b5fe86a46e9f258973bfe92c16c53ebe13bfc06bdebe8459d058f5cb48575fb8c2d74c9d013616d16204e58b9a6380c1163bbd02b2d5a1182c5e04ea6cda37c8e6e86a066f155c80762dc448424fc40c52509c339351c355eb223c3dd71b1f0c3933fad886bfd61a21335deb64e6798fca195470e03b17eee7a7a1e09327082d2")
+    private static let encryptedIV = Array(hexString: "5a6e045708fb7196f02e553d02c3a692")
+    private static let plaintext = [UInt8]([0x55, 0x8b, 0xec, 0x83, 0xec, 0x10, 0x33, 0xc0, 0xc9, 0xc3])
+        + (0..<486).map { UInt8(($0 * 37 + 11) & 255) } + [UInt8](repeating: 16, count: 16)
+
+    private func changeHeader(_ bytes: inout [UInt8], bindLast: Bool = true, _ change: (inout [UInt8]) -> Void) {
+        let offset = bindLast ? 0x700 : 0x500
+        var head = SteamStub.decodeHeader(Array(bytes[offset..<offset + 0xF0]))
+        change(&head)
+        bytes.replaceSubrange(offset..<offset + 0xF0, with: SteamStub.encodeHeader(head))
+    }
+
+    private func encryptedImage(bindLast: Bool = true, overlay: [UInt8] = []) -> [UInt8] {
+        var bytes = WrappedImage(appID: 1_144_400, codeEncrypted: true, is64: false,
+                                 bindLast: bindLast, overlay: overlay).build()
+        bytes.replaceSubrange(0x200..<0x400, with: Self.cipher.dropFirst(16))
+        changeHeader(&bytes, bindLast: bindLast) { head in
+            head.replaceSubrange(0x58..<0x78, with: (0..<32).map { UInt8($0) })
+            head.replaceSubrange(0x78..<0x88, with: Self.encryptedIV)
+            head.replaceSubrange(0x88..<0x98, with: Self.cipher.prefix(16))
+        }
+        return bytes
+    }
+
+    func testDecryptsEncryptedX86AndPreservesPaddingShapedCode() throws {
+        let original = encryptedImage()
+        let src = try write("encrypted.exe", original)
+        let dst = dir.appendingPathComponent("decrypted.exe")
+        let info = try SteamStub.unwrap(src, to: dst)
+        XCTAssertTrue(info.encrypted)
+        XCTAssertEqual(info.appID, 1_144_400)
+        let out = [UInt8](try Data(contentsOf: dst))
+        XCTAssertEqual(Array(out[0x200..<0x400]), Self.plaintext)
+        XCTAssertEqual(Array(out[0x400..<0x600]), Array(original[0x400..<0x600]))
+        XCTAssertEqual(out.count, 0x600)
+        XCTAssertNil(SteamStub.inspect(dst))
+        XCTAssertEqual(SteamStub.u32(out, 0x40 + 24 + 16), 0x1000)
+        XCTAssertEqual([UInt8](try Data(contentsOf: src)), original)
+    }
+
+    func testEncryptedCodeWithKeptBindAndOverlay() throws {
+        for bindLast in [false, true] {
+            let original = encryptedImage(bindLast: bindLast, overlay: [7, 8, 9])
+            let src = try write("overlay-\(bindLast).exe", original)
+            let dst = dir.appendingPathComponent("out-\(bindLast).exe")
+            try SteamStub.unwrap(src, to: dst)
+            let out = [UInt8](try Data(contentsOf: dst))
+            XCTAssertEqual(out.count, original.count)
+            XCTAssertEqual(out.suffix(3), [7, 8, 9])
+            XCTAssertEqual(Array(out[0x200..<0x400]), Self.plaintext)
+        }
+    }
+
+    func testEncryptedRemovalIsReversibleIdempotentAndVerifiedAgainstOriginal() async throws {
+        let original = encryptedImage()
+        let src = try write("owned/Game.exe", original)
+        let root = src.deletingLastPathComponent()
+        XCTAssertEqual(try SteamStub.remove(in: root).first?.removed, true)
+        XCTAssertEqual(try SteamStub.remove(in: root).first?.removed, true)
+        let kept = src.appendingPathExtension("orig")
+        XCTAssertEqual([UInt8](try Data(contentsOf: kept)), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: kept.appendingPathExtension("orig").path))
+        let list = dir.appendingPathComponent("owned-sums")
+        try "\(SHA256Stream.hash(original).hex)  Game.exe\n".write(to: list, atomically: true, encoding: .utf8)
+        let checked = try await TitleInstaller.verifySHA256List(dir: root, list: list)
+        XCTAssertEqual(checked.bad, [])
+        XCTAssertEqual(try SteamStub.restore(in: root), 1)
+        XCTAssertEqual([UInt8](try Data(contentsOf: src)), original)
+    }
+
+    func testInvalidEncryptedSectionsNeverChangeSourceOrExistingDestination() throws {
+        for kind in 0..<7 {
+            var invalid = encryptedImage()
+            changeHeader(&invalid) { h in
+                if kind == 0 { SteamStub.put32(&h, 0x48, 0x2000) } // non-executable .data
+                if kind == 1 { SteamStub.put32(&h, 0x48, 0x3000) } // wrapper itself
+                if kind == 2 { SteamStub.put32(&h, 0x50, 0) }
+                if kind == 3 { SteamStub.put32(&h, 0x50, 0x201) }
+                if kind == 4 { SteamStub.put32(&h, 0x54, UInt32.max) }
+                if kind == 5 { SteamStub.put32(&h, 0x20, 0x3000) } // original entry in wrapper
+                if kind == 6 { SteamStub.put32(&h, 0x48, 0x1001) } // section interior, unknown layout
+            }
+            let src = try write("invalid-\(kind).exe", invalid)
+            let dst = try write("existing-\(kind).exe", [1, 2, 3])
+            XCTAssertThrowsError(try SteamStub.unwrap(src, to: dst))
+            XCTAssertEqual([UInt8](try Data(contentsOf: src)), invalid)
+            XCTAssertEqual([UInt8](try Data(contentsOf: dst)), [1, 2, 3])
+        }
+    }
+
+    func testUnwrapRefusesTheSameFileAndTruncatedPEHeaders() throws {
+        let original = encryptedImage()
+        let src = try write("same.exe", original)
+        XCTAssertThrowsError(try SteamStub.unwrap(src, to: src))
+        XCTAssertEqual([UInt8](try Data(contentsOf: src)), original)
+        var invalid = original
+        invalid[0x40 + 20] = 0; invalid[0x40 + 21] = 0
+        XCTAssertNil(SteamStub.inspect(try write("short-opt.exe", invalid)))
+    }
+
+    func testWrapperTLSIsRejectedAndOriginalTLSIsKept() throws {
+        for callback in [UInt32(0x4031F0), UInt32(0x4010F0)] {
+            var b = encryptedImage()
+            SteamStub.put32(&b, 0x40 + 24 + 28, 0x400000) // PE32 image base
+            SteamStub.put32(&b, 0x40 + 24 + 96 + 9 * 8, 0x2000)
+            SteamStub.put32(&b, 0x40 + 24 + 96 + 9 * 8 + 4, 24)
+            SteamStub.put32(&b, 0x400 + 12, 0x402040)
+            SteamStub.put32(&b, 0x440, callback)
+            SteamStub.put32(&b, 0x444, 0)
+            let src = try write("tls-\(callback).exe", b)
+            let dst = dir.appendingPathComponent("tls-out-\(callback).exe")
+            if callback == 0x4031F0 {
+                XCTAssertThrowsError(try SteamStub.unwrap(src, to: dst))
+                XCTAssertFalse(FileManager.default.fileExists(atPath: dst.path))
+            } else {
+                try SteamStub.unwrap(src, to: dst)
+                XCTAssertEqual(Array([UInt8](try Data(contentsOf: dst))[0x400..<0x600]), Array(b[0x400..<0x600]))
+            }
+            XCTAssertEqual([UInt8](try Data(contentsOf: src)), b)
+        }
     }
 
     func testAnImageWithoutAStubIsNone() throws {

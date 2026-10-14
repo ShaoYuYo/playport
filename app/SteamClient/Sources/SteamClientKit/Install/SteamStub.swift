@@ -16,10 +16,10 @@ import Darwin
 /// and is XOR-chained dword by dword, its first dword being the key; a
 /// variant 3 header decrypts to the signature 0xC0DEC0DF. The header names
 /// the original entry point, the app ID and, when the stub also encrypts the
-/// game's code, the code section's AES key. Only unencrypted variant 3.1 images are modified. The x64 path
+/// game's code, the code section's AES key. Variant 3.1 x86 code sections can be decrypted with the file's own key. The x64 path
 /// was validated with En Garde! (docs/evidence/2026-09-27-gbe-steam-api-build.md);
-/// x86 shares its 3.1 header offsets and is tested with synthetic PE32 files.
-/// Encrypted code and older variants remain unsupported and are left alone.
+/// x86 shares its 3.1 header offsets and is tested with independently encrypted PE32 fixtures.
+/// Encrypted x64 code and older variants remain unsupported and are left alone.
 ///
 /// Like SteamAPISwap, the game's executable is kept as `<name>.orig` and a
 /// copy without the stub takes its place (an APFS clone plus a few header
@@ -43,7 +43,10 @@ public enum SteamStub {
         /// What Playport can take off; nil when it can, else why not.
         public var unsupported: String? {
             if variant != "3.1" { return "SteamStub \(variant) \(arch) is not supported yet" }
-            if encrypted { return "SteamStub \(variant) \(arch) with encrypted code is not supported yet" }
+            if encrypted {
+                if arch != "x86" { return "SteamStub \(variant) \(arch) with encrypted code is not supported yet" }
+                if flags & 0x4 != 0 { return "SteamStub \(variant) \(arch) has inconsistent encryption fields" }
+            }
             return nil
         }
 
@@ -59,6 +62,8 @@ public enum SteamStub {
               bind.name == ".bind" else { return nil }
         let epOffset = UInt64(bind.rawPointer) + UInt64(pe.entryPoint - bind.virtualAddress)
         for (size, variant) in [(0xF0, "3.1"), (0xD0, "3.0")] where epOffset >= UInt64(size) {
+            let delta = UInt64(pe.entryPoint) - UInt64(bind.virtualAddress)
+            guard delta >= UInt64(size), delta < UInt64(bind.rawSize) else { continue }
             guard (try? h.seek(toOffset: epOffset - UInt64(size))) != nil,
                   let raw = try? h.read(upToCount: size), raw.count == size else { continue }
             let head = decodeHeader([UInt8](raw))
@@ -71,11 +76,11 @@ public enum SteamStub {
             }
             let oep = u64(head, 0x20)
             let flags = u32(head, 0x3C)
-            // NoEncryption is bit 2. Do not modify a game unless the flag
-            // explicitly permits it AND no encrypted-code region is declared.
+            // NoEncryption is bit 2. A contradictory nonzero code region is
+            // rejected, while the x86 encrypted layout is validated before writing.
             let encrypted = flags & 0x4 == 0 || u64(head, 0x48) != 0 || u64(head, 0x50) != 0
             return Info(variant: variant, arch: arch, appID: u32(head, 0x38),
-                        originalEntryPoint: UInt32(truncatingIfNeeded: oep),
+                        originalEntryPoint: UInt32(exactly: oep) ?? 0,
                         encrypted: encrypted, flags: flags)
         }
         return nil
@@ -115,36 +120,103 @@ public enum SteamStub {
     public static func unwrap(_ source: URL, to dest: URL) throws -> Info {
         guard let info = inspect(source) else { throw SteamError.unsupported("\(source.lastPathComponent) has no SteamStub") }
         if let why = info.unsupported { throw SteamError.unsupported(why) }
+        guard source.standardizedFileURL.resolvingSymlinksInPath() != dest.standardizedFileURL.resolvingSymlinksInPath() else {
+            throw SteamError.unsupported("the unwrapped destination must differ from the owned original")
+        }
         let h = try FileHandle(forReadingFrom: source)
+        defer { try? h.close() }
         let pe = try PEImage.read(h)
-        try? h.close()
         guard let bind = pe.section(containingRVA: pe.entryPoint),
-              pe.section(containingRVA: info.originalEntryPoint)?.executable == true else {
+              let originalSection = pe.section(containingRVA: info.originalEntryPoint),
+              originalSection.executable, originalSection != bind else {
             throw SteamError.unsupported("the original entry point is not in an executable section")
         }
+        guard try !pe.tlsReferences(bind, in: h) else {
+            throw SteamError.unsupported("SteamStub TLS callbacks into the wrapper are not supported")
+        }
+        // Validate and decrypt completely before creating or replacing any file.
+        let code = info.encrypted ? try decryptX86Code(h, pe: pe, bind: bind, info: info) : nil
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.copyItem(at: source, to: dest)   // a clone on APFS
+        var complete = false
+        defer { if !complete { try? FileManager.default.removeItem(at: dest) } }
         let out = try FileHandle(forUpdating: dest)
         defer { try? out.close() }
+        if let code {
+            try out.seek(toOffset: code.offset)
+            try out.write(contentsOf: Data(code.bytes))
+        }
         try write32(out, pe.optionalHeader + 16, info.originalEntryPoint)
         try write32(out, pe.optionalHeader + 64, 0)   // CheckSum: not checked for an executable
         let size = try out.seekToEnd()
         let bindEnd = UInt64(bind.rawPointer) + UInt64(bind.rawSize)
         let last = pe.sections.last == bind
         let referenced = pe.dataDirectories.contains { $0.rva != 0 && $0.rva >= bind.virtualAddress
-            && $0.rva < bind.virtualAddress + max(bind.virtualSize, bind.rawSize) }
+            && UInt64($0.rva) < UInt64(bind.virtualAddress) + UInt64(max(bind.virtualSize, bind.rawSize)) }
         if last, bindEnd == size, !referenced, bind.rawPointer > 0 {
             // Drop the section: its header, the count, SizeOfImage and its bytes.
             try write16(out, pe.coffHeader + 2, UInt16(pe.sections.count - 1))
             try out.seek(toOffset: UInt64(pe.sectionTable + 40 * (pe.sections.count - 1)))
             try out.write(contentsOf: Data(count: 40))
             let prev = pe.sections[pe.sections.count - 2]
-            let end = prev.virtualAddress + max(prev.virtualSize, prev.rawSize)
-            let align = max(pe.sectionAlignment, 1)
-            try write32(out, pe.optionalHeader + 56, (end + align - 1) / align * align)
+            let end = UInt64(prev.virtualAddress) + UInt64(max(prev.virtualSize, prev.rawSize))
+            let align = UInt64(max(pe.sectionAlignment, 1))
+            guard let imageSize = UInt32(exactly: (end + align - 1) / align * align) else {
+                throw SteamError.unsupported("the unwrapped PE image size is invalid")
+            }
+            try write32(out, pe.optionalHeader + 56, imageSize)
             try out.truncate(atOffset: UInt64(bind.rawPointer))
         }
+        complete = true
         return info
+    }
+
+    private static func decryptX86Code(_ h: FileHandle, pe: PEImage, bind: PEImage.Section, info: Info)
+        throws -> (offset: UInt64, bytes: [UInt8]) {
+        guard !pe.is64, info.variant == "3.1", info.flags & 0x4 == 0 else {
+            throw SteamError.unsupported("unsupported SteamStub encrypted-code layout")
+        }
+        let delta = UInt64(pe.entryPoint) - UInt64(bind.virtualAddress)
+        guard delta >= 0xF0, delta < UInt64(bind.rawSize) else {
+            throw SteamError.unsupported("SteamStub header lies outside its raw section")
+        }
+        try h.seek(toOffset: UInt64(bind.rawPointer) + delta - 0xF0)
+        guard let raw = try h.read(upToCount: 0xF0), raw.count == 0xF0 else {
+            throw SteamError.unsupported("truncated SteamStub code header")
+        }
+        let head = decodeHeader([UInt8](raw))
+        guard u32(head, 4) == signature, u64(head, 0x20) == UInt64(info.originalEntryPoint),
+              u32(head, 0x38) == info.appID, u32(head, 0x3C) == info.flags,
+              let rva = UInt32(exactly: u64(head, 0x48)),
+              let section = pe.section(containingRVA: rva), section != bind,
+              section.executable, section.virtualAddress == rva else {
+            throw SteamError.unsupported("invalid SteamStub encrypted-code section")
+        }
+        let count = u64(head, 0x50), fileSize = try h.seekToEnd()
+        let offset = UInt64(section.rawPointer), endRVA = UInt64(rva) + count
+        let headersEnd = UInt64(pe.sectionTable + 40 * pe.sections.count)
+        let overlaps = pe.sections.contains { other in
+            other != section && other.rawSize != 0 && offset < UInt64(other.rawPointer) + UInt64(other.rawSize)
+                && UInt64(other.rawPointer) < offset + count
+        }
+        guard count > 0, count % 16 == 0, count <= 128 * 1024 * 1024,
+              count <= UInt64(section.rawSize), offset >= headersEnd, !overlaps,
+              offset <= fileSize, count <= fileSize - offset,
+              UInt64(info.originalEntryPoint) >= UInt64(rva), UInt64(info.originalEntryPoint) < endRVA else {
+            throw SteamError.unsupported("invalid SteamStub encrypted-code bounds")
+        }
+        try h.seek(toOffset: offset)
+        guard let body = try h.read(upToCount: Int(count)), body.count == Int(count) else {
+            throw SteamError.unsupported("truncated SteamStub encrypted code")
+        }
+        let aes = try AES256Decryptor(key: Array(head[0x58..<0x78]))
+        var iv = Array(head[0x78..<0x88]); aes.decryptBlock(&iv)
+        // The header holds the first ciphertext block. Restore it before CBC,
+        // then write only the declared code length; the final extra block is
+        // cipher continuation, not an instruction or PKCS#7 padding.
+        let cipher = Array(head[0x88..<0x98]) + body
+        let plain = try aes.decryptCBCUnpadded(cipher[...], iv: iv)
+        return (offset, Array(plain.prefix(Int(count))))
     }
 
     // MARK: in a game's folder
@@ -250,11 +322,46 @@ struct PEImage {
     var is64: Bool
     var entryPoint: UInt32
     var sectionAlignment: UInt32
+    var imageBase: UInt64
     var sections: [Section]
     var dataDirectories: [Directory]
 
     func section(containingRVA rva: UInt32) -> Section? {
-        sections.first { rva >= $0.virtualAddress && rva < $0.virtualAddress + max($0.virtualSize, $0.rawSize) }
+        sections.first { rva >= $0.virtualAddress && UInt64(rva) < UInt64($0.virtualAddress) + UInt64(max($0.virtualSize, $0.rawSize)) }
+    }
+
+    /// A wrapper TLS callback would still execute before the restored entry
+    /// point. Refuse this unimplemented layout instead of dropping live code.
+    func tlsReferences(_ bind: Section, in h: FileHandle) throws -> Bool {
+        guard dataDirectories.count > 9, dataDirectories[9].rva != 0 else { return false }
+        func bytes(_ rva: UInt32, count: Int) throws -> [UInt8] {
+            guard let s = section(containingRVA: rva),
+                  UInt64(rva) - UInt64(s.virtualAddress) + UInt64(count) <= UInt64(s.rawSize) else {
+                throw SteamError.unsupported("TLS data lies outside the PE raw image")
+            }
+            try h.seek(toOffset: UInt64(s.rawPointer) + UInt64(rva) - UInt64(s.virtualAddress))
+            guard let d = try h.read(upToCount: count), d.count == count else {
+                throw SteamError.unsupported("truncated PE TLS data")
+            }
+            return [UInt8](d)
+        }
+        let tls = try bytes(dataDirectories[9].rva, count: is64 ? 40 : 24)
+        let callbacks = is64 ? SteamStub.u64(tls, 24) : UInt64(SteamStub.u32(tls, 12))
+        if callbacks == 0 { return false }
+        guard callbacks >= imageBase, let rva = UInt32(exactly: callbacks - imageBase) else {
+            throw SteamError.unsupported("invalid TLS callback address")
+        }
+        for i in 0..<1024 {
+            let at = UInt64(rva) + UInt64(i * (is64 ? 8 : 4))
+            guard let at = UInt32(exactly: at) else { throw SteamError.unsupported("TLS callback table overflow") }
+            let raw = try bytes(at, count: is64 ? 8 : 4)
+            let callback = is64 ? SteamStub.u64(raw, 0) : UInt64(SteamStub.u32(raw, 0))
+            if callback == 0 { return false }
+            if callback >= imageBase,
+               callback - imageBase >= UInt64(bind.virtualAddress),
+               callback - imageBase < UInt64(bind.virtualAddress) + UInt64(max(bind.virtualSize, bind.rawSize)) { return true }
+        }
+        throw SteamError.unsupported("unterminated TLS callback table")
     }
 
     static func read(_ h: FileHandle) throws -> PEImage {
@@ -272,6 +379,7 @@ struct PEImage {
         let optSize = Int(UInt16(coff[20]) | UInt16(coff[21]) << 8)
         let optAt = pe + 24
         let opt = try bytes(optAt, optSize)
+        guard opt.count >= 2 else { throw SteamError.unsupported("truncated optional header") }
         let magic = UInt16(opt[0]) | UInt16(opt[1]) << 8
         guard magic == 0x10b || magic == 0x20b, optSize >= (magic == 0x20b ? 112 : 96) else { throw SteamError.unsupported("unknown optional header") }
         let is64 = magic == 0x20b
@@ -289,6 +397,6 @@ struct PEImage {
         }
         return PEImage(coffHeader: pe + 4, optionalHeader: optAt, sectionTable: tableAt, is64: is64,
                        entryPoint: SteamStub.u32(opt, 16), sectionAlignment: SteamStub.u32(opt, 32),
-                       sections: sections, dataDirectories: dirs)
+                       imageBase: is64 ? SteamStub.u64(opt, 24) : UInt64(SteamStub.u32(opt, 28)), sections: sections, dataDirectories: dirs)
     }
 }

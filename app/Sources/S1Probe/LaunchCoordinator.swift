@@ -169,7 +169,8 @@ enum LaunchCoordinator {
             var stub = "none"
             if s.mode == .emulated {
                 for site in try SteamStub.remove(in: s.root) {
-                    log("steamstub: \(site.path): \(site.info.label), " + (site.info.unsupported ?? (site.removed ? "removed" : "kept")))
+                    log("steamstub: \(site.path): \(site.info.label), " + (site.info.unsupported ?? (site.removed ? "removed" : "kept"))
+                        + " encrypted=\(site.info.encrypted ? 1 : 0) app=\(site.info.appID) oep=0x\(String(site.info.originalEntryPoint, radix: 16)) flags=0x\(String(site.info.flags, radix: 16))")
                     stub = site.removed ? "removed" : "unsupported"
                 }
             } else if try SteamStub.restore(in: s.root) > 0 {
