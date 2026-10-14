@@ -9,11 +9,44 @@ public enum LaunchDiagnostics {
 
     /// Wine's msgbox channel includes the Windows dialog text even when no dialog was drawn.
     public static func lastWindowsMessage(in log: String) -> String? {
-        guard let line = log.split(separator: "\n").last(where: { $0.contains(":msgbox:") }),
-              let channel = line.range(of: ":msgbox:"),
-              let space = line[channel.upperBound...].firstIndex(of: " ") else { return nil }
-        let text = line[line.index(after: space)...].trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : String(text.prefix(512))
+        // PlayPort's patched Wine logs MessageBoxIndirectW [msgbox], unlike
+        // upstream Wine's :msgbox: trace. The old parser ignored the former.
+        for line in log.split(separator: "\n").reversed() {
+            if let mark = line.range(of: "[msgbox]"),
+               let start = line[mark.upperBound...].range(of: " text L\"") {
+                let body = String(line[start.upperBound...].prefix(while: { $0 != "\"" }))
+                let message = decodeWineMessage(body).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !message.isEmpty { return String(message.prefix(512)) }
+            }
+            if let mark = line.range(of: ":msgbox:"),
+               let space = line[mark.upperBound...].firstIndex(of: " ") {
+                let message = line[line.index(after: space)...].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !message.isEmpty { return String(message.prefix(512)) }
+            }
+        }
+        return nil
+    }
+
+    /// Decode Wine's \hhhh UTF-16 code-unit escapes without disclosing
+    /// unrelated diagnostic lines or absolute container paths.
+    private static func decodeWineMessage(_ input: String) -> String {
+        let units = Array(input.utf16.prefix(2048))
+        var output: [UInt16] = []
+        var i = 0
+        while i < units.count {
+            if units[i] == 92 && i + 4 < units.count {
+                let digits = units[(i + 1)...(i + 4)]
+                if digits.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }),
+                   let value = UInt16(String(decoding: digits, as: UTF16.self), radix: 16) {
+                    output.append(value)
+                    i += 5
+                    continue
+                }
+            }
+            output.append(units[i])
+            i += 1
+        }
+        return String(decoding: output, as: UTF16.self)
     }
 
     /// Read only this launch's bounded tail, never a preceding game's dialog.
@@ -41,9 +74,36 @@ public enum LaunchDiagnostics {
     }
 
     /// Names and sizes only: enough to spot a missing archive/plugin or a language depot mismatch.
-    public static func inventory(in root: URL) -> String {
-        "Game folder inventory (relative names and bytes; scan limited to 2048 entries, depth 4)\n"
-        + entries(in: root).map { "\($0.size)\t\($0.relative)" }.joined(separator: "\n") + "\n"
+    public static func inventory(in root: URL, steamAppID: UInt32? = nil) -> String {
+        let heading = "Game folder inventory (relative names and bytes; scan limited to 2048 entries, depth 4)\n"
+        let fm = FileManager.default
+        let files = entries(in: root)
+        var report = heading
+        if files.isEmpty {
+            let status = fm.fileExists(atPath: root.path)
+                ? "(no regular files enumerated; check directory access and install layout)"
+                : "(game directory unavailable when report was created)"
+            report += status + "\n"
+        } else {
+            report += files.map { "\($0.size)\t\($0.relative)" }.joined(separator: "\n") + "\n"
+        }
+        if steamAppID == 1144400 {
+            // Direct stat probes distinguish missing assets from a broken
+            // directory enumerator. No file contents or private paths exported.
+            report += "Senren Banka required-file probes (metadata only):\n"
+            for relative in ["SenrenBanka.exe", "data.xp3", "patch.xp3", "scn.xp3", "plugin"] {
+                let url = root.appendingPathComponent(relative)
+                if let attributes = try? fm.attributesOfItem(atPath: url.path) {
+                    let type = attributes[.type] as? FileAttributeType
+                    let kind = type == .typeDirectory ? "directory" : type == .typeRegular ? "file" : "other"
+                    let size = (attributes[.size] as? NSNumber)?.int64Value ?? -1
+                    report += "\(relative)\t\(kind)\t\(size) bytes\n"
+                } else {
+                    report += "\(relative)\tmissing or unreadable\n"
+                }
+            }
+        }
+        return report
     }
 
     private struct Entry {

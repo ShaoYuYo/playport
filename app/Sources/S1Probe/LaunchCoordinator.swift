@@ -413,6 +413,24 @@ enum LaunchCoordinator {
         Diagnostics.loadBeforeRuntime()
         #endif
         step(.waitingForJit(until: Date().addingTimeInterval(r.jitWait)))
+        // A legacy Japanese title may use Shift-JIS/CP932 before it draws.
+        // Wine chooses its Windows ANSI system code page while ntdll starts,
+        // not from the later title-specific environment. Keep this override
+        // scoped to the selected title; UI and Steam languages stay unchanged.
+        let windowsLocale = WindowsLocale.startupOverride(steamAppID: r.steamAppID)
+        let inheritedLanguage = getenv("LANG").map { String(cString: $0) }
+        let inheritedLocale = getenv("LC_ALL").map { String(cString: $0) }
+        if let windowsLocale {
+            setenv("LANG", windowsLocale, 1)
+            setenv("LC_ALL", windowsLocale, 1)
+            log("Windows locale: requesting \(windowsLocale) before Wine initialization (Steam language unchanged)")
+        }
+        defer {
+            if windowsLocale != nil {
+                if let inheritedLanguage { setenv("LANG", inheritedLanguage, 1) } else { unsetenv("LANG") }
+                if let inheritedLocale { setenv("LC_ALL", inheritedLocale, 1) } else { unsetenv("LC_ALL") }
+            }
+        }
         // Preserve errors and dialog text in the bounded player log before Wine reads its channels.
         setenv("WINEDEBUG", "-all,err+all,warn+all,+debugstr,+msgbox", 1)
         let started = runtime.start(poolMB: poolMB, wait: r.jitWait) { step(.startingRuntime) }

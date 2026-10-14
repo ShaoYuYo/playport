@@ -41,6 +41,26 @@ final class LaunchDiagnosticsTests: XCTestCase {
         XCTAssertEqual(LaunchDiagnostics.windowsMessage(in: log, after: UInt64(old.count)), "L\"Cannot open data.xp3\"")
     }
 
+    func testPatchedWineMessageBoxRevealsFatalError() {
+        let english = #"002c:err:dialog:MessageBoxIndirectW [msgbox] style 0 caption L"Fatal Error" text L"Cannot convert given narrow string to wide string""#
+        XCTAssertEqual(LaunchDiagnostics.lastWindowsMessage(in: english),
+                       "Cannot convert given narrow string to wide string")
+        let japanese = #"002c:err:dialog:MessageBoxIndirectW [msgbox] style 0 caption L"\81f4" text L"\6587\5b57\5217\3092 UNICODE \6587\5b57\5217\306b\5909\63db\3067\304d\307e\305b\3093""#
+        XCTAssertEqual(LaunchDiagnostics.lastWindowsMessage(in: japanese),
+                       "文字列を UNICODE 文字列に変換できません")
+    }
+
+    func testSenrenMetadataProbesDistinguishMissingFromPresent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        XCTAssertTrue(LaunchDiagnostics.inventory(in: root, steamAppID: 1144400)
+            .contains("data.xp3\tmissing or unreadable"))
+        try Data([1, 2, 3]).write(to: root.appendingPathComponent("data.xp3"))
+        XCTAssertTrue(LaunchDiagnostics.inventory(in: root, steamAppID: 1144400)
+            .contains("data.xp3\tfile\t3 bytes"))
+    }
+
     func testExternalSymlinksAndOversizeLogsExcluded() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

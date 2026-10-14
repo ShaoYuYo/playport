@@ -9,6 +9,21 @@ final class GameLanguageTests: XCTestCase {
         }
     }
 
+    func testJapaneseWindowsLegacyLocaleIsPerTitle() {
+        XCTAssertEqual(WindowsLocale.startupOverride(steamAppID: 1144400), "ja_JP.UTF-8")
+        XCTAssertNil(WindowsLocale.startupOverride(steamAppID: nil))
+        XCTAssertNil(WindowsLocale.startupOverride(steamAppID: 1144401))
+        XCTAssertNil(WindowsLocale.startupOverride(steamAppID: 0))
+        XCTAssertEqual(GameLanguage.suggested(["zh-Hant-TW"]), .tchinese)
+    }
+
+    func testLegacyGameASCIIAliasDoesNotTouchOtherSteamIdentities() {
+        XCTAssertEqual(WindowsLocale.compatiblePersona(steamAppID: 1144400, original: "玩家"), "Player")
+        XCTAssertEqual(WindowsLocale.compatiblePersona(steamAppID: 1144400, original: "NormalUser"), "NormalUser")
+        XCTAssertEqual(WindowsLocale.compatiblePersona(steamAppID: 999999, original: "玩家"), "玩家")
+        XCTAssertNil(WindowsLocale.compatiblePersona(steamAppID: 1144400, original: nil))
+    }
+
     func testSimplifiedJapaneseAndEnglishFallback() {
         XCTAssertEqual(GameLanguage.suggested(["zh-Hans-CN"]), .schinese)
         XCTAssertEqual(GameLanguage.suggested(["zh-Hans-TW"]), .schinese)
