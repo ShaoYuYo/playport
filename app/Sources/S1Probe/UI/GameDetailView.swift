@@ -1196,7 +1196,7 @@ enum ProblemReport {
         let root = LibraryModel.paths.games.appendingPathComponent(t.installDir, isDirectory: true)
         let urls = files() + LaunchDiagnostics.gameLogs(in: root)
         Task { @MainActor in
-            let zip = await archive(urls, name: t.id, gameRoot: root)
+            let zip = await archive(urls, name: t.id, gameRoot: root, steamAppID: t.appID)
             LibraryModel.log("report a problem for \(t.id): sharing \(urls.map(\.lastPathComponent).joined(separator: ", "))"
                              + (zip.map { " as \($0.lastPathComponent)" } ?? " (not zipped)"))
             present(zip.map { [$0] } ?? urls)
@@ -1209,7 +1209,7 @@ enum ProblemReport {
     /// (NSFileCoordinator's forUploading, through the queue form: the blocking form's
     /// non-escaping block makes Swift record this file's full path for its escape check);
     /// nil when that fails, and the files go as they are.
-    static func archive(_ urls: [URL], name id: String, gameRoot: URL? = nil) async -> URL? {
+    static func archive(_ urls: [URL], name id: String, gameRoot: URL? = nil, steamAppID: UInt32? = nil) async -> URL? {
         guard !urls.isEmpty else { return nil }
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("Report a problem", isDirectory: true)
@@ -1229,7 +1229,7 @@ enum ProblemReport {
                 try fm.copyItem(at: u, to: folder.appendingPathComponent(name))
             }
             if let root = gameRoot {
-                try LaunchDiagnostics.inventory(in: root).write(to: folder.appendingPathComponent("game-files.txt"), atomically: true, encoding: .utf8)
+                try LaunchDiagnostics.inventory(in: root, steamAppID: steamAppID).write(to: folder.appendingPathComponent("game-files.txt"), atomically: true, encoding: .utf8)
             }
         } catch {
             LibraryModel.log("report a problem: could not gather the logs: \(error)")
