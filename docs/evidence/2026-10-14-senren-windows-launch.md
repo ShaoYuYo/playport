@@ -178,3 +178,46 @@ launch should show `[wow64-fex-arena] pre-CRT handoff` before FEX's allocator
 initializes. Check the latest launch block rather than historical errors in an
 appended report. A first frame and correct Chinese rendering must still be
 established on the owner's iPhone; neither is claimed from build success.
+
+
+## 18:08 device report: handoff confirmed, encrypted-wrapper execution fault
+
+The owner supplied `Playport-report-app-1144400-20261014-180806.zip` after
+installing run 25. Its latest launch (18:07 Taiwan time) shows the successful
+pre-CRT arena handoff with the expected exclusive-to-inclusive conversion.
+FEX initializes, decodes the i386 Wine loader, loads the game's dependencies,
+registers desktop/message classes and begins executing the game wrapper.
+This establishes that the two preceding memory-reservation and allocator-channel
+repairs took effect on the actual phone.
+
+The new failure is a read access violation, `c0000005`, after 851 ms. FEX
+reconstructs guest EIP `0x8db75f`; that is within the main executable's mapped
+`.bind` code interval (`0x8da000` through `0x903900`). Its native emitted
+instruction reads guest address `0x8b3504a9` at host `0x70c33504a9`, precisely
+window base `0x7038000000` plus the zero-extended guest address. That address
+has no committed readable Wine page. The guest stack remains a plausible
+`0x110f694`; the native handler's zero Frame.RIP/RSP dump refers to its ARM64EC
+state probe, while the WoW64 handler subsequently reconstructs the real guest
+context. Those diagnostic zeros alone are not evidence of missing stack setup.
+The arena used 197 MiB with 827 MiB free, without refused allocations; the JIT
+pool had 454 MiB room. This is not evidence of arena exhaustion.
+
+The Play UI's executable check reports `SteamStub 3.1 x86 with encrypted code
+is not supported yet`. The current implementation deliberately leaves such
+images intact and supports only unencrypted 3.1 wrappers. There are also earlier
+rpmalloc available-list guard reports (`bad=0x20`, head with non-null previous
+link); their relationship to this guest instruction is not established. Neither
+the unsupported-wrapper label nor the allocator guard is sufficient by itself
+to prove the ultimate cause. Do not disable protection, map the invalid address,
+reset heap lists blindly, or treat a failed encrypted-wrapper launch as a
+successful game launch.
+
+Next implementation requires validating the real x86 wrapper layout/decryption
+contract and matching the faulting guest instruction before changing executable
+bytes. The public third-party reference-code clone was rejected by automatic
+approval review as outside the two-repository operation scope. It was stopped
+and not retried through another route. No speculative runtime or wrapper change
+was made from this report, and no unchanged IPA rebuild was submitted. Source
+and private workflow still preserve the successful run 25 native checkpoint.
+Only necessary nonprivate diagnostic facts are recorded; the uploaded report
+remains outside version control.
