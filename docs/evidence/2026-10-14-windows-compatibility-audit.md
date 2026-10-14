@@ -204,3 +204,30 @@ actual build-ipa job and all verification/upload evidence.
 Windows runtime, checkpoint hashes, Steam, game data and saves are unchanged.
 Actual iPhone first frame, SteamAPI initialization, and Liquid Glass appearance
 remain unverified for the new source.
+
+## Owner clarification: agent checks, no workflow cron — 2026-10-15
+
+The owner clarified that the assistant should inspect results each hour and
+follow the previously successful method. Commit
+`9009c5e188df9684a3f6ef459d814fa5b29160b9` removes the scheduled retries and
+auto-build decision job. The workflow file is byte-for-byte restored to
+`7d29e5e9452f881482ba0454d925b3b111db1cfd` (blob
+`f2d2e638ea9708216b9e9847e1841987a45e10d8`), with source3981 and its required
+checkpoint migration retained. The preceding automatic-Action policy is
+superseded: the assistant's existing hourly watch reads actual results and
+fixes evidenced failures; GitHub itself no longer has an hourly cron.
+
+The last successful build was checked again: run38574001127 has successful
+Mesa, Swift and IPA jobs, nonempty unexpired IPA artifact11900547076
+(673,566,091 archive bytes) and build-evidence artifact11900467368.
+The successful job log confirms the same actual SDK/XDG configuration and
+successful artifact uploads. The old source62f IPA does not fix the phone game;
+retain the current Windows compatibility corrections instead of rolling back
+the game code to that older build.
+
+The restoration push triggered
+[run34 / 38653459914](https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38653459914).
+Its Mesa/Swift preflights again failed with runner_id=0 and steps=[]; build-ipa
+was skipped. Returning to the original direct job topology therefore did not
+resolve the pre-run allocation failure. No new compilation or IPA is claimed,
+and the exact platform refusal annotation is still needed to identify the cause.
