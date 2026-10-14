@@ -193,17 +193,22 @@ public enum SteamStub {
             throw SteamError.unsupported("invalid SteamStub encrypted-code section")
         }
         let count = u64(head, 0x50), fileSize = try h.seekToEnd()
-        let offset = UInt64(section.rawPointer), endRVA = UInt64(rva) + count
+        let offset = UInt64(section.rawPointer)
         let headersEnd = UInt64(pe.sectionTable + 40 * pe.sections.count)
+        // Bound untrusted lengths before forming any end address, so even a
+        // UINT64_MAX header cannot overflow while checking overlap or the OEP.
+        guard count > 0, count % 16 == 0, count <= 128 * 1024 * 1024,
+              count <= UInt64(section.rawSize), offset >= headersEnd,
+              offset <= fileSize, count <= fileSize - offset else {
+            throw SteamError.unsupported("invalid SteamStub encrypted-code bounds")
+        }
+        let endRVA = UInt64(rva) + count, endOffset = offset + count
         let overlaps = pe.sections.contains { other in
             other != section && other.rawSize != 0 && offset < UInt64(other.rawPointer) + UInt64(other.rawSize)
-                && UInt64(other.rawPointer) < offset + count
+                && UInt64(other.rawPointer) < endOffset
         }
-        guard count > 0, count % 16 == 0, count <= 128 * 1024 * 1024,
-              count <= UInt64(section.rawSize), offset >= headersEnd, !overlaps,
-              offset <= fileSize, count <= fileSize - offset,
-              UInt64(info.originalEntryPoint) >= UInt64(rva), UInt64(info.originalEntryPoint) < endRVA else {
-            throw SteamError.unsupported("invalid SteamStub encrypted-code bounds")
+        guard !overlaps, UInt64(info.originalEntryPoint) >= UInt64(rva), UInt64(info.originalEntryPoint) < endRVA else {
+            throw SteamError.unsupported("invalid SteamStub encrypted-code section overlap or entry point")
         }
         try h.seek(toOffset: offset)
         guard let body = try h.read(upToCount: Int(count)), body.count == Int(count) else {

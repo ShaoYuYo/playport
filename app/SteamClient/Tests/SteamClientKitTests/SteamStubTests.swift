@@ -220,7 +220,7 @@ final class SteamStubTests: XCTestCase {
     }
 
     func testInvalidEncryptedSectionsNeverChangeSourceOrExistingDestination() throws {
-        for kind in 0..<7 {
+        for kind in 0..<8 {
             var invalid = encryptedImage()
             changeHeader(&invalid) { h in
                 if kind == 0 { SteamStub.put32(&h, 0x48, 0x2000) } // non-executable .data
@@ -230,6 +230,7 @@ final class SteamStubTests: XCTestCase {
                 if kind == 4 { SteamStub.put32(&h, 0x54, UInt32.max) }
                 if kind == 5 { SteamStub.put32(&h, 0x20, 0x3000) } // original entry in wrapper
                 if kind == 6 { SteamStub.put32(&h, 0x48, 0x1001) } // section interior, unknown layout
+                if kind == 7 { SteamStub.put32(&h, 0x50, UInt32.max); SteamStub.put32(&h, 0x54, UInt32.max) }
             }
             let src = try write("invalid-\(kind).exe", invalid)
             let dst = try write("existing-\(kind).exe", [1, 2, 3])

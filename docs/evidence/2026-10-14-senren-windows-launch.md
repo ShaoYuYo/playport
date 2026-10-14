@@ -262,3 +262,14 @@ aliasing, truncated PE headers and wrapper/original TLS callbacks. NIST
 SP 800-38A F.2.5 separately checks unpadded CBC. Swift tests and a new verified
 IPA still need to complete; real encrypted-game launch remains a phone check.
 The run 25 native cache identity is unchanged by these app-only source changes.
+
+
+Run 26's Swift 6.4 CI compiled the implementation and ran 43 selected tests.
+All 18 SteamStub tests (one existing real-sample skip), all 14 codec tests and
+all six depot tests passed. The only failure was a transcription error in the
+new NIST expected plaintext, not an AES mismatch: OpenSSL independently agrees
+with the computed four blocks. The literal is corrected as four explicit
+16-byte strings. An additional UINT64_MAX header case requires checking raw
+length before computing end addresses; this is fixed before accepting the
+source. The IPA job was skipped by the failed-test gate. No verifier was disabled
+and the source has not yet been promoted to main.
