@@ -275,3 +275,36 @@ historical success with the explicit attempt1 URL:
 https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38574001127/attempts/1
 The run's latest attempt now reports failure; do not erase or mislabel either
 observation. No new IPA or new phone-play result exists.
+
+## Owner screenshot: account-related startup message — 2026-10-15 16:24 Taipei
+
+The owner supplied IMG_1399.png showing the old run's new attempt: Failure,
+5s, Swift failed, IPA skipped, and one annotation. The visible annotation is
+truncated after "The job was not started because recent acco...".
+Do not present the hidden remainder as directly observed screenshot text.
+
+That prefix matches GitHub's documented-in-community payment/spending-limit
+startup message. GitHub's accepted response identifies incorrect billing details
+and an Actions budget blocking spend as potential causes, then recommends a
+support ticket when both have been checked:
+https://github.com/orgs/community/discussions/151956
+Official billing documentation explains that private repositories have included
+quotas, and usage is blocked after exhaustion without a valid payment method:
+https://docs.github.com/en/billing/concepts/product-billing/github-actions
+Budget hard stops can also block usage:
+https://docs.github.com/en/billing/how-tos/set-up-budgets
+
+This is new evidence pointing to an account/billing/budget restriction rather
+than an app compilation failure. It does not establish that this owner has an
+unpaid invoice, exhausted minutes, an invalid card, or a particular budget.
+The complete annotation and account billing overview/usage/budgets must identify
+the actual condition. Repository connector tools cannot read or change personal
+billing. Do not increase spending, enter payment details, change repository
+visibility, or assume a public repository will bypass an account-level lock.
+Do not trigger more unchanged builds while this restriction remains unresolved.
+
+Attempt3 of the old run was explicitly retried at the owner's request and again
+failed before execution (Swift116322968850 runner0/steps0, IPA116322996156 skipped).
+The copied Mesa success is still the earlier attempt1 observation, not a new run.
+The user requested removal of monitoring; task6ace41cbd0b48191a22351ec0697b9a9
+was confirmed disabled, and it has not been re-enabled.
