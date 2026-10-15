@@ -250,3 +250,28 @@ do not attribute it to billing, SDK or game code.
 This was an explicitly requested recovery attempt, not a new hourly GitHub retry
 policy. Keep the agent's hourly inspection and restored workflow, and preserve
 all current source fixes, native checkpoints and verification gates.
+
+## Exact successful-revision control — 2026-10-15 16:19 Taipei
+
+The owner's request to inspect the earlier successful method was checked against
+the prior conversation and the actual run, not just the latest failing snapshot.
+Run38574001127 attempt1 still reports success at workflow commit
+52e1e3e4f6fcf287eaf02b1a213cd1c1565d2c3b and source62f9877. Its Swift test job
+115886213048 had runner1000000149 and five steps; the IPA job had42 steps.
+
+A single-job rerun of that exact Swift job was requested as a control. GitHub
+accepted it (success=true), creating attempt2 of the same run and same workflow
+commit; no source or workflow was edited for this test. On 08:19:55 UTC,
+Swift job116321719499 failed with runner_id=0 and steps=[]; the dependent IPA
+was skipped. The retained Mesa result is copied from attempt1 (its timestamps
+are Oct14), not a newly executed successful Mesa job. Swift log fetch returns
+404 BlobNotFound.
+
+Consequently, the new Windows/NLS/UI changes cannot explain this control's
+pre-run refusal: even the exact previously successful revision now cannot start
+a runner. This does not identify which account/repository/platform condition
+changed, and no billing or administrative cause is established. Preserve the
+historical success with the explicit attempt1 URL:
+https://github.com/ShaoYuYo/StikDebug-Modified/actions/runs/38574001127/attempts/1
+The run's latest attempt now reports failure; do not erase or mislabel either
+observation. No new IPA or new phone-play result exists.
