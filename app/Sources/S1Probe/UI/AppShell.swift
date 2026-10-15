@@ -46,36 +46,25 @@ struct AppShell: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !nav.settings && !nav.setup && !nav.signIn && !nav.onGamePage {
-                GlassEffectContainer(spacing: 12) {
-                    TopBar(installs: model.installs).openingChrome()
-                }
+            GlassEffectContainer(spacing: 12) {
+                TopBar(installs: model.installs).openingChrome()
             }
+            .frame(height: showsTopBar ? 48 : 0)
+            .opacity(showsTopBar ? 1 : 0)
+            .clipped()
+            .allowsHitTesting(showsTopBar)
+            .accessibilityHidden(!showsTopBar)
+            .animation(shellAnimation, value: showsTopBar)
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
-            if !panelUp {
-                GlassEffectContainer(spacing: 10) { PadFooter(hints: hints) }.overlay(alignment: .leading) {
-                    // The checklist's grey note at the left (Setup.dc.html).
-                    if onSetup, !modal.isUp { Text(SetupView.footerNote).font(.system(size: 12)).foregroundStyle(PP.muted).padding(.leading, 44) }
-                    if nav.signIn, !modal.isUp { Text(SignInView.footerNote).font(.system(size: 12)).foregroundStyle(PP.muted).padding(.leading, 44) }
-                }
-                // A picker or the keyboard draws its own footer; this one would show
-                // through its scrim beside it. Hidden, not removed, so the page keeps its height.
-                .opacity(modal.isUp ? 0 : 1)
-                .openingChrome()
-                .padding(.bottom, Self.footerBottom)
-                // Its own colour, over a game page's art too.
-                .background(PP.background.ignoresSafeArea(edges: [.horizontal, .bottom]))
-            }
+            // Reserve the ordinary footer's height without mounting a second footer
+            // when a game panel moves the same controls to the leading edge.
+            Color.clear.frame(height: panelUp ? 0 : 44 + Self.footerBottom)
         }
         // The footer sits low, in the home indicator's inset, on every page.
         .ignoresSafeArea(.container, edges: .bottom)
         // Under a game page's panel the footer sits at the left, beside it (GameOptions.dc.html).
         .overlay(alignment: .bottomLeading) {
-            // A picker over it draws its own there.
-            if panelUp, !modal.isUp {
-                PadFooter(hints: hints, leading: true).frame(maxWidth: .infinity).padding(.trailing, 410)
-                    .padding(.bottom, Self.footerBottom)
-            }
+            footer
         }
         // A game's page: its hero art fills the screen behind it, dimmed as the launch screen
         // shows it (UI/LaunchViews.swift GameHeroArt). Clear once Play is
@@ -168,22 +157,68 @@ struct AppShell: View {
         }
     }
 
-    @ViewBuilder
     private var content: some View {
-        if nav.signIn {
-            SignInView()
-        } else if nav.settings {
-            SettingsView()
-        } else if nav.setup {
-            SetupView()
-        } else {
-            switch nav.page {
-            case .home: HomeView(installs: model.installs)
-            case .library: LibraryView(installs: model.installs)
-            case .downloads: DownloadsPage(installs: model.installs)
+        ZStack {
+            // A native tab container owns the roots and their navigation/scroll state.
+            // Settings and setup cover it instead of destroying it on every visit.
+            TabView(selection: Binding(get: { nav.page }, set: { nav.show($0) })) {
+                Tab("Home", systemImage: "house", value: Page.home) {
+                    HomeView(installs: model.installs)
+                }
+                Tab("Library", systemImage: "square.grid.2x2", value: Page.library) {
+                    LibraryView(installs: model.installs)
+                }
+                Tab("Downloads", systemImage: "arrow.down.circle", value: Page.downloads) {
+                    DownloadsPage(installs: model.installs)
+                }
+            }
+            .toolbar(.hidden, for: .tabBar)
+            .opacity(showsMainPages ? 1 : 0)
+            .allowsHitTesting(showsMainPages)
+            .accessibilityHidden(!showsMainPages)
+            .transformPreference(PadItemsKey.self) { if !showsMainPages { $0 = [:] } }
+            .transformPreference(PageArtKey.self) { if !showsMainPages { $0 = nil } }
+
+            if nav.signIn {
+                SignInView().transition(.opacity)
+            } else if nav.settings {
+                SettingsView().transition(.opacity)
+            } else if nav.setup {
+                SetupView().transition(.opacity)
             }
         }
+        .animation(shellAnimation, value: surface)
     }
+
+    private var footer: some View {
+        GlassEffectContainer(spacing: 10) {
+            PadFooter(hints: hints, leading: panelUp)
+        }
+        .overlay(alignment: .leading) {
+            if onSetup, !modal.isUp {
+                Text(SetupView.footerNote).font(.system(size: 12))
+                    .foregroundStyle(PP.muted).padding(.leading, 44)
+            }
+            if nav.signIn, !modal.isUp {
+                Text(SignInView.footerNote).font(.system(size: 12))
+                    .foregroundStyle(PP.muted).padding(.leading, 44)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.trailing, panelUp ? 410 : 0)
+        .padding(.bottom, Self.footerBottom)
+        .background((panelUp ? Color.clear : PP.background).ignoresSafeArea(edges: [.horizontal, .bottom]))
+        .opacity(modal.isUp ? 0 : 1)
+        .allowsHitTesting(!modal.isUp)
+        .accessibilityHidden(modal.isUp)
+        .openingChrome()
+        .animation(shellAnimation, value: panelUp)
+    }
+
+    private var showsMainPages: Bool { !nav.settings && !nav.setup && !nav.signIn }
+    private var showsTopBar: Bool { showsMainPages && !nav.onGamePage }
+    private var surface: String { nav.signIn ? "signin" : nav.settings ? "settings" : nav.setup ? "setup" : "main" }
+    private var shellAnimation: Animation { reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.25) }
 
     /// The footer's distance from the screen's bottom edge, inside the home indicator's inset.
     static let footerBottom: CGFloat = 9
@@ -298,6 +333,8 @@ private struct TopBar: View {
     @ObservedObject var installs: Downloads
     @ObservedObject private var nav = AppNavigation.shared
     @ObservedObject private var router = PadRouter.shared
+    @Namespace private var glassNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 6) {
@@ -310,7 +347,7 @@ private struct TopBar: View {
                     HStack(spacing: 5) {
                         Text(LocalizedStringKey(p.title))
                             .font(PP.display(15, .semibold))
-                            .foregroundStyle(nav.page == p ? PP.onAccent : PP.soft)
+                            .foregroundStyle(nav.page == p ? PP.accent : PP.soft)
                         if p == .downloads, !installs.jobs.isEmpty {
                             Text("\(installs.jobs.count)")
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(PP.background)
@@ -320,8 +357,12 @@ private struct TopBar: View {
                     }
                     .padding(.horizontal, 8).frame(minHeight: 28)
                 }
-                .ppGlassButton(prominent: nav.page == p)
+                // Keep one native style and identity while selection changes.
+                // Switching between glass/glassProminent rebuilds the control.
+                .buttonStyle(.glass)
+                .tint(nav.page == p ? PP.accent : PP.soft)
                 .frame(minHeight: 44)
+                .glassEffectID(p.rawValue, in: glassNamespace)
                 .accessibilityAddTraits(nav.page == p ? .isSelected : [])
                 .accessibilityIdentifier("page-\(p.rawValue)")
             }
@@ -349,6 +390,7 @@ private struct TopBar: View {
             .accessibilityLabel("Settings")
         }
         .frame(height: 48)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: nav.page)
     }
 
     private var controllerText: String {

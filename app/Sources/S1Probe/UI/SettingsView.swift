@@ -46,6 +46,8 @@ extension SettingsSection {
 struct SettingsView: View {
     @ObservedObject private var navigation = AppNavigation.shared
     @ObservedObject private var focus = PadFocus.shared
+    @Namespace private var glassNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollPosition = ScrollPosition()
     @State private var scrollOffset: CGFloat = 0
 
@@ -71,6 +73,7 @@ struct SettingsView: View {
     }
 
     private var sidebar: some View {
+        GlassEffectContainer(spacing: 8) {
         VStack(alignment: .leading, spacing: 3) {
             Text("Settings").font(PP.display(26)).foregroundStyle(PP.text)
                 .padding(.horizontal, 14).padding(.bottom, 10)
@@ -78,10 +81,11 @@ struct SettingsView: View {
                 let on = navigation.settingsSection == s
                 Text(LocalizedStringKey(s.title))
                     .font(.system(size: 15, weight: on ? .semibold : .medium))
-                    .foregroundStyle(on ? PP.background : PP.soft)
+                    .foregroundStyle(on ? PP.accent : PP.soft)
                     .padding(.horizontal, 14)
                     .frame(maxWidth: .infinity, minHeight: 37, alignment: .leading)
-                    .background(on ? PP.text : .clear, in: RoundedRectangle(cornerRadius: 10))
+                    .ppGlass(cornerRadius: 12, tint: on ? PP.accent.opacity(0.18) : nil)
+                    .glassEffectID(s.rawValue, in: glassNamespace)
                     .padItem(s.navItem, hint: "Open", cornerRadius: 10) {
                         navigation.settingsSection = s
                         SettingsRing.enter()
@@ -89,6 +93,8 @@ struct SettingsView: View {
             }
             Spacer(minLength: 0)
         }
+        }
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: navigation.settingsSection)
     }
 
     private var content: some View {
@@ -97,9 +103,12 @@ struct SettingsView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 8) {
                         section(navigation.settingsSection)
+                            .id(navigation.settingsSection)
+                            .transition(.opacity)
                     }
                     // Room for the ring, 6 pt outside a row, which the scroll view would clip.
                     .padding(.horizontal, 8).padding(.top, 2).padding(.bottom, 20)
+                    .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: navigation.settingsSection)
                 }
                 .padding(.horizontal, -8)
                 .scrollPosition($scrollPosition)

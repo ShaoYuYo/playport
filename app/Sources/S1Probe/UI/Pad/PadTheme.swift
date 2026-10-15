@@ -95,6 +95,7 @@ struct PadFooter: View {
                     HStack(spacing: 6) {
                         PadGlyph(button: h.button)
                         Text(LocalizedStringKey(h.label)).font(.system(size: 13)).foregroundStyle(PP.soft)
+                            .contentTransition(.opacity)
                     }
                     .padding(.horizontal, 4).frame(minHeight: 28)
                     .contentShape(Capsule())
@@ -102,12 +103,13 @@ struct PadFooter: View {
                 .ppGlassButton()
                 .frame(minHeight: 44)
                 .glassEffectID(h.button.rawValue, in: glassNamespace)
+                .transition(.opacity)
                 .accessibilityIdentifier("hint-\(h.button.rawValue)")
             }
             if leading { Spacer(minLength: 0) }
         }
         .frame(height: 44)
-        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hints.map(\.button))
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hints.map { $0.button.rawValue + ":" + $0.label })
         .overlay(alignment: .top) {
             // The rule runs to the screen's edges, past the landscape safe area.
             if !leading { Rectangle().fill(PP.raised).frame(height: 1).ignoresSafeArea(edges: .horizontal) }

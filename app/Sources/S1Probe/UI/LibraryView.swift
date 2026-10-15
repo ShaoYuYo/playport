@@ -141,7 +141,9 @@ private struct LibraryGridView: View {
         let downloading = Set(installs.jobs.keys)
         let shown = LibraryList.shown(all, filter: grid.filter, sort: grid.sort, search: grid.search, downloading: downloading)
         VStack(alignment: .leading, spacing: 0) {
-            chips(all, downloading: downloading)
+            GlassEffectContainer(spacing: 8) {
+                chips(all, downloading: downloading)
+            }
                 .padding(.top, 6).padding(.bottom, 8)
             if shown.isEmpty {
                 empty
@@ -195,8 +197,7 @@ private struct LibraryGridView: View {
                     .font(.system(size: 13)).foregroundStyle(PP.soft)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .frame(width: 180)
-                    .background(PP.surface, in: Capsule())
-                    .overlay(Capsule().strokeBorder(grid.searching ? PP.accent : PP.line, lineWidth: 1))
+                    .ppGlass(cornerRadius: 18, tint: grid.searching ? PP.accent.opacity(0.18) : nil)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("library-search")
@@ -211,8 +212,7 @@ private struct LibraryGridView: View {
                 }
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(PP.text)
                 .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(PP.surface, in: Capsule())
-                .overlay(Capsule().strokeBorder(PP.line, lineWidth: 1))
+                .ppGlass(cornerRadius: 18)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("library-add")
@@ -221,7 +221,7 @@ private struct LibraryGridView: View {
                     .font(.system(size: 12)).foregroundStyle(PP.muted)
                     .padding(.horizontal, 8).padding(.vertical, 4)
             }
-            .buttonStyle(.plain)
+            .ppGlassButton()
             .accessibilityIdentifier("library-sort")
         }
         .padding(.horizontal, 6)
@@ -384,10 +384,9 @@ private struct Chip: View {
     var body: some View {
         Text(text)
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(on ? PP.text : PP.soft)
+            .foregroundStyle(on ? PP.accent : PP.soft)
             .padding(.horizontal, 12).padding(.vertical, 4)
-            .background(on ? PP.line : PP.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(on ? Color(hex: 0x4A5667) : PP.line, lineWidth: 1))
+            .ppGlass(cornerRadius: 18, tint: on ? PP.accent.opacity(0.18) : nil)
     }
 }
 
