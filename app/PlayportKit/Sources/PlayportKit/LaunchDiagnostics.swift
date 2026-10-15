@@ -1,8 +1,32 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
+import SteamClientKit
 
 /// Player-visible startup evidence. A short zero-code exit is not proof of a successful play.
 public enum LaunchDiagnostics {
+    /// Fixed, public file names only. Hashes let a report establish the exact
+    /// executable/runtime used without exporting game bytes, saves or credentials.
+    public static func compatibilityFingerprints(gameRoot: URL, runtime: URL) -> String {
+        var text = "Compatibility diagnostics: i386-compat-v1\nSHA256 and bytes; no file contents or private paths\n"
+        let files = [
+            ("game/SenrenBanka.exe", gameRoot.appendingPathComponent("SenrenBanka.exe")),
+            ("game/SenrenBanka.exe.orig", gameRoot.appendingPathComponent("SenrenBanka.exe.orig")),
+            ("game/SenrenBanka.cf", gameRoot.appendingPathComponent("SenrenBanka.cf")),
+            ("game/steam_api.dll", gameRoot.appendingPathComponent("steam_api.dll")),
+            ("runtime/i386/kernelbase.dll", runtime.appendingPathComponent("i386-windows/kernelbase.dll"))
+        ]
+        for (name, url) in files {
+            guard let attr = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  attr[.type] as? FileAttributeType == .typeRegular,
+                  let size = (attr[.size] as? NSNumber)?.intValue, size <= 16 << 20,
+                  let bytes = try? Data(contentsOf: url) else {
+                text += "\(name)\tmissing, linked or over limit\n"; continue
+            }
+            text += "\(name)\t\(bytes.count)\t\(SHA256Stream.hash(Array(bytes)).hex)\n"
+        }
+        return text
+    }
+
     public static func endedBeforeDrawing(exitCode: UInt32, drewFrame: Bool, elapsed: TimeInterval) -> Bool {
         !drewFrame && elapsed.isFinite && elapsed >= 0 && elapsed <= 10
     }

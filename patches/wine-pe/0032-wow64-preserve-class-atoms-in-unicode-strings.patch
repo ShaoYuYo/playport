@@ -17,16 +17,7 @@ diff --git a/dlls/wow64/wow64_private.h b/dlls/wow64/wow64_private.h
 index 8225b96..de625af 100644
 --- a/dlls/wow64/wow64_private.h
 +++ b/dlls/wow64/wow64_private.h
-@@ -153,25 +153,29 @@ static inline void *apc_param_32to64( ULONG func, ULONG context )
- static inline IO_STATUS_BLOCK *iosb_32to64( IO_STATUS_BLOCK *io, IO_STATUS_BLOCK32 *io32 )
- {
-     if (!io32) return NULL;
-     io->Pointer = io32;
-     return io;
- }
- 
- static inline UNICODE_STRING *unicode_str_32to64( UNICODE_STRING *str, const UNICODE_STRING32 *str32 )
- {
+@@ -162,7 +162,11 @@ static inline UNICODE_STRING *unicode_str_32to64( UNICODE_STRING *str, const UNI
      if (!str32) return NULL;
      str->Length = str32->Length;
      str->MaximumLength = str32->MaximumLength;
@@ -39,15 +30,5 @@ index 8225b96..de625af 100644
      return str;
  }
  
- static inline CLIENT_ID *client_id_32to64( CLIENT_ID *id, const CLIENT_ID32 *id32 )
- {
-     if (!id32) return NULL;
-     id->UniqueProcess = LongToHandle( id32->UniqueProcess );
-     id->UniqueThread = LongToHandle( id32->UniqueThread );
-     return id;
- }
- 
- static inline SECURITY_DESCRIPTOR *secdesc_32to64( SECURITY_DESCRIPTOR *out, const SECURITY_DESCRIPTOR *in )
 -- 
-2.51.1
-
+2.43.0

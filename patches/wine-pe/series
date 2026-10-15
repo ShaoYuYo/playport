@@ -29,3 +29,4 @@
 0030-nsi-forward-keyed-reads-to-the-iOS-unix-fallback.patch
 0031-ntdll-log-a-run-once-keyed-wait-that-ends-without-it.patch
 0032-wow64-preserve-class-atoms-in-unicode-strings.patch
+0033-kernelbase-record-bounded-i386-compatibility-evidence.patch

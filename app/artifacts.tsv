@@ -296,7 +296,7 @@ resource	Runtime/aarch64-windows/winmm.dll	1179648	39c50c871363663069bd0b114ee31
 resource	Runtime/aarch64-windows/wintrust.dll	589824	ac6ca5396cea5494d3f19b780ecaf8d945577996260f8d9c91f2b00666bd7795	wine-build	build-macos/dlls/wintrust/aarch64-windows/wintrust.dll	P2
 resource	Runtime/aarch64-windows/winusb.dll	458752	4dd34f8d7e7fd217263aaa9918374e691685a76b5caa387e860b46911b721fbe	wine-build	build-macos/dlls/winusb/aarch64-windows/winusb.dll	P2
 resource	Runtime/aarch64-windows/wlanapi.dll	458752	39e2690beaba427d0f556e18bce40758e187d1bb50fbb9cce6b30a3370e5b41b	wine-build	build-macos/dlls/wlanapi/aarch64-windows/wlanapi.dll	P2
-resource	Runtime/aarch64-windows/wow64.dll	524288	1c29afc3f0ff18f9c5956407dc6eb46d8a94da3840b9a4959ff5fbb405b52cc1	wine-build	build-macos/dlls/wow64/aarch64-windows/wow64.dll	P2
+resource	Runtime/aarch64-windows/wow64.dll	524288	f25fa96417ec377967c88c9eb215677c6a7b3f3d34f62eb571abb66827bc4ee0	wine-build	build-macos/dlls/wow64/aarch64-windows/wow64.dll	P2
 resource	Runtime/aarch64-windows/wow64win.dll	917504	20e06118111fa810861acfafcca0e4a264d133add675e3fe3c3439c948ff2b83	wine-build	build-macos/dlls/wow64win/aarch64-windows/wow64win.dll	P2
 resource	Runtime/aarch64-windows/ws2_32.dll	589824	5e72ad97ff013b2697fce438c2a3af1f1783ddc94386c9c4f8083600d4ca3cbe	wine-build	build-macos/dlls/ws2_32/aarch64-windows/ws2_32.dll	P2
 resource	Runtime/aarch64-windows/wsock32.dll	524288	f95d62eaff5bf9d23ca25f2659fc50c331ddc7de3b65666952198d6895411c7f	wine-build	build-macos/dlls/wsock32/aarch64-windows/wsock32.dll	P2
@@ -528,7 +528,7 @@ resource	Runtime/i386-windows/iyuv_32.dll	1867776	3b53f32689f6ed35036ab32bf9ce35
 resource	Runtime/i386-windows/jscript.dll	892928	845a3dd540ae7f7b00b0a35a5802e9f4736cec5aa4e6c8cf650e2a06cfb9c7a2	wine-build	build-macos/dlls/jscript/i386-windows/jscript.dll	P2
 resource	Runtime/i386-windows/jsproxy.dll	217088	3194cce98f2f34486437736492e6b94d389db2126fb1368a2bb55642992ee6ee	wine-build	build-macos/dlls/jsproxy/i386-windows/jsproxy.dll	P2
 resource	Runtime/i386-windows/kernel32.dll	581632	68605f0ef18369aafd35ce65ab7ca845accb81cdaa696630e221be526a750d2c	wine-build	build-macos/dlls/kernel32/i386-windows/kernel32.dll	P2
-resource	Runtime/i386-windows/kernelbase.dll	3121152	b41964ac58b8142eb772691d2bda28130b8db4fed9a1eae301f52e48459659a7	wine-build	build-macos/dlls/kernelbase/i386-windows/kernelbase.dll	P2
+resource	Runtime/i386-windows/kernelbase.dll	3125248	003ae3f48f266e84aa6ae3c7585a2e74f45e94da2ecf1fc2bd92fcc62ffdc97b	wine-build	build-macos/dlls/kernelbase/i386-windows/kernelbase.dll	P2
 resource	Runtime/i386-windows/ksuser.dll	32768	62dcff562cb6ab5720cbc0bb3912b5d1792ce2e6cb464ec1288b4be1b2824313	wine-build	build-macos/dlls/ksuser/i386-windows/ksuser.dll	P2
 resource	Runtime/i386-windows/ktmw32.dll	36864	9297c53f738ce4099fe697f0ff32c69487f7bd629ddc1e7c896d6429d2a03047	wine-build	build-macos/dlls/ktmw32/i386-windows/ktmw32.dll	P2
 resource	Runtime/i386-windows/loadperf.dll	36864	836aecc1a0797f634f428e9cddfea6d9e31dd44b3ad3c3cb4fcfa31e0616c0d1	wine-build	build-macos/dlls/loadperf/i386-windows/loadperf.dll	P2
@@ -978,3 +978,4 @@ source	WinIOS/IOSDisplayShim.m	7994	5949d006f6c8c0022a8625c1f71183762007549be9ec
 source	WinIOS/include/IOSDisplayShim.h	811	bc201615f9f858f8085acae1aa48034804ce6a706896a101a1c209bc3647f1f4	unix	mythic/app/Madeira/IOSDisplayShim.h	P5-dxshim
 gap	Runtime/arm64ec-windows/wineios.drv	-	-	-	resource	Madeira build/wineios-drv/wineios.c has no build recipe at the Madeira pin, and the wine-port tree's dlls/wineios.drv is not in its configure, so stages/wine-pe.sh does not build it; audio does not need it: mmdevapi loads winepulse.drv by name and virtual_ios.c answers with the linked audio_null_ios table
 gap	Runtime/prefix-template.tar.gz	-	-	-	resource	reference seeds the whole prefix from an untracked-recipe template; the app seeds only the builtins' own registrations (Runtime/registry, P7-reg), so the rest of wine.inf (font registry, services, file associations) is not applied
+resource	Runtime/nls/c_10000.nls	66082	20128ffdabfca32cc5a5a06d101a1b3316764ee282cc1193bf0e0cc2828931b2	nls-extra	c_10000.nls	nls

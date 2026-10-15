@@ -1234,6 +1234,10 @@ enum ProblemReport {
                 if let runtime = Manifest.runtime {
                     let nls = LaunchDiagnostics.codepageFiles(prefix: WineHostRuntime.shared.prefixURL, runtime: runtime)
                     try nls.write(to: folder.appendingPathComponent("windows-codepages.txt"), atomically: true, encoding: .utf8)
+                    if steamAppID == 1144400 {
+                        let fingerprints = LaunchDiagnostics.compatibilityFingerprints(gameRoot: root, runtime: runtime)
+                        try fingerprints.write(to: folder.appendingPathComponent("compatibility-fingerprints.txt"), atomically: true, encoding: .utf8)
+                    }
                 }
             }
         } catch {

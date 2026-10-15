@@ -4,6 +4,24 @@ import XCTest
 @testable import PlayportKit
 
 final class LaunchDiagnosticsTests: XCTestCase {
+    func testCompatibilityHashesExcludeLinksSavesAndAccountFiles() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data("abc".utf8).write(to: root.appendingPathComponent("SenrenBanka.exe"))
+        try Data("account-secret".utf8).write(to: root.appendingPathComponent("configs.user.ini"))
+        try Data("private-save".utf8).write(to: root.appendingPathComponent("savedata.dat"))
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("SenrenBanka.cf"),
+                                                 withDestinationURL: root.appendingPathComponent("configs.user.ini"))
+        let text = LaunchDiagnostics.compatibilityFingerprints(gameRoot: root, runtime: root)
+        XCTAssertTrue(text.contains("game/SenrenBanka.exe\t3\tba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
+        XCTAssertTrue(text.contains("game/SenrenBanka.cf\tmissing, linked or over limit"))
+        XCTAssertFalse(text.contains(root.path))
+        XCTAssertFalse(text.contains("account-secret"))
+        XCTAssertFalse(text.contains("private-save"))
+        XCTAssertFalse(text.contains("configs.user.ini"))
+    }
+
     func testZeroExitBeforeFrameIsVisibleButNormalPlayIsNot() {
         XCTAssertTrue(LaunchDiagnostics.endedBeforeDrawing(exitCode: 0, drewFrame: false, elapsed: 1))
         XCTAssertTrue(LaunchDiagnostics.endedBeforeDrawing(exitCode: 0xc0000005, drewFrame: false, elapsed: 1))

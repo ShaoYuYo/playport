@@ -1,0 +1,102 @@
+From 280647ca8ee886d33c8c8c084d429019da353f52 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Thu, 15 Oct 2026 20:12:27 +0800
+Subject: [PATCH] kernelbase: record bounded i386 conversion and exception
+ evidence
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-15-senren-windows-comparison.md
+Offered-upstream: no; temporary downstream runtime diagnosis
+---
+ dlls/kernelbase/debug.c  | 45 ++++++++++++++++++++++++++++++++++++++++
+ dlls/kernelbase/locale.c | 11 ++++++++++
+ 2 files changed, 56 insertions(+)
+
+diff --git a/dlls/kernelbase/debug.c b/dlls/kernelbase/debug.c
+index b049497..a5a4276 100644
+--- a/dlls/kernelbase/debug.c
++++ b/dlls/kernelbase/debug.c
+@@ -315,6 +315,48 @@ void WINAPI DECLSPEC_HOTPATCH OutputDebugStringW( LPCWSTR str )
+ /*******************************************************************
+  *           RaiseException  (kernelbase.@)
+  */
++/* Bounded guest-side evidence, with no application strings or paths. The
++ * host's codepage files do not prove what an i386 kernelbase actually sees. */
++#ifdef __i386__
++static void report_i386_compatibility( DWORD code )
++{
++    static LONG reports;
++    static const char sjis[] = "\x93\xfa\x96\x7b\x8c\xea"; /* Japanese */
++    typedef HDESK (WINAPI *desktop_fn)(DWORD);
++    typedef BOOL (WINAPI *object_fn)(HANDLE,INT,void *,DWORD,DWORD *);
++    DWORD saved_error, conversion_error, desktop_error = 0, needed;
++    WCHAR sample[4] = {0}, name[64];
++    void *frames[16];
++    HMODULE user32;
++    HDESK desktop = 0;
++    desktop_fn get_desktop;
++    object_fn object_info;
++    USHORT i, nframes;
++    int converted, desktop_valid = 0;
++
++    if (code != 0xe06d7363 || InterlockedIncrement( &reports ) > 3) return;
++    saved_error = GetLastError();
++    converted = MultiByteToWideChar( 932, MB_PRECOMPOSED | MB_ERR_INVALID_CHARS,
++                                      sjis, -1, sample, ARRAY_SIZE(sample) );
++    conversion_error = converted ? 0 : GetLastError();
++    user32 = GetModuleHandleW( L"user32.dll" );
++    if (user32 && (get_desktop = (desktop_fn)GetProcAddress( user32, "GetThreadDesktop" )) &&
++        (object_info = (object_fn)GetProcAddress( user32, "GetUserObjectInformationW" )))
++    {
++        desktop = get_desktop( GetCurrentThreadId() );
++        desktop_valid = object_info( desktop, UOI_NAME, name, sizeof(name), &needed );
++        if (!desktop_valid) desktop_error = GetLastError();
++    }
++    ERR( "[win-compat] i386 acp=%u oem=%u cp932_count=%d cp932_error=%lu utf16=%04x,%04x,%04x "
++         "desktop=%p valid=%d error=%lu\n", GetACP(), GetOEMCP(), converted, conversion_error,
++         sample[0], sample[1], sample[2], desktop, desktop_valid, desktop_error );
++    nframes = RtlCaptureStackBackTrace( 0, ARRAY_SIZE(frames), frames, NULL );
++    for (i = 0; i < nframes; ++i)
++        ERR( "[win-compat] i386 C++ frame[%u]=%p\n", i, frames[i] );
++    SetLastError( saved_error );
++}
++#endif
++
+ void WINAPI DECLSPEC_HOTPATCH RaiseException( DWORD code, DWORD flags, DWORD count, const ULONG_PTR *args )
+ {
+     EXCEPTION_RECORD record;
+@@ -331,6 +373,9 @@ void WINAPI DECLSPEC_HOTPATCH RaiseException( DWORD code, DWORD flags, DWORD cou
+     }
+     else record.NumberParameters = 0;
+ 
++#ifdef __i386__
++    report_i386_compatibility( code );
++#endif
+     RtlRaiseException( &record );
+ }
+ 
+diff --git a/dlls/kernelbase/locale.c b/dlls/kernelbase/locale.c
+index 798e4be..4d7309e 100644
+--- a/dlls/kernelbase/locale.c
++++ b/dlls/kernelbase/locale.c
+@@ -7108,6 +7108,17 @@ INT WINAPI DECLSPEC_HOTPATCH MultiByteToWideChar( UINT codepage, DWORD flags, co
+             ret = mbstowcs_codepage( info, flags, src, srclen, dst, dstlen );
+         break;
+     }
++#ifdef __i386__
++    if (!ret)
++    {
++        static LONG failures;
++        DWORD error = GetLastError();
++        if (InterlockedIncrement( &failures ) <= 8)
++            ERR( "[win-compat] i386 MultiByteToWideChar cp=%u flags=%lx src_bytes=%d dst_chars=%d error=%lu caller=%p\n",
++                 codepage, flags, srclen, dstlen, error, __builtin_return_address(0) );
++        SetLastError( error );
++    }
++#endif
+     TRACE( "cp %d %s -> %s, ret = %d\n", codepage, debugstr_an(src, srclen), debugstr_wn(dst, ret), ret );
+     return ret;
+ }
+-- 
+2.43.0
+
