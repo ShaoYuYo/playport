@@ -40,15 +40,19 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 14) {
                 hero
-                VStack(spacing: 10) {
-                    downloadCard.openingCard(1, cornerRadius: 14)
-                    nextCard.openingCard(2, cornerRadius: 14)
+                if !installs.order.isEmpty {
+                    VStack(spacing: 10) {
+                        downloadCard.openingCard(1, cornerRadius: 14)
+                        if installs.order.count > 1 { nextCard.openingCard(2, cornerRadius: 14) }
+                    }
+                    .frame(width: 230)
                 }
-                .frame(width: 250)
             }
-            .frame(height: 170)
-            Text("Recent").font(PP.display(17, .semibold)).foregroundStyle(PP.text).openingChrome()
-            recentRow
+            .frame(height: 180)
+            if !recent.isEmpty {
+                Text("Recent").font(.system(size: 16, weight: .semibold)).foregroundStyle(PP.text).openingChrome()
+                recentRow
+            }
         }
         .padding(.top, 8)
     }
@@ -64,9 +68,9 @@ struct HomeView: View {
                 LinearGradient(colors: [.clear, PP.background.opacity(0.85)], startPoint: .center, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(t.lastPlayed == nil ? "Ready to play" : "Continue playing")
-                        .font(.system(size: 12, weight: .semibold)).tracking(1.2).textCase(.uppercase)
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(PP.accent)
-                    Text(t.name).font(PP.display(34)).foregroundStyle(PP.text).lineLimit(1).minimumScaleFactor(0.6)
+                    Text(t.name).font(.system(size: 30, weight: .semibold)).foregroundStyle(PP.text).lineLimit(1).minimumScaleFactor(0.6)
                     if let played = Self.played(t) {
                         Text(played).font(.system(size: 13)).foregroundStyle(PP.soft).lineLimit(1)
                             .padding(.top, 6)
@@ -169,7 +173,7 @@ struct HomeView: View {
     }
 
     /// Five tiles across (Main.dc.html), the ring's room at each end included.
-    private static func tileWidth(_ row: CGFloat) -> CGFloat { max(100, (row - 12 - 4 * 12) / 5) }
+    private static func tileWidth(_ row: CGFloat) -> CGFloat { max(100, (row - 12 - 3 * 12) / 4) }
 
     private var recentRow: some View {
         ScrollViewReader { proxy in
@@ -178,14 +182,7 @@ struct HomeView: View {
                     ForEach(Array(recent.enumerated()), id: \.element.id) { i, entry in
                         tile(entry).openingCard(3 + i, cornerRadius: 10)
                     }
-                    Text("+ Find games")
-                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(PP.muted)
-                        .frame(height: 70)
-                        .containerRelativeFrame(.horizontal) { w, _ in Self.tileWidth(w) }
-                        .background(PP.surface, in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(PP.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-                        .padItem("find", hint: "Library", cornerRadius: 10) { _ = nav.open("games") }
-                        .openingCard(7, cornerRadius: 10)
+
                 }
                 // Room for the ring, which draws outside each tile.
                 .padding(.horizontal, 6).padding(.vertical, 6)

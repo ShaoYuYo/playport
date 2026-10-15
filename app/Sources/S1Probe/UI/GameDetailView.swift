@@ -484,7 +484,7 @@ private struct GameDetailPage: View {
                 } else {
                     MemoryWarning(need: MemoryNeed.of(t, cohort: LibraryModel.cohort))
                     if installs.isBusy { Text("Starting a game pauses the download. It goes on when Playport reopens after the game.") }
-                    controllerLine
+                    if controllers == 0, g?.info.controllerSupport == "full" { controllerLine }
                 }
             } else if let g {
                 installNote(g)
@@ -500,8 +500,6 @@ private struct GameDetailPage: View {
         if controllers == 0 {
             Text("No controller is connected. Connect it now: a game may not notice one connected later.")
                 .foregroundStyle(.orange)
-        } else {
-            Text("Your controller is connected.")
         }
     }
 

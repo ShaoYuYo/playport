@@ -46,7 +46,6 @@ extension SettingsSection {
 struct SettingsView: View {
     @ObservedObject private var navigation = AppNavigation.shared
     @ObservedObject private var focus = PadFocus.shared
-    @Namespace private var glassNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollPosition = ScrollPosition()
     @State private var scrollOffset: CGFloat = 0
@@ -73,26 +72,23 @@ struct SettingsView: View {
     }
 
     private var sidebar: some View {
-        GlassEffectContainer(spacing: 8) {
+        ScrollView(.vertical, showsIndicators: false) {
         VStack(alignment: .leading, spacing: 3) {
-            Text("Settings").font(PP.display(26)).foregroundStyle(PP.text)
-                .padding(.horizontal, 14).padding(.bottom, 10)
             ForEach(SettingsSection.shown, id: \.self) { s in
                 let on = navigation.settingsSection == s
                 Text(LocalizedStringKey(s.title))
                     .font(.system(size: 15, weight: on ? .semibold : .medium))
                     .foregroundStyle(on ? PP.accent : PP.soft)
                     .padding(.horizontal, 14)
-                    .frame(maxWidth: .infinity, minHeight: 37, alignment: .leading)
-                    .ppGlass(cornerRadius: 12, tint: on ? PP.accent.opacity(0.18) : nil)
-                    .glassEffectID(s.rawValue, in: glassNamespace)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .background(on ? Color.white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 10))
                     .padItem(s.navItem, hint: "Open", cornerRadius: 10) {
                         navigation.settingsSection = s
                         SettingsRing.enter()
                     }
             }
-            Spacer(minLength: 0)
         }
+        .padding(8)
         }
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: navigation.settingsSection)
     }

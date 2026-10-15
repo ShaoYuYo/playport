@@ -148,7 +148,7 @@ private struct LibraryGridView: View {
             if shown.isEmpty {
                 empty
             } else {
-                tiles(shown, duplicateIDs: LibraryList.duplicateSourceIDs(all), addTile: showsAddTile)
+                tiles(shown, duplicateIDs: LibraryList.duplicateSourceIDs(all), addTile: false)
             }
         }
         // The ring starts on the first tile, on arrival and after the chip, sort or search changes.
@@ -169,62 +169,50 @@ private struct LibraryGridView: View {
     // MARK: chips
 
     private func chips(_ all: [LibraryEntry], downloading: Set<StoreGameKey>) -> some View {
-        HStack(spacing: 8) {
-            // Store chips can grow without pushing search and sort off screen.
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(LibraryGrid.filters, id: \.self) { chip in
-                        let count = all.filter { LibraryList.matches($0, chip, downloading: downloading) }.count
-                        // Not in the ring: ⧉ picks one; a tap here.
-                        Button { grid.filter = chip } label: {
-                            Chip(text: "\(LibraryGrid.label(chip)) · \(count)", on: grid.filter == chip)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("chip-\(chip.rawValue)")
-                    }
+        HStack(spacing: 12) {
+            Button { grid.openFilterSort() } label: {
+                HStack(spacing: 7) {
+                    Text("\(LibraryGrid.label(grid.filter)) · \(all.filter { LibraryList.matches($0, grid.filter, downloading: downloading) }.count)")
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
                 }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            if grid.searching || !grid.search.isEmpty {
-                // What the keyboard typed; a tap brings the keyboard back.
-                Button { grid.openSearch() } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass").font(.system(size: 12))
-                        Text(grid.search.isEmpty ? "Search" : grid.search)
-                            .foregroundStyle(grid.search.isEmpty ? PP.muted : PP.soft).lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                    .font(.system(size: 13)).foregroundStyle(PP.soft)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .frame(width: 180)
-                    .ppGlass(cornerRadius: 18, tint: grid.searching ? PP.accent.opacity(0.18) : nil)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("library-search")
-            }
-            if library.scanning || model.gamesLoading { ProgressView().controlSize(.small) }
-            // Not in the ring (it leaves the tiles alone): X does it; a tap here.
-            Button { GameImports.requests.send() } label: {
-                HStack(spacing: 5) {
-                    if imports.planning { ProgressView().controlSize(.mini) } else { Image(systemName: "plus").font(.system(size: 11, weight: .bold)) }
-                    Text("Add a game")
-                    PadGlyph(button: .x).scaleEffect(0.8)
-                }
-                .font(.system(size: 13, weight: .semibold)).foregroundStyle(PP.text)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .ppGlass(cornerRadius: 18)
+                .font(.system(size: 15, weight: .semibold)).frame(minHeight: 44)
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("library-add")
-            Button { grid.openFilterSort() } label: {
-                Text("Sort: \(LibraryGrid.label(grid.sort))")
-                    .font(.system(size: 12)).foregroundStyle(PP.muted)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-            }
-            .ppGlassButton()
+            .accessibilityLabel("Filter & sort")
             .accessibilityIdentifier("library-sort")
+            if library.scanning || model.gamesLoading { ProgressView().controlSize(.small) }
+            Spacer(minLength: 8)
+            Button { grid.openSearch() } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                    if !grid.search.isEmpty { Text(grid.search).lineLimit(1).frame(maxWidth: 180) }
+                }
+                .frame(minWidth: 44, minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Search")
+            .accessibilityIdentifier("library-search")
+            if !grid.search.isEmpty {
+                Button { grid.clearSearch() } label: {
+                    Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+            Button { GameImports.requests.send() } label: {
+                Group {
+                    if imports.planning { ProgressView().controlSize(.small) }
+                    else { Image(systemName: "plus") }
+                }
+                .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.glass)
+            .disabled(imports.planning)
+            .accessibilityLabel("Add a game")
+            .accessibilityIdentifier("library-add")
         }
-        .padding(.horizontal, 6)
+        .foregroundStyle(PP.soft)
+        .padding(.horizontal, 8)
     }
 
     // MARK: tiles
@@ -322,14 +310,6 @@ private struct LibraryGridView: View {
                     .padItem("signin", hint: "Open", cornerRadius: 14) { _ = nav.open("account") }
                     .padding(.top, 6)
             }
-            if showsAddTile {
-                Text(imports.planning ? "Reading…" : "Add a game")
-                    .font(.system(size: 13, weight: .bold)).foregroundStyle(needsSignIn ? PP.text : PP.onAccent)
-                    .padding(.horizontal, 14).padding(.vertical, 6)
-                    .background(needsSignIn ? PP.line : PP.accent, in: Capsule())
-                    .padItem(AddGameTile.item, hint: "Add", cornerRadius: 14) { GameImports.requests.send() }
-                    .padding(.top, 6)
-            }
             if !needsSignIn, grid.filter == .installed, !model.games.isEmpty, grid.search.isEmpty {
                 Text(LibrarySource.steam.label)
                     .font(.system(size: 13, weight: .bold)).foregroundStyle(PP.onAccent)
@@ -362,7 +342,7 @@ private struct LibraryGridView: View {
     }
 
     private var emptyText: String {
-        if !grid.search.isEmpty { return "Press B to clear the search." }
+        if !grid.search.isEmpty { return "Try another name or clear the search." }
         switch grid.filter {
         case .all:
             return model.gamesError ?? "Your installed games and games from connected stores appear here. Sign in to Steam or add a game from Files to get started."

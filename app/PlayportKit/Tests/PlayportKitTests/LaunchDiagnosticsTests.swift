@@ -9,6 +9,8 @@ final class LaunchDiagnosticsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try Data("abc".utf8).write(to: root.appendingPathComponent("SenrenBanka.exe"))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("aarch64-windows"), withIntermediateDirectories: true)
+        try Data("abc".utf8).write(to: root.appendingPathComponent("aarch64-windows/xtajit.dll"))
         try Data("account-secret".utf8).write(to: root.appendingPathComponent("configs.user.ini"))
         try Data("private-save".utf8).write(to: root.appendingPathComponent("savedata.dat"))
         try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("SenrenBanka.cf"),
@@ -16,6 +18,7 @@ final class LaunchDiagnosticsTests: XCTestCase {
         let text = LaunchDiagnostics.compatibilityFingerprints(gameRoot: root, runtime: root)
         XCTAssertTrue(text.contains("game/SenrenBanka.exe\t3\tba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
         XCTAssertTrue(text.contains("game/SenrenBanka.cf\tmissing, linked or over limit"))
+        XCTAssertTrue(text.contains("runtime/aarch64/xtajit.dll\t3\tba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))
         XCTAssertFalse(text.contains(root.path))
         XCTAssertFalse(text.contains("account-secret"))
         XCTAssertFalse(text.contains("private-save"))

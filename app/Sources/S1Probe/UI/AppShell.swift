@@ -29,6 +29,7 @@ struct AppShell: View {
     @ObservedObject private var library = LibraryModel.shared
     @ObservedObject private var nav = AppNavigation.shared
     @ObservedObject private var focus = PadFocus.shared
+    @ObservedObject private var router = PadRouter.shared
     @ObservedObject private var setup = JitSetup.shared
     @ObservedObject private var grid = LibraryGrid.shared
     @ObservedObject private var modal = PadModal.shared
@@ -49,22 +50,17 @@ struct AppShell: View {
             GlassEffectContainer(spacing: 12) {
                 TopBar(installs: model.installs).openingChrome()
             }
-            .frame(height: showsTopBar ? 48 : 0)
-            .opacity(showsTopBar ? 1 : 0)
-            .clipped()
-            .allowsHitTesting(showsTopBar)
-            .accessibilityHidden(!showsTopBar)
-            .animation(shellAnimation, value: showsTopBar)
+            .frame(height: 48)
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
             // Reserve the ordinary footer's height without mounting a second footer
             // when a game panel moves the same controls to the leading edge.
-            Color.clear.frame(height: panelUp ? 0 : 44 + Self.footerBottom)
+            Color.clear.frame(height: router.controller == nil || panelUp ? 0 : 44 + Self.footerBottom)
         }
         // The footer sits low, in the home indicator's inset, on every page.
         .ignoresSafeArea(.container, edges: .bottom)
         // Under a game page's panel the footer sits at the left, beside it (GameOptions.dc.html).
         .overlay(alignment: .bottomLeading) {
-            footer
+            if router.controller != nil { footer }
         }
         // A game's page: its hero art fills the screen behind it, dimmed as the launch screen
         // shows it (UI/LaunchViews.swift GameHeroArt). Clear once Play is
@@ -216,7 +212,6 @@ struct AppShell: View {
     }
 
     private var showsMainPages: Bool { !nav.settings && !nav.setup && !nav.signIn }
-    private var showsTopBar: Bool { showsMainPages && !nav.onGamePage }
     private var surface: String { nav.signIn ? "signin" : nav.settings ? "settings" : nav.setup ? "setup" : "main" }
     private var shellAnimation: Animation { reduceMotion ? .easeOut(duration: 0.12) : .smooth(duration: 0.25) }
 
@@ -328,74 +323,71 @@ struct AppShell: View {
     }
 }
 
-/// LB, the three pages, RB; the controller and its battery; the gear.
+/// One stable navigation surface; touch never needs controller hints to go back.
 private struct TopBar: View {
     @ObservedObject var installs: Downloads
     @ObservedObject private var nav = AppNavigation.shared
     @ObservedObject private var router = PadRouter.shared
-    @Namespace private var glassNamespace
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        HStack(spacing: 6) {
-            Button { router.send(.lb) } label: { PadGlyph(button: .lb).frame(minWidth: 44, minHeight: 44) }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Previous page")
-            ForEach(AppNavigation.Page.allCases, id: \.self) { p in
-                Button { nav.show(p) } label: {
-                    // The Downloads count sits in the page's pill, highlighted with it.
-                    HStack(spacing: 5) {
-                        Text(LocalizedStringKey(p.title))
-                            .font(PP.display(15, .semibold))
-                            .foregroundStyle(nav.page == p ? PP.accent : PP.soft)
-                        if p == .downloads, !installs.jobs.isEmpty {
-                            Text("\(installs.jobs.count)")
-                                .font(.system(size: 11, weight: .semibold)).foregroundStyle(PP.background)
-                                .padding(.horizontal, 6).padding(.vertical, 1)
-                                .background(PP.accent, in: RoundedRectangle(cornerRadius: 8))
-                        }
-                    }
-                    .padding(.horizontal, 8).frame(minHeight: 28)
-                }
-                // Keep one native style and identity while selection changes.
-                // Switching between glass/glassProminent rebuilds the control.
-                .buttonStyle(.glass)
-                .tint(nav.page == p ? PP.accent : PP.soft)
-                .frame(minHeight: 44)
-                .glassEffectID(p.rawValue, in: glassNamespace)
-                .accessibilityAddTraits(nav.page == p ? .isSelected : [])
-                .accessibilityIdentifier("page-\(p.rawValue)")
-            }
-            Button { router.send(.rb) } label: { PadGlyph(button: .rb).frame(minWidth: 44, minHeight: 44) }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Next page")
-            Spacer(minLength: 8)
-            if nav.page == .downloads {
-                StorageBar()
-            } else {
-                HStack(spacing: 6) {
-                    Image(systemName: router.controller == nil ? "gamecontroller" : "gamecontroller.fill")
-                    Text(controllerText).lineLimit(1)
-                }
-                .font(.system(size: 13)).foregroundStyle(PP.muted)
-            }
-            Button { _ = nav.open("settings") } label: {
-                Image(systemName: "gearshape").font(.system(size: 15))
-                    .foregroundStyle(PP.soft)
-                    .frame(width: 28, height: 28)
-            }
-            .ppGlassButton()
-            .frame(minWidth: 44, minHeight: 44)
-            .padding(.leading, 10)
-            .accessibilityLabel("Settings")
-        }
-        .frame(height: 48)
-        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: nav.page)
+    private var secondary: Bool { nav.settings || nav.setup || nav.signIn || nav.onGamePage }
+    private var title: String {
+        nav.signIn ? "Steam" : nav.settings ? "Settings" : nav.setup ? "Setup" : "Library"
     }
 
-    private var controllerText: String {
-        guard let c = router.controller else { return NSLocalizedString("No controller", comment: "") }
-        guard let b = c.battery else { return c.name }
-        return "\(c.name) \(b)%" + (c.charging ? " ⚡︎" : "")
+    var body: some View {
+        HStack(spacing: 12) {
+            if secondary {
+                Button { _ = nav.back() } label: {
+                    Label("Back", systemImage: "chevron.left")
+                        .font(.system(size: 15, weight: .medium))
+                        .frame(minWidth: 72, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .disabled(!nav.canGoBack)
+                .accessibilityIdentifier("navigation-back")
+                if !nav.onGamePage {
+                    Text(LocalizedStringKey(title)).font(.system(size: 17, weight: .semibold))
+                }
+            } else {
+                HStack(spacing: 2) {
+                    ForEach(AppNavigation.Page.allCases, id: \.self) { page in
+                        Button { nav.show(page) } label: {
+                            HStack(spacing: 5) {
+                                Text(LocalizedStringKey(page.title))
+                                if page == .downloads, !installs.jobs.isEmpty {
+                                    Text("\(installs.jobs.count)").font(.system(size: 11, weight: .semibold))
+                                }
+                            }
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(nav.page == page ? PP.text : PP.muted)
+                            .padding(.horizontal, 14).frame(height: 44)
+                            .background(nav.page == page ? Color.white.opacity(0.13) : .clear, in: Capsule())
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(nav.page == page ? .isSelected : [])
+                        .accessibilityIdentifier("page-\(page.rawValue)")
+                    }
+                }
+                .padding(2)
+                .glassEffect(.regular, in: Capsule())
+            }
+            Spacer(minLength: 8)
+            if let controller = router.controller {
+                Image(systemName: "gamecontroller.fill")
+                    .font(.system(size: 15)).foregroundStyle(PP.muted)
+                    .accessibilityLabel(controller.name)
+            }
+            if !secondary {
+                Button { _ = nav.open("settings") } label: {
+                    Image(systemName: "gearshape").font(.system(size: 17))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("Settings")
+            }
+        }
+        .foregroundStyle(PP.text)
+        .frame(height: 48)
     }
 }

@@ -22,3 +22,4 @@
 0021-DiskCache-a-cache-database-per-TEB-slot-offset-on-th.patch
 0022-WOW64-no-disk-cache-on-the-iOS-host.patch
 0023-WOW64-expose-arena-data-for-pre-CRT-handoff.patch
+0024-CPUID-use-the-synthetic-iOS-processor-index.patch

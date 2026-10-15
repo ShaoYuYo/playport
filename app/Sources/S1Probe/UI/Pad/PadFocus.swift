@@ -139,6 +139,7 @@ private struct PadItemModifier: ViewModifier {
     let ring: Bool
     let action: () -> Void
     @ObservedObject private var focus = PadFocus.shared
+    @ObservedObject private var router = PadRouter.shared
 
     func body(content: Content) -> some View {
         Button {
@@ -153,7 +154,7 @@ private struct PadItemModifier: ViewModifier {
             RoundedRectangle(cornerRadius: cornerRadius + 5)
                 .strokeBorder(PP.accent, lineWidth: 3)
                 .padding(-6)
-                .opacity(ring && focus.focused == id ? 1 : 0)
+                .opacity(ring && router.controller != nil && focus.focused == id ? 1 : 0)
                 .allowsHitTesting(false)
         }
         .background {

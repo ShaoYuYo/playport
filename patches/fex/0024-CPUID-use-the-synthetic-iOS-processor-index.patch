@@ -1,0 +1,50 @@
+From 297b12f3bdc3932ecfa9c7d22af2be565536e9d1 Mon Sep 17 00:00:00 2001
+From: Playport <playport@users.noreply.github.com>
+Date: Thu, 15 Oct 2026 20:37:21 +0800
+Subject: [PATCH] CPUID: use the synthetic iOS processor index
+
+The iOS host publishes a single MIDR. Wine may return a nonzero
+processor number, especially while a guest probes thread affinities.
+Using it as an unchecked PerCPUData index reads beyond the table and
+can expose an invalid brand-string pointer. Keep all current-CPU
+queries on the synthetic entry, including the TPIDRRO fast path.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-15-cpuid-and-interface.md
+Offered-upstream: no (iOS host model)
+---
+ FEXCore/Source/Interface/Core/CPUID.cpp | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/FEXCore/Source/Interface/Core/CPUID.cpp b/FEXCore/Source/Interface/Core/CPUID.cpp
+index ddce98d..27d1db5 100644
+--- a/FEXCore/Source/Interface/Core/CPUID.cpp
++++ b/FEXCore/Source/Interface/Core/CPUID.cpp
+@@ -101,9 +101,15 @@ namespace ProductNames {
+ } // namespace ProductNames
+ 
+ static uint32_t GetCPUID_Syscall() {
++#ifdef FEX_IOS_HOST
++  // The iOS host provides one synthetic MIDR, not a per-Wine-CPU table.
++  // Wine processor numbers (including affinity probes) must not index it.
++  return 0;
++#else
+   uint32_t CPU {};
+   FHU::Syscalls::getcpu(&CPU, nullptr);
+   return CPU;
++#endif
+ }
+ 
+ struct CPUFamily {
+@@ -1368,7 +1374,7 @@ CPUIDEmu::CPUIDEmu(const FEXCore::Context::ContextImpl* ctx)
+ 
+   SetupFeatures();
+ 
+-#ifdef ARCHITECTURE_arm64
++#if defined(ARCHITECTURE_arm64) && !defined(FEX_IOS_HOST)
+   if (SupportsCPUIndexInTPIDRRO) {
+     GetCPUID = GetCPUID_TPIDRRO;
+   }
+-- 
+2.43.0
+

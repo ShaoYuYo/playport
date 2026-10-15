@@ -26,9 +26,9 @@ enum PP {
         tiles[Int(name.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }) % tiles.count]
     }
 
-    /// Headings: the design's semi-condensed face.
+    /// Native system headings keep controls and content on the same type scale.
     static func display(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font {
-        .system(size: size, weight: weight).width(.condensed)
+        .system(size: size, weight: weight)
     }
 }
 
@@ -84,7 +84,6 @@ struct PadHint: Identifiable {
 struct PadFooter: View {
     let hints: [PadHint]
     var leading = false
-    @Namespace private var glassNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -100,9 +99,8 @@ struct PadFooter: View {
                     .padding(.horizontal, 4).frame(minHeight: 28)
                     .contentShape(Capsule())
                 }
-                .ppGlassButton()
+                .buttonStyle(.plain)
                 .frame(minHeight: 44)
-                .glassEffectID(h.button.rawValue, in: glassNamespace)
                 .transition(.opacity)
                 .accessibilityIdentifier("hint-\(h.button.rawValue)")
             }
