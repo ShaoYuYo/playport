@@ -231,3 +231,22 @@ Its Mesa/Swift preflights again failed with runner_id=0 and steps=[]; build-ipa
 was skipped. Returning to the original direct job topology therefore did not
 resolve the pre-run allocation failure. No new compilation or IPA is claimed,
 and the exact platform refusal annotation is still needed to identify the cause.
+
+## Explicit recovery retry — 2026-10-15 16:12 Taipei
+
+After the owner's renewed request to continue with the previously successful
+method, the GitHub rerun-failed-jobs operation was called for run38653459914.
+The connector returned success=true; the run actually advanced to attempt2,
+rather than only rereading attempt1. No workflow or game source changed.
+
+Attempt2 completed at 08:12:15 UTC. Swift job116318712129 and Mesa
+job116318712332 failed with runner_id=0 and steps=[]; IPA job116318736902
+was skipped. Swift job-log retrieval returns404 BlobNotFound. This new retry
+therefore still did not reach checkout, tests, SDK preflight or compilation.
+The failed check metadata has an annotation, but the connector continues to
+reject annotation GET endpoints. The specific platform refusal remains unknown;
+do not attribute it to billing, SDK or game code.
+
+This was an explicitly requested recovery attempt, not a new hourly GitHub retry
+policy. Keep the agent's hourly inspection and restored workflow, and preserve
+all current source fixes, native checkpoints and verification gates.
