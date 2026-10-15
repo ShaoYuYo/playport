@@ -308,3 +308,28 @@ failed before execution (Swift116322968850 runner0/steps0, IPA116322996156 skipp
 The copied Mesa success is still the earlier attempt1 observation, not a new run.
 The user requested removal of monitoring; task6ace41cbd0b48191a22351ec0697b9a9
 was confirmed disabled, and it has not been re-enabled.
+
+## Included Actions minutes exhausted — owner evidence 2026-10-15 16:28 Taipei
+
+IMG_1401.png shows the Actions tab of the owner's billing usage page:
+- Actions minutes: 2,000 min used / 2,000 min included.
+- Included usage resets in17 days.
+- Billable usage: $0; $12.06 consumed usage minus $12.06 discounts.
+- Actions storage:0.3GB used /0.5GB included.
+
+The included minute quota is now directly confirmed exhausted. Do not describe
+the $12.06 gross/consumed figure as an unpaid invoice. The screenshot does not
+show a failed payment, and none is established. This quota exhaustion, together
+with the account-related startup annotation, explains why rerunning unchanged
+jobs cannot restore private hosted execution without an entitlement/billing
+change. No new build should be triggered solely to rediscover the same limit.
+
+To keep building immediately in this private repository, the owner must choose
+and configure eligible paid Actions usage/payment and a deliberate spending
+cap through their account. No payment method, budget, charge, or account
+administrative setting has been changed by the assistant. A standard hosted
+public-repository build is a possible free alternative under GitHub's published
+billing model, but a migration must first solve private SDK/checkpoint inputs
+and prove fork Actions are enabled. Do not promise that copying the workflow
+alone works, publish the private repository/SDK, or discard the completed
+runtime checkpoint. Waiting for the shown quota reset is another option.
