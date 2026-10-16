@@ -15,6 +15,7 @@ struct PlayportApp: App {
         // Both fix the container's Documents before anything can move HOME.
         _ = WineHostRuntime.documents
         AppLog.start()
+        AppLog.append(AppBuild.summary)
         #if !PLAYPORT_RELEASE
         // A driven run that restarted Playport goes on in this process (its
         // environment, before anything reads it), then settings an earlier

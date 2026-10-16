@@ -73,7 +73,7 @@ struct SettingsView: View {
 
     private var sidebar: some View {
         ScrollView(.vertical, showsIndicators: false) {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(SettingsSection.shown, id: \.self) { s in
                 let on = navigation.settingsSection == s
                 Text(LocalizedStringKey(s.title))
@@ -81,7 +81,8 @@ struct SettingsView: View {
                     .foregroundStyle(on ? PP.accent : PP.soft)
                     .padding(.horizontal, 14)
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .background(on ? Color.white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                    .background(on ? PP.accent.opacity(0.18) : Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(on ? 0.22 : 0.08), lineWidth: 0.5))
                     .padItem(s.navItem, hint: "Open", cornerRadius: 10) {
                         navigation.settingsSection = s
                         SettingsRing.enter()
@@ -393,6 +394,7 @@ private struct AboutSettings: View {
         SettingsNote(text: "Playport runs Windows games on this iPhone. It is built on willfaust/Madeira: "
                      + "Wine, FEX-Emu and DXMT in one process.")
         SettingsInfoRow(id: "version", title: "Version", value: version)
+        SettingsInfoRow(id: "revision", title: "Revision", value: AppBuild.revision)
         #if PLAYPORT_RELEASE
         SettingsInfoRow(id: "variant", title: "Build", value: "Release")
         #else

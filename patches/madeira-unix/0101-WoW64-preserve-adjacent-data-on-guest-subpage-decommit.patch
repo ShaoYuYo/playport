@@ -1,0 +1,139 @@
+From 5425d77516be4456646c3a51af749254586245f6 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Thu, 15 Oct 2026 21:07:21 +0800
+Subject: [PATCH] WoW64: preserve adjacent data on guest subpage decommit
+
+Discarding a PE relocation section must not revoke live CRT data in
+the same 16 KiB host page. Keep decommit and recommit on logical
+4 KiB boundaries and preserve the other guest pages. Retained partial
+backing is zeroed only for newly committed pages. Whole host-page
+release/decommit keeps the existing atomic replacement path.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-15-cpuid-and-interface.md
+Offered-upstream: no (owned window VM)
+---
+ build/ntdll-unix/wow64_vm.h | 62 ++++++++++++++++++++++++++++++++-----
+ 1 file changed, 55 insertions(+), 7 deletions(-)
+
+diff --git a/build/ntdll-unix/wow64_vm.h b/build/ntdll-unix/wow64_vm.h
+index 1a45b45..69780d7 100644
+--- a/build/ntdll-unix/wow64_vm.h
++++ b/build/ntdll-unix/wow64_vm.h
+@@ -9,17 +9,17 @@
+ #include "wow64_protect.h"
+ 
+ static BOOL ios_wow64_vm_range( uintptr_t window, const void *addr, size_t size,
+-                                void **base, size_t *rounded )
++                                void **base, size_t *rounded, uintptr_t mask )
+ {
+     uintptr_t value = (uintptr_t)addr, start;
+     size_t offset;
+     if (!ios_wow64_valid_base( window ) || value < window + IOS_WOW64_NULL_GUARD ||
+         value >= window + IOS_WOW64_WINDOW_SIZE || !size ||
+         size > window + IOS_WOW64_WINDOW_SIZE - value) return FALSE;
+-    start = value & ~(uintptr_t)host_page_mask;
++    start = value & ~(uintptr_t)mask;
+     offset = value - start;
+-    if (size > SIZE_MAX - offset - host_page_mask) return FALSE;
+-    *rounded = (size + offset + host_page_mask) & ~host_page_mask;
++    if (size > SIZE_MAX - offset - mask) return FALSE;
++    *rounded = (size + offset + mask) & ~mask;
+     *base = (void *)start;
+     return *rounded <= window + IOS_WOW64_WINDOW_SIZE - start;
+ }
+@@ -53,6 +53,32 @@ static void ios_wow64_vm_coalesce( uintptr_t window, struct file_view *view )
+     }
+ }
+ 
++/* A decommitted 4 KiB guest page may share a live 16 KiB host page.
++ * Keep that backing on decommit and initialize only newly committed guest
++ * pages here. Temporary host write permission never changes logical bytes;
++ * restore it before publishing the requested protection transaction. */
++static NTSTATUS ios_wow64_vm_zero_uncommitted( void *base, size_t length )
++{
++    uintptr_t start = (uintptr_t)base, end = start + length, host, page;
++    for (host = start & ~(uintptr_t)host_page_mask; host < end; host += host_page_size)
++    {
++        uintptr_t low = max( host, start ), high = min( host + host_page_size, end );
++        BOOL zero = FALSE;
++        int old_prot;
++        for (page = low; page < high; page += page_size)
++            if (!(get_page_vprot( (void *)page ) & VPROT_COMMITTED)) zero = TRUE;
++        if (!zero) continue;
++        old_prot = ios_wow64_host_prot( host, 0, 0, 0, 0, 0, NULL );
++        if (mprotect( (void *)host, host_page_size, PROT_READ | PROT_WRITE ))
++            return STATUS_ACCESS_DENIED;
++        for (page = low; page < high; page += page_size)
++            if (!(get_page_vprot( (void *)page ) & VPROT_COMMITTED))
++                memset( (void *)page, 0, page_size );
++        if (mprotect( (void *)host, host_page_size, old_prot )) abort();
++    }
++    return STATUS_SUCCESS;
++}
++
+ static NTSTATUS ios_wow64_vm_allocate( uintptr_t window, void **addr, size_t *size,
+                                       ULONG type, ULONG protect )
+ {
+@@ -62,7 +88,8 @@ static NTSTATUS ios_wow64_vm_allocate( uintptr_t window, void **addr, size_t *si
+     size_t length;
+     NTSTATUS status;
+     uintptr_t start;
+-    if (!addr || !size || !ios_wow64_vm_range( window, *addr, *size, &base, &length ))
++    if (!addr || !size || !ios_wow64_vm_range( window, *addr, *size, &base, &length,
++                                    (type & MEM_RESERVE) ? host_page_mask : page_mask ))
+         return STATUS_INVALID_PARAMETER;
+     if (!(type & (MEM_RESERVE | MEM_COMMIT)) ||
+         (type & ~(MEM_RESERVE | MEM_COMMIT))) return STATUS_NOT_SUPPORTED;
+@@ -86,6 +113,7 @@ static NTSTATUS ios_wow64_vm_allocate( uintptr_t window, void **addr, size_t *si
+     {
+         view = find_view( base, length );
+         if (!view || !(view->protect & VPROT_WOW64_VM)) return STATUS_CONFLICTING_ADDRESSES;
++        if ((status = ios_wow64_vm_zero_uncommitted( base, length ))) return status;
+         status = ios_wow64_apply_protection( view, base, length, vprot | VPROT_COMMITTED );
+         if (status) return status;
+     }
+@@ -141,7 +169,8 @@ static NTSTATUS ios_wow64_vm_allocate_limited( uintptr_t window, void **addr, si
+     }
+     else
+     {
+-        if (!ios_wow64_vm_range( window, *addr, *size, &base, &length ))
++        if (!ios_wow64_vm_range( window, *addr, *size, &base, &length,
++                                    (type & MEM_RESERVE) ? host_page_mask : page_mask ))
+             return STATUS_INVALID_PARAMETER;
+         if ((uintptr_t)base - window >= end || length > end - ((uintptr_t)base - window))
+             return STATUS_INVALID_PARAMETER;
+@@ -231,10 +260,29 @@ static NTSTATUS ios_wow64_vm_free( uintptr_t window, void **addr, size_t *size,
+             base = view->base;
+             length = view->size;
+         }
+-        else if (!ios_wow64_vm_range( window, *addr, *size, &base, &length ) ||
++        else if (!ios_wow64_vm_range( window, *addr, *size, &base, &length,
++                                    (type & MEM_RESERVE) ? host_page_mask : page_mask ) ||
+                  find_view( base, length ) != view) return STATUS_INVALID_PARAMETER;
+     }
+     else return STATUS_NOT_SUPPORTED;
++    /* A discardable PE section can start in the same host page as live CRT
++     * data. Never round that decommit outward or replace the shared backing.
++     * Publish 4 KiB logical state with the existing host-permission union;
++     * recommit initializes these pages without touching their neighbours. */
++    if (type == MEM_DECOMMIT &&
++        (((uintptr_t)base & host_page_mask) || (length & host_page_mask)))
++    {
++        static unsigned int subpage_logs;
++        NTSTATUS status = ios_wow64_apply_protection( view, base, length, 0 );
++        if (subpage_logs++ < 24)
++            dprintf( 2, "[wow64-subpage-v1] decommit guest=%#lx bytes=%#lx host_page=%#lx status=%#x neighbours=retained\n",
++                     (unsigned long)((uintptr_t)base - window), (unsigned long)length,
++                     (unsigned long)host_page_size, (unsigned int)status );
++        if (status) return status;
++        *addr = base;
++        *size = length;
++        return STATUS_SUCCESS;
++    }
+     /* Atomic replacement preserves reservation and guarantees zero on recommit.
+      * Do not reuse Madeira's native/FEX decommit path: it leaves pages writable. */
+     if (mmap( base, length, PROT_NONE, MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0 ) == MAP_FAILED)
+-- 
+2.43.0
+

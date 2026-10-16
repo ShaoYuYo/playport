@@ -960,7 +960,7 @@ resource	Runtime/registry/system.reg	506267	10fc366caf0cbaa72fd003adc79dc39c2a49
 resource	Runtime/registry/user.reg	1610	590b70ff4b8a797c3c1d385550b22765d7c8c9ac2e8d0581f679e2b5fd49a75b	registry	user.reg	P7-reg
 resource	Runtime/registry/cjk-fonts.reg	636	d7eac888a403e4e9a5af256ce6963e26a6d889c1b680b1bfa6fef526e1f61b7b	registry	cjk-fonts.reg	P7-reg
 resource	Runtime/certs/cacert.pem	188900	a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505	ca-bundle	cacert.pem	ca-bundle
-link	lib/libntdll_unix.a	3115656	62d800dc7e2c689ce3d25376222d59338d2d9f64b4d7f0446916400e96442ce6	unix	mythic/app/Madeira/libntdll_unix.a	P3
+link	lib/libntdll_unix.a	3116952	d977b7a974b23cf40ec1728eab25592a4a0ca66f20e56f8051a2b2484db10cb8	unix	mythic/app/Madeira/libntdll_unix.a	P3
 link	lib/libwin32u_unix.a	4122192	15db0738a2bea85078c91a24850e5cbec4a98decdf6b051b7c0edc8f2a676956	unix	mythic/app/Madeira/libwin32u_unix.a	P4-win32u
 link	lib/libwineserver.a	1218648	dac2a2f898b268b7b684cd825e9639d8de33e1c24112818c0a605d5f9e598b10	unix	mythic/app/Madeira/libwineserver.a	P4-server
 link	lib/libgnutls.a	3603280	e9fb697d624bb63d1c89e8569f1a8e0e69e576175407853bf34a6279fa1673b3	unix	mythic/toolchains/gnutls-ios/lib/libgnutls.a	P4-crypto

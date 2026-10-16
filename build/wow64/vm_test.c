@@ -254,7 +254,7 @@ int main(void)
     void *sub = (char *)addr + 0x4003;
     size_t subsize = 1;
     assert(!routed(0, &sub, &subsize, MEM_COMMIT, PAGE_EXECUTE_READWRITE, NULL));
-    assert(sub == (char *)addr + 0x4000 && subsize == 0x4000);
+    assert(sub == (char *)addr + 0x4000 && subsize == 0x1000);
     assert(get_page_vprot(sub) == (VPROT_READ | VPROT_WRITE | VPROT_EXEC | VPROT_COMMITTED));
     memset(sub, 0xcc, subsize);
     inaccessible(sub, 1); /* Native NX even with logical EXEC. */
@@ -271,10 +271,10 @@ int main(void)
     assert(old == PAGE_READONLY && get_page_vprot(sub) == (VPROT_EXEC | VPROT_COMMITTED));
     assert(*(unsigned char *)sub == 0xcc); /* Decoder can read execute-only pages. */
     inaccessible(sub, 0); inaccessible(sub, 1);
-    fail_replace = 1;
-    assert(routed(1, &sub, &subsize, MEM_DECOMMIT, 0, NULL) == STATUS_NO_MEMORY);
+    fail_protect = 1;
+    assert(routed(1, &sub, &subsize, MEM_DECOMMIT, 0, NULL) == STATUS_ACCESS_DENIED);
     assert(get_page_vprot(sub) & VPROT_COMMITTED);
-    fail_replace = 0;
+    fail_protect = 0;
     assert(!routed(1, &sub, &subsize, MEM_DECOMMIT, 0, NULL));
     inaccessible(sub, 0);
     assert(!get_page_vprot(sub));

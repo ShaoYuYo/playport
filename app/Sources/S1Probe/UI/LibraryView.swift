@@ -103,7 +103,7 @@ struct LibraryView: View {
                 .transformPreference(PadItemsKey.self) { if !nav.gamePath.isEmpty { $0 = [:] } }
                 .toolbar(.hidden, for: .navigationBar)
                 // The stack draws the system background otherwise, not the app's.
-                .containerBackground(PP.background, for: .navigation)
+                .containerBackground(.clear, for: .navigation)
                 .navigationDestination(for: GameRef.self) {
                     // Clear: the shell draws the game's art behind the page (PageArt).
                     GameDetailView(ref: $0).containerBackground(.clear, for: .navigation)
@@ -128,7 +128,7 @@ private struct LibraryGridView: View {
     @State private var maxOffset = CGFloat.zero
     @State private var position = ScrollPosition(edge: .top)
 
-    private static let columns = 4
+    private static let columns = 5
     private static let spacing = CGSize(width: 14, height: 16)
     private static let artHeight: CGFloat = 78
     private static let metaHeight: CGFloat = 16
@@ -223,8 +223,8 @@ private struct LibraryGridView: View {
     private func tiles(_ shown: [LibraryEntry], duplicateIDs: Set<String>, addTile: Bool) -> some View {
         GeometryReader { outer in
             let width = outer.size.width - 2 * Self.inset
-            let tile = CGSize(width: (width - CGFloat(Self.columns - 1) * Self.spacing.width) / CGFloat(Self.columns),
-                              height: Self.artHeight)
+            let tileWidth = (width - CGFloat(Self.columns - 1) * Self.spacing.width) / CGFloat(Self.columns)
+            let tile = CGSize(width: tileWidth, height: min(220, tileWidth * 1.5))
             let pitch = CGSize(width: Self.spacing.width, height: Self.spacing.height + Self.metaGap + Self.metaHeight)
             let games = Dictionary(model.games.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             ScrollView(.vertical, showsIndicators: false) {
@@ -234,10 +234,10 @@ private struct LibraryGridView: View {
                         ForEach(shown) { entry in
                             LibraryTile(entry: entry, game: entry.appID.flatMap { games[$0] }, installs: installs,
                                         showSource: LibraryList.showsSourceBadge(entry, filter: grid.filter, duplicateIDs: duplicateIDs),
-                                        width: tile.width, artHeight: Self.artHeight, metaGap: Self.metaGap, metaHeight: Self.metaHeight)
+                                        width: tile.width, artHeight: tile.height, metaGap: Self.metaGap, metaHeight: Self.metaHeight)
                         }
                         if addTile {
-                            AddGameTile(planning: imports.planning, width: tile.width, artHeight: Self.artHeight,
+                            AddGameTile(planning: imports.planning, width: tile.width, artHeight: tile.height,
                                         metaGap: Self.metaGap, metaHeight: Self.metaHeight)
                         }
                     }
@@ -389,7 +389,7 @@ private struct LibraryTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: metaGap) {
             ZStack(alignment: .bottomLeading) {
-                Color.clear.overlay { GameArt(appID: entry.appID, name: entry.name, kind: .header, titleID: entry.installed ? entry.id : nil,
+                Color.clear.overlay { GameArt(appID: entry.appID, name: entry.name, kind: .capsule, titleID: entry.installed ? entry.id : nil,
                                                  storeKey: entry.key) }.clipped()
                 // The name over the art, unless a store's art (which carries it) is there.
                 if (game == nil && !StoreArt.has(entry.key)) || job != nil {

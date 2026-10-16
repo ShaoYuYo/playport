@@ -1,251 +1,123 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Home (docs/design/2026-09-28-gamepad-ui/Main.dc.html): the game played
-// last, with its details, when and how long in all (PlayportKit PlayTime.swift); the
-// download running, with its time left, and the one after it; and the
-// four other games played last from the whole Library, installed or not (dimmed),
-// the never played by name. Every card takes the focus ring; A opens its details.
-// Search belongs to Library; game options belong to each game's details.
-
 import PlayportKit
 import SteamClientKit
 import SwiftUI
 
+/// A console home: large covers and ambient art. Focus never resizes a card.
 struct HomeView: View {
     @ObservedObject var installs: Downloads
     @EnvironmentObject private var model: SteamAccountModel
     @ObservedObject private var library = LibraryModel.shared
     @ObservedObject private var nav = AppNavigation.shared
     @ObservedObject private var focus = PadFocus.shared
-
-    /// The game played last, else the first installed one.
-    private var continueTitle: InstalledTitle? { Self.continueTitle(library.catalog.titles) }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var highlighted: String?
 
     static func continueTitle(_ catalogued: [InstalledTitle]) -> InstalledTitle? {
         let titles = catalogued.filter(\.canPlay)
         return titles.filter { $0.lastPlayed != nil }.max { $0.lastPlayed! < $1.lastPlayed! } ?? titles.first
     }
 
-    /// The store art Home draws (the hero's, the Recent tiles'), loaded into the model's
-    /// cache: the opening animation waits for it (UI/AppOpening.swift).
+    static func recentEntries(titles: [InstalledTitle], owned: [SteamGame], excluding heroID: String?) -> [LibraryEntry] {
+        LibraryList.recent(LibraryList.entries(titles: titles, owned: owned), count: 10, excluding: heroID)
+    }
+
+    private var entries: [LibraryEntry] {
+        let all = LibraryList.entries(titles: library.catalog.titles, owned: model.games)
+        let hero = Self.continueTitle(library.catalog.titles).flatMap { title in all.first { $0.id == title.id } }
+        return (hero.map { [$0] } ?? [])
+            + Self.recentEntries(titles: library.catalog.titles, owned: model.games, excluding: hero?.id)
+    }
+
+    private var selected: LibraryEntry? { entries.first { $0.id == highlighted } ?? entries.first }
+
     static func loadArt(titles: [InstalledTitle], model: SteamAccountModel) async {
         let hero = continueTitle(titles)
-        let recent = recentEntries(titles: titles, owned: model.games, excluding: hero?.id)
-        let wanted: [(UInt32?, ArtworkCache.Kind)] = [(hero?.appID, .hero)] + recent.map { ($0.appID, .header) }
+        let recent = recentEntries(titles: titles, owned: model.games, excluding: nil)
+        let wanted: [(UInt32?, ArtworkCache.Kind)] = [(hero?.appID, .hero)] + recent.prefix(5).map { ($0.appID, .capsule) }
         let art = wanted.compactMap { app, kind in model.games.first { $0.id == app }.map { ($0.info, kind) } }
-        let loads = art.map { info, kind in Task { @MainActor in _ = await model.image(info, kind) } }
+        let loads: [Task<Void, Never>] = art.map { info, kind in
+            Task<Void, Never> { @MainActor in _ = await model.image(info, kind) }
+        }
         for load in loads { await load.value }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
-                hero
-                if !installs.order.isEmpty {
-                    VStack(spacing: 10) {
-                        downloadCard.openingCard(1, cornerRadius: 14)
-                        if installs.order.count > 1 { nextCard.openingCard(2, cornerRadius: 14) }
+        GeometryReader { viewport in
+            let coverHeight = min(250, max(120, viewport.size.height - 78))
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Recent games").font(.system(size: 19, weight: .semibold))
+                        Spacer()
+                        if let job = installs.order.first {
+                            Button { nav.show(.downloads) } label: {
+                                Label(job.name, systemImage: "arrow.down.circle")
+                                    .font(.system(size: 12, weight: .medium)).lineLimit(1)
+                                    .frame(maxWidth: 190).padding(.horizontal, 10).padding(.vertical, 7)
+                            }
+                            .buttonStyle(.glass)
+                            .accessibilityLabel("Downloads")
+                        }
                     }
-                    .frame(width: 230)
-                }
-            }
-            .frame(height: 180)
-            if !recent.isEmpty {
-                Text("Recent").font(.system(size: 16, weight: .semibold)).foregroundStyle(PP.text).openingChrome()
-                recentRow
-            }
-        }
-        .padding(.top, 8)
-    }
-
-    // MARK: Continue playing
-
-    @ViewBuilder
-    private var hero: some View {
-        if let t = continueTitle {
-            ZStack(alignment: .bottomLeading) {
-                // Art sized by the card, not the card by the art.
-                Color.clear.overlay { GameArt(appID: t.appID, name: t.name, kind: .hero, titleID: t.id, storeKey: t.key) }.clipped()
-                LinearGradient(colors: [.clear, PP.background.opacity(0.85)], startPoint: .center, endPoint: .bottom)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(t.lastPlayed == nil ? "Ready to play" : "Continue playing")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(PP.accent)
-                    Text(t.name).font(.system(size: 30, weight: .semibold)).foregroundStyle(PP.text).lineLimit(1).minimumScaleFactor(0.6)
-                    if let played = Self.played(t) {
-                        Text(played).font(.system(size: 13)).foregroundStyle(PP.soft).lineLimit(1)
-                            .padding(.top, 6)
-                    }
-                }
-                .padding(.horizontal, 20).padding(.vertical, 16)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .padItem("hero:\(t.id)", hint: "Open", cornerRadius: 14) { nav.openTitle(t.id) }
-            .openingCard(0, cornerRadius: 14)
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("No games yet").font(PP.display(30)).foregroundStyle(PP.text)
-                Text("Install one from your Steam games in the Library.").font(.system(size: 13)).foregroundStyle(PP.soft)
-            }
-            .padding(20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-            .background(PP.surface, in: RoundedRectangle(cornerRadius: 14))
-            .padItem("hero", hint: "Library", cornerRadius: 14) { _ = nav.open("games") }
-            .openingCard(0, cornerRadius: 14)
-        }
-    }
-
-    /// `Played 2 hr. ago · 14 h total`
-    static func played(_ t: InstalledTitle) -> String? {
-        let when = t.lastPlayed.map { "Played " + $0.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)) }
-        let total = t.playSeconds.map { PlayTime.format($0) + " total" }
-        let parts = [when, total].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    // MARK: downloads
-
-    private var downloadCard: some View {
-        let job = installs.order.first
-        return HomeCard(label: job.map { $0.isRunning ? "Downloading" : $0.status } ?? "Downloads") {
-            if let job {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(job.name).font(PP.display(19)).foregroundStyle(PP.text).lineLimit(1)
-                    Spacer(minLength: 4)
-                    if let f = job.fraction {
-                        Text(([Self.percent(f)] + [Self.left(job)].compactMap { $0 }).joined(separator: " · "))
-                            .font(.system(size: 12)).foregroundStyle(PP.muted).lineLimit(1)
+                    .foregroundStyle(PP.text).padding(.horizontal, 8)
+                    if entries.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Image(systemName: "gamecontroller").font(.system(size: 36)).foregroundStyle(PP.accent)
+                            Text("No games yet").font(.system(size: 25, weight: .semibold))
+                            Text("Open Library to install or add a game.").font(.system(size: 15)).foregroundStyle(PP.soft)
+                            Button { nav.show(.library) } label: { Label("Library", systemImage: "square.grid.2x2") }
+                                .buttonStyle(.glassProminent).tint(PP.accent)
+                        }
+                        .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    } else {
+                        ScrollViewReader { proxy in
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(alignment: .top, spacing: 16) {
+                                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                                        cover(entry, height: coverHeight, first: index == 0)
+                                    }
+                                }
+                                .padding(.horizontal, 8).padding(.vertical, 7)
+                            }
+                            .onChange(of: focus.focused) { _, id in
+                                guard let id, let entry = entries.first(where: { itemID($0) == id }) else { return }
+                                highlighted = entry.id
+                                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
+                            }
+                        }
                     }
                 }
-                ProgressBar(fraction: job.fraction ?? 0)
-            } else {
-                Text("Nothing downloading").font(.system(size: 13)).foregroundStyle(PP.muted)
+                .padding(.top, 10)
             }
-        }
-        .padItem("download", hint: "Open") { nav.show(.downloads) }
-    }
-
-    private var nextCard: some View {
-        let order = installs.order
-        return HomeCard(label: "Up next") {
-            if order.count > 1 {
-                let next = order[1]
-                Text(Self.jobName(next)).font(PP.display(19)).foregroundStyle(PP.text).lineLimit(1)
-                Text(([next.remaining.map(ByteCount.format)].compactMap { $0 }
-                      + [next.phase == .queued ? "starts after \(order[0].name)" : next.status]).joined(separator: " · "))
-                    .font(.system(size: 12)).foregroundStyle(PP.muted).lineLimit(1)
-            } else {
-                Text("Nothing queued").font(.system(size: 13)).foregroundStyle(PP.muted)
-            }
-        }
-        .padItem("next", hint: "Open") { nav.show(.downloads) }
-    }
-
-    static func percent(_ f: Double) -> String { "\(Int(f * 100))%" }
-
-    /// `4 min`: the running job's time left at its speed.
-    static func left(_ job: Downloads.Job) -> String? {
-        guard job.phase == .downloading, let r = job.remaining,
-              let s = DownloadRate.seconds(remaining: r, rate: job.rate) else { return nil }
-        return DownloadRate.short(s)
-    }
-
-    /// `Celeste`, `Celeste update`, `Celeste repair`.
-    static func jobName(_ job: Downloads.Job) -> String {
-        switch job.kind {
-        case .install: job.name
-        case .update: job.name + " update"
-        case .repair: job.name + " repair"
-        case .import: job.name + " import"
+            .clipped()
         }
     }
 
-    // MARK: Recent
-
-    /// The four games played last other than the hero, installed or not; the
-    /// installed games never played fill the rest by name, then the others by name.
-    private var recent: [LibraryEntry] {
-        Self.recentEntries(titles: library.catalog.titles, owned: model.games, excluding: continueTitle?.id)
+    private func itemID(_ entry: LibraryEntry) -> String {
+        entry.id == entries.first?.id ? "hero:\(entry.id)" : "home:\(entry.id)"
     }
 
-    static func recentEntries(titles: [InstalledTitle], owned: [SteamGame], excluding heroID: String?) -> [LibraryEntry] {
-        LibraryList.recent(LibraryList.entries(titles: titles, owned: owned), count: 4, excluding: heroID)
-    }
-
-    /// Five tiles across (Main.dc.html), the ring's room at each end included.
-    private static func tileWidth(_ row: CGFloat) -> CGFloat { max(100, (row - 12 - 3 * 12) / 4) }
-
-    private var recentRow: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(Array(recent.enumerated()), id: \.element.id) { i, entry in
-                        tile(entry).openingCard(3 + i, cornerRadius: 10)
+    private func cover(_ entry: LibraryEntry, height: CGFloat, first: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GameArt(appID: entry.appID, name: entry.name, kind: .capsule,
+                    titleID: entry.installed ? entry.id : nil, storeKey: entry.key)
+                .frame(width: height * 2 / 3, height: height)
+                .overlay(alignment: .bottomLeading) {
+                    if first {
+                        Text(entry.installed ? "Continue" : "Open")
+                            .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 9).padding(.vertical, 5)
+                            .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 5))
+                            .padding(8)
                     }
-
                 }
-                // Room for the ring, which draws outside each tile.
-                .padding(.horizontal, 6).padding(.vertical, 6)
-            }
-            .padding(.horizontal, -6)
-            .onChange(of: focus.focused) { _, id in
-                if let id, id.hasPrefix("tile:") || id.hasPrefix("game:") || id == "find" { withAnimation { proxy.scrollTo(id, anchor: .center) } }
-            }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.white.opacity(0.1), lineWidth: 1))
+                .padItem(itemID(entry), hint: "Open", cornerRadius: 8) { nav.openGame(.title(entry.id)) }
+            Text(entry.name).font(.system(size: 13, weight: .medium)).foregroundStyle(PP.text).lineLimit(1)
+                .frame(width: height * 2 / 3, alignment: .leading)
         }
-    }
-
-    private func hasArt(_ appID: UInt32?) -> Bool {
-        appID.map { app in model.games.contains { $0.id == app } } ?? false
-    }
-
-    /// An installed game is `tile:ID` and opens its details; one not installed is
-    /// `game:APPID`, dimmed, and opens its Steam page.
-    private func tile(_ entry: LibraryEntry) -> some View {
-        let job = installs.jobs[entry.key]
-        return ZStack(alignment: .bottomLeading) {
-            Color.clear.overlay { GameArt(appID: entry.appID, name: entry.name, kind: .header, titleID: entry.installed ? entry.id : nil,
-                                                 storeKey: entry.key) }.clipped()
-            // Store art carries the game's name; a colour tile, or a download, says it.
-            if !(hasArt(entry.appID) || StoreArt.has(entry.key)) || job != nil {
-                LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
-                Text(job.map { "\(entry.name) · \(Self.tileStatus($0))" } ?? entry.name)
-                    .font(PP.display(14)).textCase(.uppercase).tracking(0.5).foregroundStyle(.white).lineLimit(1)
-                    .padding(8)
-            }
-        }
-        .frame(height: 70)
-        .containerRelativeFrame(.horizontal) { w, _ in Self.tileWidth(w) }
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .opacity(entry.installed && job == nil ? 1 : 0.55)
-        .padItem(entry.installed ? "tile:\(entry.id)" : "game:\(entry.appID ?? 0)", hint: "Open", cornerRadius: 10) {
-            if entry.installed {
-                nav.openTitle(entry.id)
-            } else if let app = entry.appID {
-                nav.openGame(.steam(app))
-            }
-        }
-    }
-
-    /// `62%` while it downloads, else the job's state.
-    private static func tileStatus(_ job: Downloads.Job) -> String {
-        if job.isRunning, let f = job.fraction { return percent(f) }
-        return job.status
-    }
-}
-
-/// A small card on Home: a label over whatever it shows.
-private struct HomeCard<Content: View>: View {
-    let label: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.system(size: 11, weight: .semibold)).tracking(1.1).textCase(.uppercase).foregroundStyle(PP.muted)
-            content
-        }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(PP.surface, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -253,7 +125,6 @@ struct ProgressBar: View {
     let fraction: Double
     var height: CGFloat = 6
     var track: Color = PP.line
-
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {

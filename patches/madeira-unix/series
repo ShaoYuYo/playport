@@ -99,3 +99,4 @@
 0098-ntdll-name-a-stuck-FEX-lock-s-write-owner-s-Mach-sta.patch
 0099-ntdll-reserve-title-WoW64-window-before-FEX.patch
 0100-ntdll-seed-WoW64-FEX-arena-before-JIT-copy.patch
+0101-WoW64-preserve-adjacent-data-on-guest-subpage-decommit.patch

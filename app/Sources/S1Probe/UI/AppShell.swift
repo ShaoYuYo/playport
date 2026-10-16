@@ -49,8 +49,9 @@ struct AppShell: View {
         VStack(spacing: 0) {
             GlassEffectContainer(spacing: 12) {
                 TopBar(installs: model.installs).openingChrome()
+                    .padding(.horizontal, 12)
             }
-            .frame(height: 48)
+            .frame(height: 52)
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
             // Reserve the ordinary footer's height without mounting a second footer
             // when a game panel moves the same controls to the leading edge.
@@ -60,7 +61,9 @@ struct AppShell: View {
         .ignoresSafeArea(.container, edges: .bottom)
         // Under a game page's panel the footer sits at the left, beside it (GameOptions.dc.html).
         .overlay(alignment: .bottomLeading) {
-            if router.controller != nil { footer }
+            if router.controller != nil {
+                footer.transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         // A game's page: its hero art fills the screen behind it, dimmed as the launch screen
         // shows it (UI/LaunchViews.swift GameHeroArt). Clear once Play is
@@ -71,7 +74,7 @@ struct AppShell: View {
             } else if let art {
                 ZStack { PP.background; GameHeroArt { art.view } }.ignoresSafeArea()
             } else {
-                PP.background.ignoresSafeArea()
+                ambientBackground
             }
         }
         // The controller keyboard or a picker, over everything with its own footer.
@@ -155,25 +158,10 @@ struct AppShell: View {
 
     private var content: some View {
         ZStack {
-            // A native tab container owns the roots and their navigation/scroll state.
-            // Settings and setup cover it instead of destroying it on every visit.
-            TabView(selection: Binding(get: { nav.page }, set: { nav.show($0) })) {
-                Tab("Home", systemImage: "house", value: Page.home) {
-                    HomeView(installs: model.installs)
-                }
-                Tab("Library", systemImage: "square.grid.2x2", value: Page.library) {
-                    LibraryView(installs: model.installs)
-                }
-                Tab("Downloads", systemImage: "arrow.down.circle", value: Page.downloads) {
-                    DownloadsPage(installs: model.installs)
-                }
-            }
-            .toolbar(.hidden, for: .tabBar)
-            .opacity(showsMainPages ? 1 : 0)
-            .allowsHitTesting(showsMainPages)
-            .accessibilityHidden(!showsMainPages)
-            .transformPreference(PadItemsKey.self) { if !showsMainPages { $0 = [:] } }
-            .transformPreference(PageArtKey.self) { if !showsMainPages { $0 = nil } }
+            // Retain each root's scroll and navigation state without a system tab bar.
+            HomeView(installs: model.installs).modifier(RootPageVisibility(active: showsMainPages && nav.page == .home))
+            LibraryView(installs: model.installs).modifier(RootPageVisibility(active: showsMainPages && nav.page == .library))
+            DownloadsPage(installs: model.installs).modifier(RootPageVisibility(active: showsMainPages && nav.page == .downloads))
 
             if nav.signIn {
                 SignInView().transition(.opacity)
@@ -184,6 +172,8 @@ struct AppShell: View {
             }
         }
         .animation(shellAnimation, value: surface)
+        .animation(shellAnimation, value: nav.page)
+        .animation(shellAnimation, value: router.controller != nil)
     }
 
     private var footer: some View {
@@ -203,12 +193,24 @@ struct AppShell: View {
         .frame(maxWidth: .infinity)
         .padding(.trailing, panelUp ? 410 : 0)
         .padding(.bottom, Self.footerBottom)
-        .background((panelUp ? Color.clear : PP.background).ignoresSafeArea(edges: [.horizontal, .bottom]))
         .opacity(modal.isUp ? 0 : 1)
         .allowsHitTesting(!modal.isUp)
         .accessibilityHidden(modal.isUp)
         .openingChrome()
         .animation(shellAnimation, value: panelUp)
+    }
+
+    private var ambientBackground: some View {
+        ZStack {
+            PP.background
+            if let title = HomeView.continueTitle(library.catalog.titles) {
+                GameArt(appID: title.appID, name: title.name, kind: .hero, titleID: title.id)
+                    .blur(radius: 30).opacity(0.28)
+            }
+            LinearGradient(colors: [PP.background.opacity(0.15), PP.background.opacity(0.7)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+        .ignoresSafeArea().allowsHitTesting(false)
     }
 
     private var showsMainPages: Bool { !nav.settings && !nav.setup && !nav.signIn }
@@ -323,71 +325,98 @@ struct AppShell: View {
     }
 }
 
-/// One stable navigation surface; touch never needs controller hints to go back.
+/// Hidden roots retain state but contribute no hit targets or focus preferences.
+private struct RootPageVisibility: ViewModifier {
+    let active: Bool
+    func body(content: Content) -> some View {
+        content.opacity(active ? 1 : 0)
+            .offset(y: active ? 0 : 6)
+            .allowsHitTesting(active).accessibilityHidden(!active)
+            .transformPreference(PadItemsKey.self) { if !active { $0 = [:] } }
+            .transformPreference(PageArtKey.self) { if !active { $0 = nil } }
+    }
+}
+
+/// A single floating glass rail. Selection moves inside one surface.
 private struct TopBar: View {
     @ObservedObject var installs: Downloads
     @ObservedObject private var nav = AppNavigation.shared
     @ObservedObject private var router = PadRouter.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var selection
 
     private var secondary: Bool { nav.settings || nav.setup || nav.signIn || nav.onGamePage }
     private var title: String {
         nav.signIn ? "Steam" : nav.settings ? "Settings" : nav.setup ? "Setup" : "Library"
     }
+    private var motion: Animation { reduceMotion ? .easeOut(duration: 0.12) : .spring(duration: 0.32, bounce: 0.12) }
 
     var body: some View {
         HStack(spacing: 12) {
-            if secondary {
-                Button { _ = nav.back() } label: {
-                    Label("Back", systemImage: "chevron.left")
-                        .font(.system(size: 15, weight: .medium))
-                        .frame(minWidth: 72, minHeight: 44)
-                }
-                .buttonStyle(.plain)
-                .disabled(!nav.canGoBack)
-                .accessibilityIdentifier("navigation-back")
-                if !nav.onGamePage {
-                    Text(LocalizedStringKey(title)).font(.system(size: 17, weight: .semibold))
-                }
-            } else {
-                HStack(spacing: 2) {
-                    ForEach(AppNavigation.Page.allCases, id: \.self) { page in
-                        Button { nav.show(page) } label: {
-                            HStack(spacing: 5) {
-                                Text(LocalizedStringKey(page.title))
-                                if page == .downloads, !installs.jobs.isEmpty {
-                                    Text("\(installs.jobs.count)").font(.system(size: 11, weight: .semibold))
-                                }
-                            }
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(nav.page == page ? PP.text : PP.muted)
-                            .padding(.horizontal, 14).frame(height: 44)
-                            .background(nav.page == page ? Color.white.opacity(0.13) : .clear, in: Capsule())
-                            .contentShape(Capsule())
+            ZStack(alignment: .leading) {
+                if secondary {
+                    HStack(spacing: 10) {
+                        Button { _ = nav.back() } label: {
+                            Label("Back", systemImage: "chevron.left")
+                                .font(.system(size: 14, weight: .semibold))
+                                .padding(.horizontal, 14).padding(.vertical, 10)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(nav.page == page ? .isSelected : [])
-                        .accessibilityIdentifier("page-\(page.rawValue)")
+                        .buttonStyle(.plain).glassEffect(.regular.interactive(), in: Capsule())
+                        .disabled(!nav.canGoBack).accessibilityIdentifier("navigation-back")
+                        if !nav.onGamePage {
+                            Text(LocalizedStringKey(title)).font(.system(size: 16, weight: .semibold))
+                        }
                     }
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
+                } else {
+                    HStack(spacing: 0) {
+                        ForEach(AppNavigation.Page.allCases, id: \.self) { page in
+                            Button { withAnimation(motion) { nav.show(page) } } label: {
+                                HStack(spacing: 5) {
+                                    Text(LocalizedStringKey(page.title))
+                                    if page == .downloads, !installs.jobs.isEmpty {
+                                        Text("\(installs.jobs.count)").font(.system(size: 10, weight: .bold))
+                                    }
+                                }
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(nav.page == page ? PP.text : PP.soft)
+                                .padding(.horizontal, 15).padding(.vertical, 10)
+                                .background {
+                                    if nav.page == page {
+                                        Capsule().fill(.white.opacity(0.16))
+                                            .overlay(Capsule().strokeBorder(.white.opacity(0.24), lineWidth: 0.5))
+                                            .matchedGeometryEffect(id: "selected-page", in: selection)
+                                    }
+                                }
+                                .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(nav.page == page ? .isSelected : [])
+                            .accessibilityIdentifier("page-\(page.rawValue)")
+                        }
+                    }
+                    .padding(4).fixedSize()
+                    .glassEffect(.regular, in: Capsule())
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
                 }
-                .padding(2)
-                .glassEffect(.regular, in: Capsule())
             }
             Spacer(minLength: 8)
             if let controller = router.controller {
-                Image(systemName: "gamecontroller.fill")
-                    .font(.system(size: 15)).foregroundStyle(PP.muted)
-                    .accessibilityLabel(controller.name)
+                Image(systemName: "gamecontroller.fill").font(.system(size: 15))
+                    .foregroundStyle(PP.muted).accessibilityLabel(controller.name)
+                    .transition(.opacity.combined(with: .scale))
             }
             if !secondary {
                 Button { _ = nav.open("settings") } label: {
-                    Image(systemName: "gearshape").font(.system(size: 17))
-                        .frame(width: 44, height: 44)
+                    Image(systemName: "gearshape").font(.system(size: 16, weight: .medium)).padding(11)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.plain).glassEffect(.regular.interactive(), in: Circle())
                 .accessibilityLabel("Settings")
+                .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
         .foregroundStyle(PP.text)
-        .frame(height: 48)
+        .animation(motion, value: secondary)
+        .animation(motion, value: nav.page)
     }
 }

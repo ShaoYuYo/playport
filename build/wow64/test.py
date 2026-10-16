@@ -26,6 +26,7 @@ GAP_PATCH = REPO / "patches/madeira-unix/0057-ntdll-allocate-guest-constrained-V
 QUERY_PATCH = REPO / "patches/madeira-unix/0058-ntdll-query-owner-local-WoW64-window-memory.patch"
 SECTION_PATCH = REPO / "patches/madeira-unix/0059-ntdll-route-owned-window-image-sections.patch"
 PROTECT_PATCH = REPO / "patches/madeira-unix/0060-ntdll-protect-owned-WoW64-window-pages-per-Wine-page.patch"
+SUBPAGE_PATCH = REPO / "patches/madeira-unix/0101-WoW64-preserve-adjacent-data-on-guest-subpage-decommit.patch"
 LOADER_PATCH = REPO / "patches/madeira-unix/0061-ntdll-start-the-WoW64-child-s-native-loader.patch"
 THREADS_PATCH = REPO / "patches/madeira-unix/0073-ntdll-keep-a-WoW64-window-until-its-threads-and-faul.patch"
 DC_ATTR_PATCH = REPO / "patches/madeira-unix/0065-ntdll-share-win32u-s-DC_ATTR-arena-with-every-WoW64-.patch"
@@ -412,6 +413,8 @@ def main():
                         str(GAP_PATCH)], check=True)
         subprocess.run(["git", "-C", tmp, "apply", "--include=build/ntdll-unix/wow64_vm.h",
                         str(PROTECT_PATCH)], check=True)
+        subprocess.run(["git", "-C", tmp, "apply", "--include=build/ntdll-unix/wow64_vm.h",
+                        str(SUBPAGE_PATCH)], check=True)
         (root / "vm_api.h").write_text(
             evolved_function(VM_PATCH, [GAP_PATCH, PROTECT_PATCH], "static BOOL ios_wow64_route_vm( unsigned int operation, HANDLE process, void **addr,") +
             patched_function(LOADER_PATCH, "NTSTATUS ios_wow64_alloc_stack32( void *owner, SIZE_T reserve_size, SIZE_T commit_size,"))
@@ -421,6 +424,28 @@ def main():
                         "-I", str((root / VIEWS_HEADER).parent), "-I", str(root),
                         str(REPO / "build/wow64/vm_test.c"), "-o", str(vm_exe)], check=True)
         subprocess.run([str(vm_exe)], check=True)
+        subpage_exe = root / "subpage-test"
+        subprocess.run(["clang", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                        "-pthread", "-fsanitize=undefined", "-fno-sanitize-recover=all",
+                        "-I", str((root / VIEWS_HEADER).parent), "-I", str(root),
+                        str(REPO / "build/wow64/subpage_test.c"), "-o", str(subpage_exe)], check=True)
+        subprocess.run([str(subpage_exe)], check=True)
+        # The exact old header must fail on the same live-data access. Reverse
+        # only the new patch in this scratch tree, then restore it for the
+        # remaining production-header tests.
+        subprocess.run(["git", "-C", tmp, "apply", "-R", "--include=build/ntdll-unix/wow64_vm.h",
+                        str(SUBPAGE_PATCH)], check=True)
+        baseline_exe = root / "subpage-before"
+        subprocess.run(["clang", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                        "-pthread", "-DWOW64_SUBPAGE_BASELINE",
+                        "-I", str((root / VIEWS_HEADER).parent), "-I", str(root),
+                        str(REPO / "build/wow64/subpage_test.c"), "-o", str(baseline_exe)], check=True)
+        baseline = subprocess.run([str(baseline_exe)], capture_output=True)
+        if baseline.returncode != -11:
+            raise RuntimeError(f"old subpage decommit did not reproduce SIGSEGV: {baseline.returncode}")
+        print("WoW64 subpage baseline: original production header reproduces SIGSEGV on live CRT data")
+        subprocess.run(["git", "-C", tmp, "apply", "--include=build/ntdll-unix/wow64_vm.h",
+                        str(SUBPAGE_PATCH)], check=True)
         subprocess.run(["git", "-C", tmp, "apply", "--include=build/ntdll-unix/wow64_query.h",
                         str(QUERY_PATCH)], check=True)
         subprocess.run(["git", "-C", tmp, "apply", "--include=build/ntdll-unix/wow64_query.h",

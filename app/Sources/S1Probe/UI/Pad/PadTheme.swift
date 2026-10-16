@@ -8,16 +8,16 @@ import SwiftUI
 import UIKit
 
 enum PP {
-    static let background = Color(hex: 0x0B0E13)
-    static let surface = Color(hex: 0x151A21)
-    static let raised = Color(hex: 0x1D242E)
-    static let line = Color(hex: 0x2A3340)
+    static let background = Color(hex: 0x10151D)
+    static let surface = Color(hex: 0x1B2838)
+    static let raised = Color(hex: 0x25364A)
+    static let line = Color(hex: 0x35465A)
     static let text = Color(hex: 0xEEF1F5)
     static let soft = Color(hex: 0xC9D1DC)
     static let muted = Color(hex: 0x9AA5B4)
-    static let accent = Color(hex: 0xF5B544)
-    static let onAccent = Color(hex: 0x1A1204)
-    static let progress = Color(hex: 0x6CA8FF)
+    static let accent = Color(hex: 0x66C0F4)
+    static let onAccent = Color(hex: 0x071B2A)
+    static let progress = Color(hex: 0x3DA9F5)
     static let ok = Color(hex: 0x6FCF7F)
     /// Art tiles without store art, in the design's colours, picked by name.
     static let tiles: [Color] = [0x24324A, 0x5B3A8C, 0x3E6A3A, 0x6E2B2B, 0x2F5A66, 0x6A5326].map { Color(hex: $0) }
@@ -108,10 +108,6 @@ struct PadFooter: View {
         }
         .frame(height: 44)
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hints.map { $0.button.rawValue + ":" + $0.label })
-        .overlay(alignment: .top) {
-            // The rule runs to the screen's edges, past the landscape safe area.
-            if !leading { Rectangle().fill(PP.raised).frame(height: 1).ignoresSafeArea(edges: .horizontal) }
-        }
     }
 }
 

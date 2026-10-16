@@ -1127,6 +1127,7 @@ private struct GameDetailPage: View {
 
 /// The page's big amber button (Play, Install), with A on it.
 private struct PrimaryButton: View {
+    @ObservedObject private var router = PadRouter.shared
     let id: String
     let title: String
     var enabled = true
@@ -1135,12 +1136,12 @@ private struct PrimaryButton: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            PadGlyph(button: .a, inverted: enabled)
-            Text(LocalizedStringKey(title)).font(PP.display(20)).lineLimit(1)
+            if router.controller != nil { PadGlyph(button: .a, inverted: enabled) }
+            Text(LocalizedStringKey(title)).font(.system(size: 17, weight: .semibold)).lineLimit(1)
         }
         .foregroundStyle(enabled ? PP.text : PP.muted)
-        .padding(.leading, 14).padding(.trailing, 26)
-        .frame(height: 52)
+        .padding(.horizontal, 18).padding(.vertical, 11)
+        .fixedSize(horizontal: true, vertical: false)
         .ppGlass(cornerRadius: 14, tint: enabled ? PP.accent : nil)
         .padItem(id, hint: hint, cornerRadius: 12) { if enabled { action() } }
     }
@@ -1148,6 +1149,7 @@ private struct PrimaryButton: View {
 
 /// A dark button beside it (achievements, Options, Update), with its button glyph when it has one.
 private struct SecondaryButton: View {
+    @ObservedObject private var router = PadRouter.shared
     let id: String
     let systemImage: String?
     let title: String
@@ -1160,11 +1162,12 @@ private struct SecondaryButton: View {
         HStack(spacing: 8) {
             if let systemImage { Image(systemName: systemImage).font(.system(size: 14)) }
             Text(LocalizedStringKey(title)).font(.system(size: 14, weight: .semibold)).lineLimit(1)
-            if let glyph { PadGlyph(button: glyph).padding(.leading, 2) }
+            if let glyph, router.controller != nil { PadGlyph(button: glyph).padding(.leading, 2) }
         }
         .foregroundStyle(enabled ? PP.text : PP.muted)
         .padding(.horizontal, 16)
-        .frame(height: 44)
+        .padding(.vertical, 11)
+        .fixedSize(horizontal: true, vertical: false)
         .ppGlass(cornerRadius: 12)
         .padItem(id, hint: hint, cornerRadius: 10) { if enabled { action() } }
     }
@@ -1221,6 +1224,7 @@ enum ProblemReport {
         let zip = root.appendingPathComponent(base + ".zip")
         do {
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            try AppBuild.summary.write(to: folder.appendingPathComponent("build-info.txt"), atomically: true, encoding: .utf8)
             for (index, u) in urls.enumerated() {
                 // Game logs can share a basename; preserve each, without absolute phone paths.
                 let name = "\(index)-\(u.lastPathComponent)"
