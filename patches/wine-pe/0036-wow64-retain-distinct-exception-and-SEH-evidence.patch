@@ -1,0 +1,203 @@
+From dd75ddb6a709da7683f6b92d6fb8ca70bbed8977 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Fri, 16 Oct 2026 21:41:53 +0800
+Subject: [PATCH] wow64: retain distinct exception and SEH-chain evidence
+
+The r6 report survives its memory-budget and arena handoff fixes but
+still ends before a first frame. The old first-sixteen fault cap hides
+later exceptions behind recoverable probes. Deduplicate by code, EIP,
+caller, fault page and thread, with a fixed 32-record budget. Include
+the active i386 SEH chain to distinguish guest probes from failures.
+Read bounded current-stack spans through NtReadVirtualMemory rather
+than faulting inside the diagnostic itself. Preserve thread error state.
+
+Class: diagnostics
+Evidence: docs/evidence/2026-10-16-wow64-prediction-guard.md
+Offered-upstream: no (temporary iOS diagnostic)
+---
+ dlls/wow64/syscall.c                  | 102 +++++++++++++++-----------
+ dlls/wow64/wow64_exception_evidence.h |  42 +++++++++++
+ 2 files changed, 100 insertions(+), 44 deletions(-)
+ create mode 100644 dlls/wow64/wow64_exception_evidence.h
+
+diff --git a/dlls/wow64/syscall.c b/dlls/wow64/syscall.c
+index 55b660c..8ba3d92 100644
+--- a/dlls/wow64/syscall.c
++++ b/dlls/wow64/syscall.c
+@@ -30,6 +30,7 @@
+ #include "wine/unixlib.h"
+ #include "wine/asm.h"
+ #include "wow64_private.h"
++#include "wow64_exception_evidence.h"
+ #include "wine/debug.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(wow);
+@@ -199,12 +200,65 @@ static NTSTATUS get_context_return_value( void *wow_context )
+  * code may read: [StackLimit, StackBase) is committed (the window allocation
+  * commits the stack above its guard page). NULL for any other span, so a bad
+  * or switched esp is never dereferenced here. */
+-static const ULONG *guest_stack_span( ULONG limit, ULONG base, ULONG addr, ULONG size )
++/* Read only the current guest stack, through a fault-contained native read.
++ * No direct dereference of an exception-controlled guest address. */
++static int read_exception_stack( const TEB32 *teb, ULONG address, void *buffer, ULONG bytes )
+ {
+-    if ((addr & 3) || addr < limit || addr >= base || size > base - addr) return NULL;
+-    return wow64_to_host( addr );
++    SIZE_T done = 0;
++    if (!wow64_exception_stack_span( teb->Tib.StackLimit, teb->Tib.StackBase, address, bytes )) return 0;
++    return !NtReadVirtualMemory( GetCurrentProcess(), wow64_to_host( address ), buffer, bytes, &done ) && done == bytes;
+ }
+ 
++static void report_windowed_exception( const EXCEPTION_RECORD32 *rec, const I386_CONTEXT *ctx )
++{
++    static struct wow64_exception_evidence state;
++    struct wow64_exception_key key;
++    const TEB32 *teb;
++    ULONG link[2] = { 0 }, words[8] = { 0 }, frame;
++    ULONG saved_error, saved_status;
++    unsigned int id, i;
++
++    if (!wow64_window_base) return;
++    saved_error = NtCurrentTeb()->LastErrorValue;
++    saved_status = NtCurrentTeb()->LastStatusValue;
++    teb = NtCurrentTeb32();
++    read_exception_stack( teb, ctx->Ebp, link, sizeof(link) );
++    key.tid = GetCurrentThreadId(); key.code = rec->ExceptionCode;
++    key.pc = ctx->Eip; key.caller = link[1];
++    key.page = rec->ExceptionCode == STATUS_ACCESS_VIOLATION && rec->NumberParameters >= 2
++               ? rec->ExceptionInformation[1] & ~0xfffU : 0;
++    id = wow64_exception_claim( &state, key );
++    if (!id) goto done;
++    ERR( "[wow64-exception-v2] id=%u tid=%04lx code=%08lx flags=%08lx eip=%08lx "
++         "access=%08lx address=%08lx caller=%08lx seh=%08lx stack=%08lx..%08lx\n",
++         id, GetCurrentThreadId(), rec->ExceptionCode, rec->ExceptionFlags, ctx->Eip,
++         rec->NumberParameters > 0 ? rec->ExceptionInformation[0] : 0,
++         rec->NumberParameters > 1 ? rec->ExceptionInformation[1] : 0,
++         link[1], teb->Tib.ExceptionList, teb->Tib.StackLimit, teb->Tib.StackBase );
++    ERR( "[wow64-exception-v2] id=%u eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx "
++         "esi=%08lx edi=%08lx ebp=%08lx esp=%08lx fs=%04lx\n",
++         id, ctx->Eax, ctx->Ebx, ctx->Ecx, ctx->Edx, ctx->Esi, ctx->Edi, ctx->Ebp, ctx->Esp, ctx->SegFs );
++    if (read_exception_stack( teb, ctx->Esp, words, sizeof(words) ))
++        ERR( "[wow64-exception-v2] id=%u top=%08lx,%08lx,%08lx,%08lx,%08lx,%08lx,%08lx,%08lx\n",
++             id, words[0], words[1], words[2], words[3], words[4], words[5], words[6], words[7] );
++    frame = teb->Tib.ExceptionList;
++    for (i = 0; i < 4 && frame != ~0U; i++)
++    {
++        if (!read_exception_stack( teb, frame, link, sizeof(link) ))
++        {
++            ERR( "[wow64-exception-v2] id=%u seh[%u]=%08lx unreadable-or-outside-stack\n", id, i, frame );
++            break;
++        }
++        ERR( "[wow64-exception-v2] id=%u seh[%u]=%08lx next=%08lx handler=%08lx\n", id, i, frame, link[0], link[1] );
++        if (link[0] <= frame) break;
++        frame = link[0];
++    }
++done:
++    NtCurrentTeb()->LastErrorValue = saved_error;
++    NtCurrentTeb()->LastStatusValue = saved_status;
++}
++
++
+ 
+ /**********************************************************************
+  *           call_user_exception_dispatcher
+@@ -275,47 +329,7 @@ static void __attribute__((used)) call_user_exception_dispatcher( EXCEPTION_RECO
+ 
+             TRACE( "exception %08lx dispatcher %08lx stack %08lx eip %08lx\n",
+                    rec->ExceptionCode, ctx.Eip, ctx.Esp, stack->context.Eip );
+-            /* Playport (iOS): a windowed guest's faults, with its registers and
+-             * stack, which name the guest code that took them */
+-            if (wow64_window_base && (rec->ExceptionCode & 0xf0000000) == 0xc0000000)
+-            {
+-                static LONG logged;
+-                const TEB32 *teb32 = NtCurrentTeb32();
+-                const ULONG limit = teb32->Tib.StackLimit, base = teb32->Tib.StackBase;
+-                const ULONG *top = guest_stack_span( limit, base, stack->context.Esp, 16 * sizeof(ULONG) );
+-
+-                if (InterlockedIncrement( &logged ) <= 16)
+-                {
+-                    ERR( "Playport: i386 exception %08lx at eip %08lx (%08lx %08lx): eax %08lx ebx %08lx "
+-                         "ecx %08lx edx %08lx esi %08lx edi %08lx ebp %08lx esp %08lx\n",
+-                         rec->ExceptionCode, stack->context.Eip,
+-                         rec->NumberParameters > 0 ? rec->ExceptionInformation[0] : 0,
+-                         rec->NumberParameters > 1 ? rec->ExceptionInformation[1] : 0,
+-                         stack->context.Eax, stack->context.Ebx, stack->context.Ecx, stack->context.Edx,
+-                         stack->context.Esi, stack->context.Edi, stack->context.Ebp, stack->context.Esp );
+-                    if (top)
+-                        ERR( "Playport: i386 stack %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx "
+-                             "%08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
+-                             top[0], top[1], top[2], top[3], top[4], top[5], top[6], top[7],
+-                             top[8], top[9], top[10], top[11], top[12], top[13], top[14], top[15] );
+-                    /* the callers, by the frame-pointer chain while it climbs the stack */
+-                    {
+-                        ULONG frame = stack->context.Ebp, ret[8] = { 0 };
+-                        unsigned int depth;
+-
+-                        for (depth = 0; depth < ARRAY_SIZE(ret); depth++)
+-                        {
+-                            const ULONG *link = guest_stack_span( limit, base, frame, 2 * sizeof(ULONG) );
+-                            if (!link || frame < stack->context.Esp) break;
+-                            ret[depth] = link[1];
+-                            if (link[0] <= frame) break;
+-                            frame = link[0];
+-                        }
+-                        ERR( "Playport: i386 callers %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
+-                             ret[0], ret[1], ret[2], ret[3], ret[4], ret[5], ret[6], ret[7] );
+-                    }
+-                }
+-            }
++            report_windowed_exception( rec, &stack->context );
+         }
+         break;
+ 
+diff --git a/dlls/wow64/wow64_exception_evidence.h b/dlls/wow64/wow64_exception_evidence.h
+new file mode 100644
+index 0000000..a1f269f
+--- /dev/null
++++ b/dlls/wow64/wow64_exception_evidence.h
+@@ -0,0 +1,42 @@
++/* SPDX-License-Identifier: LGPL-2.1-or-later */
++#ifndef WOW64_EXCEPTION_EVIDENCE_H
++#define WOW64_EXCEPTION_EVIDENCE_H
++#include <stdint.h>
++
++struct wow64_exception_key { uint32_t tid, code, pc, caller, page; };
++struct wow64_exception_evidence
++{
++    volatile LONG lock;
++    unsigned int used;
++    struct wow64_exception_key keys[32];
++};
++
++/* Bounded and allocation-free; contention only drops a diagnostic. */
++static inline unsigned int wow64_exception_claim( struct wow64_exception_evidence *state,
++                                                 struct wow64_exception_key key )
++{
++    unsigned int i, result = 0;
++    if (InterlockedCompareExchange( &state->lock, 1, 0 )) return 0;
++    for (i = 0; i < state->used; i++)
++    {
++        const struct wow64_exception_key *old = &state->keys[i];
++        if (old->tid == key.tid && old->code == key.code && old->pc == key.pc &&
++            old->caller == key.caller && old->page == key.page) goto done;
++    }
++    if (state->used < 32)
++    {
++        state->keys[state->used++] = key;
++        result = state->used;
++    }
++done:
++    InterlockedExchange( &state->lock, 0 );
++    return result;
++}
++
++static inline int wow64_exception_stack_span( uint32_t limit, uint32_t base,
++                                             uint32_t address, uint32_t bytes )
++{
++    return limit >= 0x10000 && base > limit && !(address & 3) && address >= limit &&
++           address < base && bytes && bytes <= base - address;
++}
++#endif
+-- 
+2.43.0
+

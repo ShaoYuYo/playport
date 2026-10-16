@@ -447,7 +447,9 @@ enum LaunchCoordinator {
                            line: MemoryNeed.refusalLine(limitMB: limit, needMB: beforeRuntime.footprintMB + poolMB + headroom))
         }
         // Preserve errors and dialog text in the bounded player log before Wine reads its channels.
-        setenv("WINEDEBUG", "-all,err+all,warn+all,+debugstr,+msgbox", 1)
+        // SessionRoot polls for a control file; expected missing-file warnings
+        // must not drown out game exceptions. File errors remain enabled.
+        setenv("WINEDEBUG", "-all,err+all,warn+all,warn-file,+debugstr,+msgbox", 1)
         let started = runtime.start(poolMB: poolMB, wait: r.jitWait) { step(.startingRuntime) }
         log("runtime: \(started.detail), activation \(String(format: "%.2f", started.activationSeconds)) s")
         mark("runtime started")
@@ -493,10 +495,12 @@ enum LaunchCoordinator {
             let elapsed = Date().timeIntervalSince(t0)
             if w.rc == 0 {
                 let exit = UInt32(bitPattern: w.code)
-                let early = LaunchDiagnostics.endedBeforeDrawing(exitCode: exit, drewFrame: frame.read(), elapsed: elapsed)
+                let windowsMessage = LaunchDiagnostics.windowsMessage(in: AppLog.url, after: logOffset)
+                let early = LaunchDiagnostics.endedBeforeDrawing(exitCode: exit, drewFrame: frame.read(), elapsed: elapsed,
+                                                                 windowsMessage: windowsMessage)
                 let kind: Outcome.Kind = early ? .endedBeforeDrawing(exit) : .exited(exit)
                 return pool.end(Outcome(kind: kind, line: "exit=\(String(format: "0x%08x", exit)) after_s=\(Int(elapsed)) first_frame=\(frame.read() ? 1 : 0)",
-                                        detail: LaunchDiagnostics.windowsMessage(in: AppLog.url, after: logOffset) ?? MemorySafetyWatch.refusalDetail),
+                                        detail: windowsMessage ?? MemorySafetyWatch.refusalDetail),
                                 mark: mark)
             }
             if w.rc < 0 {

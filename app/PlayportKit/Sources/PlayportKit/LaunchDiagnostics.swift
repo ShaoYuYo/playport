@@ -7,7 +7,7 @@ public enum LaunchDiagnostics {
     /// Fixed, public file names only. Hashes let a report establish the exact
     /// executable/runtime used without exporting game bytes, saves or credentials.
     public static func compatibilityFingerprints(gameRoot: URL, runtime: URL) -> String {
-        var text = "Compatibility diagnostics: i386-menu-v5\nSHA256 and bytes; no file contents or private paths\n"
+        var text = "Compatibility diagnostics: i386-exception-v6\nSHA256 and bytes; no file contents or private paths\n"
         let files = [
             ("game/SenrenBanka.exe", gameRoot.appendingPathComponent("SenrenBanka.exe")),
             ("game/SenrenBanka.exe.orig", gameRoot.appendingPathComponent("SenrenBanka.exe.orig")),
@@ -15,6 +15,7 @@ public enum LaunchDiagnostics {
             ("game/steam_api.dll", gameRoot.appendingPathComponent("steam_api.dll")),
             ("runtime/i386/kernelbase.dll", runtime.appendingPathComponent("i386-windows/kernelbase.dll")),
             ("runtime/aarch64/xtajit.dll", runtime.appendingPathComponent("aarch64-windows/xtajit.dll")),
+            ("runtime/aarch64/wow64.dll", runtime.appendingPathComponent("aarch64-windows/wow64.dll")),
             ("runtime/aarch64/wow64win.dll", runtime.appendingPathComponent("aarch64-windows/wow64win.dll")),
             ("runtime/arm64ec/xtajit64.dll", runtime.appendingPathComponent("arm64ec-windows/xtajit64.dll"))
         ]
@@ -30,8 +31,10 @@ public enum LaunchDiagnostics {
         return text
     }
 
-    public static func endedBeforeDrawing(exitCode: UInt32, drewFrame: Bool, elapsed: TimeInterval) -> Bool {
-        !drewFrame && elapsed.isFinite && elapsed >= 0 && elapsed <= 10
+    public static func endedBeforeDrawing(exitCode: UInt32, drewFrame: Bool, elapsed: TimeInterval,
+                                         windowsMessage: String? = nil) -> Bool {
+        !drewFrame && elapsed.isFinite && elapsed >= 0
+            && (elapsed <= 10 || (elapsed <= 60 && windowsMessage?.isEmpty == false))
     }
 
     /// Wine's msgbox channel includes the Windows dialog text even when no dialog was drawn.

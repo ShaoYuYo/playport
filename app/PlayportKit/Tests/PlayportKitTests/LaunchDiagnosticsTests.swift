@@ -30,6 +30,14 @@ final class LaunchDiagnosticsTests: XCTestCase {
         XCTAssertTrue(LaunchDiagnostics.endedBeforeDrawing(exitCode: 0xc0000005, drewFrame: false, elapsed: 1))
         XCTAssertFalse(LaunchDiagnostics.endedBeforeDrawing(exitCode: 0, drewFrame: true, elapsed: 1))
         XCTAssertFalse(LaunchDiagnostics.endedBeforeDrawing(exitCode: 0, drewFrame: false, elapsed: 60))
+        XCTAssertTrue(LaunchDiagnostics.endedBeforeDrawing(exitCode: 0, drewFrame: false, elapsed: 29,
+                                                          windowsMessage: "Access Violation"))
+        XCTAssertTrue(LaunchDiagnostics.endedBeforeDrawing(exitCode: 0, drewFrame: false, elapsed: 60,
+                                                          windowsMessage: "Access Violation"))
+        XCTAssertFalse(LaunchDiagnostics.endedBeforeDrawing(exitCode: 0, drewFrame: false, elapsed: 61,
+                                                           windowsMessage: "message from a long session"))
+        XCTAssertFalse(LaunchDiagnostics.endedBeforeDrawing(exitCode: 0, drewFrame: true, elapsed: 29,
+                                                           windowsMessage: "message after drawing"))
         XCTAssertFalse(LaunchDiagnostics.endedBeforeDrawing(exitCode: 0, drewFrame: false, elapsed: .nan))
         XCTAssertEqual(LaunchProgress.failedStage("launch=failed steamapi=preparation"), .preparing)
     }

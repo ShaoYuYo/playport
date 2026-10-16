@@ -1,0 +1,76 @@
+From 1f9009c717fc9c3f4f54fdce9c81557fd60d317b Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Fri, 16 Oct 2026 21:36:05 +0800
+Subject: [PATCH] JIT: guard iOS WoW64 call-return predictions before access
+
+The r6 report shows WoW64 call-return underflow reaching a guard page
+while translating NtQueryPerformanceCounter. The existing three inline
+guards were ARM64EC-only, so the aarch64 WoW64 module missed them.
+Apply their bounds test to both iOS modules. Keep register reload and
+state writeback ARM64EC-only: WoW64 owns its live x25 across blocks.
+Do not read invalid prediction entries from the recovery diagnostic.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-16-wow64-prediction-guard.md
+Offered-upstream: no (iOS guard-page behavior)
+---
+ FEXCore/Source/Interface/Core/Core.cpp          | 11 ++---------
+ FEXCore/Source/Interface/Core/JIT/BranchOps.cpp |  6 ++++++
+ 2 files changed, 8 insertions(+), 9 deletions(-)
+
+diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
+index 4ffe4d052..e326b4925 100644
+--- a/FEXCore/Source/Interface/Core/Core.cpp
++++ b/FEXCore/Source/Interface/Core/Core.cpp
+@@ -1921,15 +1921,8 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+                           GuestRIP, Frame->State.rip,
+                           reinterpret_cast<uintptr_t>(Frame),
+                           default_loc);
+-        /* Dump top 4 pseudo-entries before reset (mostly stale; useful to
+-         * see if anyone wrote real callret pairs into the guard page). */
+-        if (crsp >= 0x10000) {
+-          for (int i = 0; i < 4; i++) {
+-            uint64_t *pair = reinterpret_cast<uint64_t*>(crsp + i * 0x10);
+-            LogMan::Msg::EFmt("[CALLRET_OOB #{}]   [+0x{:x}] = {{0x{:x}, 0x{:x}}}",
+-                              n, i * 0x10, pair[0], pair[1]);
+-          }
+-        }
++        /* crsp is outside the allocation. Do not inspect it here: the
++         * diagnostic must not fault again while recovering from a fault. */
+       }
+       /* Tier-1 reset to DefaultLocation, matching CallRetStack::HandleAccessViolation. */
+       Frame->State.callret_sp = default_loc;
+diff --git a/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp b/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp
+index 8a7dfb6ab..5af080427 100644
+--- a/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp
++++ b/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp
+@@ -172,6 +172,8 @@ DEF_OP(ExitFunction) {
+         // ARM64EC entry thunks). Reload from State.callret_sp before pushing
+         // the call-return frame so we don't stp to wherever x17 was left.
+         ldr(REG_CALLRET_SP, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp));
++#endif
++#if defined(ARCHITECTURE_arm64ec) || defined(FEX_IOS_HOST)
+         // iOS-Madeira 2026-05-18: inline bounds-guard (Tier-2). iOS doesn't
+         // honor PAGE_NOACCESS on the callret stack's guard pages, so the
+         // SEH-driven HandleAccessViolation never resets the stack on
+@@ -253,6 +255,8 @@ DEF_OP(ExitFunction) {
+       // pop changes are lost on next dispatcher iteration — quantified
+       // as ~1 leaked callret entry per block dispatch on Thumper FMOD.
+       ldr(REG_CALLRET_SP, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp));
++#endif
++#if defined(ARCHITECTURE_arm64ec) || defined(FEX_IOS_HOST)
+       // iOS-Madeira 2026-05-18: inline bounds-guard (Tier-2) — see CALL push
+       // site for rationale. Reset to DefaultLocation if OOB before ldp.
+       {
+@@ -305,6 +309,8 @@ DEF_OP(ExitFunction) {
+       // from State.callret_sp before pushing the call-return frame, since
+       // native ARM64EC returns leave x17 pointing at an arbitrary RX page.
+       ldr(REG_CALLRET_SP, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp));
++#endif
++#if defined(ARCHITECTURE_arm64ec) || defined(FEX_IOS_HOST)
+       // iOS-Madeira 2026-05-18: inline bounds-guard (Tier-2). Same as
+       // linked-path CALL push.
+       {
+-- 
+2.43.0
+
