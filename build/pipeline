@@ -366,6 +366,7 @@ stage_app() {
           grep -E '(error|fatal error):' "$RUN/logs/app.log" | sed 's/\x1b\[[0-9;]*m//g' | sort -u | head -20 >&2
           echo "--- last lines of $RUN/logs/app.log:" >&2; tail -25 "$RUN/logs/app.log" >&2; exit 1; }
     [ -f "$IPA" ] || { say "xtool produced no $IPA"; exit 1; }
+    run app python3 "$HERE/compress-ipa.py" "$IPA"
 }
 
 stage_verify() {

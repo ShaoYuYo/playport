@@ -1,0 +1,92 @@
+From 353835cc3c3c10768996b4f540c6bb3652495d9d Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 00:02:06 +0800
+Subject: [PATCH] iOS: share disowned compiler buffers and contain WoW64 init
+ failures
+
+The bounded host arena is exhausted while new game threads initialize.
+Reclaim disowned scratch buffers immediately on iOS using the existing
+ownership CAS instead of retaining a copy for each worker for five seconds.
+Keep all capacities, active ownership and non-iOS retention unchanged.
+The WoW64 void init entry must also check failed thread/prediction-stack
+creation, unwind resources and release its lock before ending the guest
+with STATUS_NO_MEMORY rather than dereferencing NULL or entering the JIT.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-17-host-arena-and-package.md
+Offered-upstream: no (bounded iOS arena policy)
+---
+ .../FEXCore/Utils/ThreadPoolAllocator.h       | 10 ++++++-
+ Source/Windows/WOW64/Module.cpp               | 26 +++++++++++++++++--
+ 2 files changed, 33 insertions(+), 3 deletions(-)
+
+diff --git a/FEXCore/include/FEXCore/Utils/ThreadPoolAllocator.h b/FEXCore/include/FEXCore/Utils/ThreadPoolAllocator.h
+index 69e410c1f..f4580bb3d 100644
+--- a/FEXCore/include/FEXCore/Utils/ThreadPoolAllocator.h
++++ b/FEXCore/include/FEXCore/Utils/ThreadPoolAllocator.h
+@@ -224,7 +224,15 @@ protected:
+         // 3) Only take the oldest buffer
+         if ((*it)->CurrentClientOwnedFlag->load() == ClientFlags::FLAG_DISOWNED) {
+           auto UsedTime = (*it)->LastUsed.load(std::memory_order_relaxed);
+-          if ((Now - UsedTime) >= DURATION) {
++          bool CanReclaim = (Now - UsedTime) >= DURATION;
++#ifdef FEX_IOS_HOST
++          // iOS has a bounded host arena. Sleeping workers must not each pin
++          // a decoder/IR scratch buffer for five seconds. DISOWNED already
++          // forbids client access; the existing CAS arbitrates concurrent
++          // reownership. OWNED buffers and their full capacities stay intact.
++          CanReclaim = true;
++#endif
++          if (CanReclaim) {
+             ClientFlags Expected = ClientFlags::FLAG_DISOWNED;
+             if ((*it)->CurrentClientOwnedFlag->compare_exchange_strong(Expected, ClientFlags::FLAG_FREE)) {
+               // We managed to take away ownership
+diff --git a/Source/Windows/WOW64/Module.cpp b/Source/Windows/WOW64/Module.cpp
+index b81a94b99..4ede3fd8b 100644
+--- a/Source/Windows/WOW64/Module.cpp
++++ b/Source/Windows/WOW64/Module.cpp
+@@ -756,9 +756,18 @@ void BTCpuProcessTerm(HANDLE Handle, BOOL After, ULONG Status) {}
+ 
+ void BTCpuThreadInit() {
+   static constexpr size_t DefaultWow64CS {4};
+-  std::scoped_lock Lock(ThreadCreationMutex);
++  std::unique_lock Lock(ThreadCreationMutex);
+   FEX::Windows::InitCRTThread();
+   auto* Thread = CTX->CreateThread();
++#ifdef FEX_IOS_HOST
++  if (!Thread) {
++    LogMan::Msg::EFmt("[wow64-init-v1] thread state unavailable; ending guest with STATUS_NO_MEMORY");
++    FEX::Windows::DeinitCRTThread();
++    Lock.unlock();
++    NtTerminateProcess(NtCurrentProcess(), STATUS_NO_MEMORY);
++    return;
++  }
++#endif
+ 
+   // Default segment setup.
+   auto Frame = Thread->CurrentFrame;
+@@ -778,7 +787,20 @@ void BTCpuThreadInit() {
+   Frame->State.cs_idx = DefaultWow64CS << 3;
+   Frame->State.cs_cached = FEXCore::Core::CPUState::CalculateGDTBase(GDT);
+ 
+-  FEX::Windows::CallRetStack::InitializeThread(Thread);
++  if (!FEX::Windows::CallRetStack::InitializeThread(Thread)) {
++    // BTCpuThreadInit has a void ABI. Do not publish a half-built TLS state
++    // or enter translated code with no prediction stack. End only this Wine
++    // guest; release creation resources/lock before the non-returning call.
++    Frame->State.segment_arrays[FEXCore::Core::CPUState::SEGMENT_ARRAY_INDEX_GDT] = nullptr;
++    Frame->State.segment_arrays[FEXCore::Core::CPUState::SEGMENT_ARRAY_INDEX_LDT] = nullptr;
++    delete[] NewSegments;
++    CTX->DestroyThread(Thread);
++    FEX::Windows::DeinitCRTThread();
++    Lock.unlock();
++    LogMan::Msg::EFmt("[wow64-init-v1] prediction stack unavailable; ending guest with STATUS_NO_MEMORY");
++    NtTerminateProcess(NtCurrentProcess(), STATUS_NO_MEMORY);
++    return;
++  }
+ 
+   const auto TLS = GetTLS();
+   TLS.ThreadState() = Thread;
+-- 
+2.43.0
+

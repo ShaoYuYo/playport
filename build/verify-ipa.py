@@ -685,7 +685,8 @@ def main():
             z = zipfile.ZipFile(a.ipa)
             infos = z.infolist()
             files = [i for i in infos if not i.is_dir()]
-            check(all(i.compress_type == zipfile.ZIP_STORED for i in infos), f"zip: {len(infos)} entries ({len(files)} files), all stored")
+            check(all(i.compress_type in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED) for i in infos),
+                  f"zip: {len(infos)} entries ({len(files)} files), supported stored/deflate compression")
             check(not any((i.external_attr >> 16) & 0o170000 == 0o120000 for i in infos), "zip: no symlinks")
             low = [i.filename.lower() for i in infos]
             check(len(set(low)) == len(low), "zip: no case collisions")
