@@ -1,0 +1,56 @@
+From 8e53a03369a2b292c282466160735dd9dd97eb02 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Fri, 16 Oct 2026 23:42:40 +0800
+Subject: [PATCH] ntdll: wait cooperatively before returning from iOS
+ self-suspend
+
+The report shows one draw worker self-suspending repeatedly before its
+deferred Mach hold catches it. The alternate run faults in the same fill
+routine against released bitmap storage. Honour the logical suspension
+before returning to guest code. Use Wine's existing non-alertable select
+gate after successful suspends, including real handles to the caller,
+without adding handle-query rights or losing a racing resume. Other-thread
+Mach holds and the public count/status contract remain intact.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-16-self-suspend-black-screen.md
+Offered-upstream: no (iOS signal/suspension port)
+---
+ build/ntdll-unix/thread_ios.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/build/ntdll-unix/thread_ios.c b/build/ntdll-unix/thread_ios.c
+index c9fbee2..16309ab 100644
+--- a/build/ntdll-unix/thread_ios.c
++++ b/build/ntdll-unix/thread_ios.c
+@@ -2085,6 +2085,27 @@ NTSTATUS WINAPI NtSuspendThread( HANDLE handle, ULONG *count )
+         }
+     }
+     SERVER_END_REQ;
++#ifdef WINE_IOS
++    if (!ret)
++    {
++        static unsigned int self_logs;
++        BOOL log_self = handle == GetCurrentThread() &&
++                        __atomic_fetch_add( &self_logs, 1, __ATOMIC_RELAXED ) < 32;
++        if (log_self) dprintf( 2, "[suspend-gate-v1] tid=%04x self wait\n",
++                              HandleToULong( NtCurrentTeb()->ClientId.UniqueThread ) );
++        /* iOS cannot rely on Wine's SIGUSR1 suspend handler. A deferred Mach
++         * hold is not a return barrier: a self-suspending worker could execute
++         * its next task before the hold is taken. The server's zero-timeout,
++         * non-alertable select returns only when OUR suspend count is zero.
++         * Check after every successful suspend so real handles to self need
++         * no extra query rights, and a resume racing this call is not lost.
++         * Other-target suspends still return immediately unless we too were
++         * suspended. Keep the original suspend result and previous count. */
++        server_select( NULL, 0, SELECT_INTERRUPTIBLE, 0, NULL, NULL );
++        if (log_self) dprintf( 2, "[suspend-gate-v1] tid=%04x self resumed\n",
++                              HandleToULong( NtCurrentTeb()->ClientId.UniqueThread ) );
++    }
++#endif
+     return ret;
+ }
+ 
+-- 
+2.43.0
+
