@@ -1,0 +1,48 @@
+From b34eadf6fbc32ec06c7cea7f4645a3f1d03cd36e Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 00:24:41 +0800
+Subject: [PATCH] Bound the available list diagnostic buffer
+
+The fixed diagnostic fields exceed the old 256-byte stack buffer.
+ASan reproduces an overflow while reporting a deliberately bad backlink.
+Bound every append and provide room for all fields; retain allocation-free
+logging, the terminating newline and the corruption return mask.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-17-rpmalloc-capacity.md
+Offered-upstream: no (iOS port allocator integration)
+---
+ rpmalloc/rpmalloc.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/rpmalloc/rpmalloc.c b/rpmalloc/rpmalloc.c
+index e5fc53a..51bb41b 100644
+--- a/rpmalloc/rpmalloc.c
++++ b/rpmalloc/rpmalloc.c
+@@ -1916,20 +1916,20 @@ rpm_avail_check(heap_t* heap, size_t size_class, page_t* page, int is_head, cons
+ 		return bad;
+ 
+ 	{
+-		char buf[256];
++		char buf[384];
+ 		const char* hexd = "0123456789abcdef";
+ 		int i = 0, j;
+ 		unsigned long w;
+ #define RPM_STR(s)                                     \
+ 	do {                                               \
+ 		const char* _s = (s);                          \
+-		while (*_s)                                    \
++		while (*_s && (i < (int)sizeof(buf) - 1))                                    \
+ 			buf[i++] = *_s++;                          \
+ 	} while (0)
+ #define RPM_HEX(v)                                     \
+ 	do {                                               \
+ 		unsigned long long _v = (unsigned long long)(v); \
+-		for (j = 60; j >= 0; j -= 4)                   \
++		for (j = 60; (j >= 0) && (i < (int)sizeof(buf) - 1); j -= 4)                   \
+ 			buf[i++] = hexd[(_v >> j) & 0xf];          \
+ 	} while (0)
+ 		RPM_STR("[rpm-avail] ml607 CORRUPT op=");
+-- 
+2.43.0
+

@@ -1,0 +1,50 @@
+From 48fee66bb99dac0da261fdca9b7889dad990367b Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 00:21:52 +0800
+Subject: [PATCH] Keep available list head backlinks clear
+
+The port guard rejects a head with a predecessor. Head removal and
+full-to-available insertion retained stale predecessors, triggering that
+guard on valid transitions and potentially discarding usable pages.
+Maintain the invariant instead of disabling corruption detection.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-17-rpmalloc-capacity.md
+Offered-upstream: no (iOS port allocator integration)
+---
+ rpmalloc/rpmalloc.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/rpmalloc/rpmalloc.c b/rpmalloc/rpmalloc.c
+index 1ced76b..bbc27dc 100644
+--- a/rpmalloc/rpmalloc.c
++++ b/rpmalloc/rpmalloc.c
+@@ -1982,6 +1982,8 @@ page_available_to_free(page_t* page) {
+ 			heap->page_available[page->size_class] = 0;
+ 	} else if (heap->page_available[page->size_class] == page) {
+ 		heap->page_available[page->size_class] = page->next;
++		if (page->next)
++			page->next->prev = 0;
+ 	} else {
+ 		page->prev->next = page->next;
+ 		if (page->next)
+@@ -2000,6 +2002,7 @@ page_full_to_available(page_t* page) {
+ 	rpmalloc_assert(page->is_full == 1, "Page full flag internal failure");
+ 	rpmalloc_assert(page->is_decommitted == 0, "Page decommitted flag internal failure");
+ 	heap_t* heap = page->heap;
++	page->prev = 0;
+ 	page->next = heap->page_available[page->size_class];
+ 	if (page->next)
+ 		page->next->prev = page;
+@@ -2029,6 +2032,8 @@ page_available_to_full(page_t* page) {
+ 	heap_t* heap = page->heap;
+ 	if (heap->page_available[page->size_class] == page) {
+ 		heap->page_available[page->size_class] = page->next;
++		if (page->next)
++			page->next->prev = 0;
+ 	} else {
+ 		page->prev->next = page->next;
+ 		if (page->next)
+-- 
+2.43.0
+

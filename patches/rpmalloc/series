@@ -3,3 +3,8 @@
 0001-Count-what-rpmalloc-maps-in-the-FEX-host-band.patch
 0002-Name-no-rpmalloc-mapping-on-iOS-the-name-hook-alloca.patch
 0003-Map-through-ntdll-where-kernelbase-is-not-loaded-on-.patch
+0004-Map-iOS-spans-by-page-type-with-fixed-base-alignment.patch
+0005-Keep-available-list-head-backlinks-clear.patch
+0006-Return-allocation-failure-when-thread-heap-map-fails.patch
+0007-Bound-the-available-list-diagnostic-buffer.patch
+0008-Reinsert-full-pages-before-the-last-local-free.patch

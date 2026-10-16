@@ -1,0 +1,33 @@
+From 120c6e7a4f9d1e9c5222840e5201f8c057273a10 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 00:25:30 +0800
+Subject: [PATCH] Reinsert full pages before the last local free
+
+A page containing one large block can become empty while still full.
+Route it through the existing full-to-available transition before the
+available-list unlink, avoiding a false corruption report or dereference
+of stale links. The actual-class boundary test reproduces this case.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-17-rpmalloc-capacity.md
+Offered-upstream: no (iOS port allocator integration)
+---
+ rpmalloc/rpmalloc.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/rpmalloc/rpmalloc.c b/rpmalloc/rpmalloc.c
+index 51bb41b..3ab9191 100644
+--- a/rpmalloc/rpmalloc.c
++++ b/rpmalloc/rpmalloc.c
+@@ -2051,6 +2051,8 @@ page_put_local_free_block(page_t* page, block_t* block) {
+ 	page->local_free = block;
+ 	++page->local_free_count;
+ 	if (UNEXPECTED(--page->block_used == 0)) {
++		if (page->is_full)
++			page_full_to_available(page);
+ 		page_available_to_free(page);
+ 	} else if (UNEXPECTED(page->is_full != 0)) {
+ 		page_full_to_available(page);
+-- 
+2.43.0
+

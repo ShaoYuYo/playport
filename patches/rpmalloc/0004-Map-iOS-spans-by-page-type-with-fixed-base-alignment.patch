@@ -1,0 +1,84 @@
+From d2640f759de8c5ddcaa3e698a8f56cc86f127032 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 00:21:52 +0800
+Subject: [PATCH] Map iOS spans by page type with fixed base alignment
+
+Small and medium per-thread spans need not each reserve 16 MiB.
+Map 4 MiB per type, with 64 small pages and four 1 MiB medium pages.
+Preserve class density so broad class use does not multiply aligned slots.
+Keep 16 MiB span base alignment, large page geometry and the complete
+256 KiB medium and 8 MiB large block classes. Derive counts from mapping.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-17-rpmalloc-capacity.md
+Offered-upstream: no (bounded iOS arena policy)
+---
+ rpmalloc/rpmalloc.c | 24 ++++++++++++++++++++----
+ 1 file changed, 20 insertions(+), 4 deletions(-)
+
+diff --git a/rpmalloc/rpmalloc.c b/rpmalloc/rpmalloc.c
+index 29a06aa..1ced76b 100644
+--- a/rpmalloc/rpmalloc.c
++++ b/rpmalloc/rpmalloc.c
+@@ -178,7 +178,11 @@ madvise(caddr_t, size_t, int);
+ #define SMALL_PAGE_SIZE_SHIFT 16
+ #define SMALL_PAGE_SIZE (1 << SMALL_PAGE_SIZE_SHIFT)
+ #define SMALL_PAGE_MASK (~((uintptr_t)SMALL_PAGE_SIZE - 1))
++#ifdef FEX_IOS_HOST
++#define MEDIUM_PAGE_SIZE_SHIFT 20
++#else
+ #define MEDIUM_PAGE_SIZE_SHIFT 22
++#endif
+ #define MEDIUM_PAGE_SIZE (1 << MEDIUM_PAGE_SIZE_SHIFT)
+ #define MEDIUM_PAGE_MASK (~((uintptr_t)MEDIUM_PAGE_SIZE - 1))
+ #ifdef FEX_IOS_HOST
+@@ -221,6 +225,16 @@ static const char ios_span16_marker[] __attribute__((used)) = "rpmalloc-span16 r
+ #endif
+ #define SPAN_MASK (~((uintptr_t)(SPAN_SIZE - 1)))
+ 
++// Span alignment remains fixed: block_get_span masks to the aligned base.
++// Only map the pages this type needs initially; subsequent spans grow on demand.
++#ifdef FEX_IOS_HOST
++#define SMALL_SPAN_SIZE (4 * 1024 * 1024)
++#define MEDIUM_SPAN_SIZE (4 * 1024 * 1024)
++#else
++#define SMALL_SPAN_SIZE SPAN_SIZE
++#define MEDIUM_SPAN_SIZE SPAN_SIZE
++#endif
++
+ ////////////
+ ///
+ /// Utility macros
+@@ -2558,7 +2572,9 @@ heap_get_span(heap_t* heap, page_type_t page_type) {
+ 	// Fallback path, map more memory
+ 	size_t offset = 0;
+ 	size_t mapped_size = 0;
+-	span_t* span = global_memory_interface->memory_map(SPAN_SIZE, SPAN_SIZE, &offset, &mapped_size);
++	size_t span_size = (page_type == PAGE_SMALL) ? SMALL_SPAN_SIZE :
++	                   ((page_type == PAGE_MEDIUM) ? MEDIUM_SPAN_SIZE : SPAN_SIZE);
++	span_t* span = global_memory_interface->memory_map(span_size, SPAN_SIZE, &offset, &mapped_size);
+ #if defined(_WIN32) && defined(FEX_IOS_HOST)
+ 	if (span && page_type <= PAGE_LARGE)
+ 		atomic_fetch_add_explicit(&ios_rpm_span_maps[page_type], 1, memory_order_relaxed);
+@@ -2568,15 +2584,15 @@ heap_get_span(heap_t* heap, page_type_t page_type) {
+ 		uint32_t page_size = 0;
+ 		uintptr_t page_address_mask = 0;
+ 		if (page_type == PAGE_SMALL) {
+-			page_count = SPAN_SIZE / SMALL_PAGE_SIZE;
++			page_count = (uint32_t)(span_size / SMALL_PAGE_SIZE);
+ 			page_size = SMALL_PAGE_SIZE;
+ 			page_address_mask = SMALL_PAGE_MASK;
+ 		} else if (page_type == PAGE_MEDIUM) {
+-			page_count = SPAN_SIZE / MEDIUM_PAGE_SIZE;
++			page_count = (uint32_t)(span_size / MEDIUM_PAGE_SIZE);
+ 			page_size = MEDIUM_PAGE_SIZE;
+ 			page_address_mask = MEDIUM_PAGE_MASK;
+ 		} else {
+-			page_count = SPAN_SIZE / LARGE_PAGE_SIZE;
++			page_count = (uint32_t)(span_size / LARGE_PAGE_SIZE);
+ 			page_size = LARGE_PAGE_SIZE;
+ 			page_address_mask = LARGE_PAGE_MASK;
+ 		}
+-- 
+2.43.0
+
