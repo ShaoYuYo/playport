@@ -49,6 +49,11 @@ extern int foreground;                                       /* libwineserver.a 
 extern void __wine_main(int argc, char *argv[]);             /* libntdll_unix.a */
 extern void ios_set_title_machine(unsigned short machine);  /* libntdll_unix.a */
 
+extern void ios_memory_configure(unsigned int mb);
+extern unsigned long long ios_memory_denials(void);
+void wine_host_set_memory_headroom_mb(unsigned int mb) { ios_memory_configure(mb); }
+unsigned long long wine_host_memory_denials(void) { return ios_memory_denials(); }
+
 /* --- host state -------------------------------------------------------- */
 
 static char g_runtime[1024], g_prefix[1024];

@@ -263,6 +263,7 @@ struct SettingsSwitchRow: View {
 private struct GraphicsSettings: View {
     @ObservedObject private var launchSettings = LaunchSettingsStore.shared
     @AppStorage(MetalHUD.key) private var metalHUD = false
+    @AppStorage(MemorySafety.preferenceKey) private var memoryHeadroom = MemorySafety.defaultMB
 
     var body: some View {
         SettingsNote(text: "What every game uses unless you change it on the game's page.")
@@ -278,6 +279,13 @@ private struct GraphicsSettings: View {
                                     defaultValue: GraphicsBackend.default)
         valueRow("graphics", "Direct3D", "Vulkan is experimental", backends,
                  name: LaunchSettingsText.graphics, value: global.graphics)
+        PadValueRow(id: "set:memory-headroom", title: "記憶體安全餘裕",
+                    subtitle: "每秒監測，接近上限先提示；不足時拒絕新的 Wine 記憶體提交。下次啟動遊戲套用。",
+                    values: MemorySafety.choices.map { "\($0) MB" },
+                    index: MemorySafety.choices.firstIndex(of: memoryHeadroom) ?? 1) {
+            memoryHeadroom = MemorySafety.choices[$0]
+        }
+        SettingsNote(text: "預設保留 100 MB。遊戲與模擬器按需使用 RAM，目標隨實際用量調整；這不會提高 iOS 上限或強行回收已用資料。JIT 程式碼池在啟動時固定大小。")
         SettingsSwitchRow(id: "metalHUD", title: "Metal HUD", subtitle: "Frame rate, frame time and memory over a game",
                           on: $metalHUD)
         SettingsNote(text: "From each game's next start. 720p at 60 fps keeps the phone cool enough to hold its "

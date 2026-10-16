@@ -7,7 +7,7 @@ public enum LaunchDiagnostics {
     /// Fixed, public file names only. Hashes let a report establish the exact
     /// executable/runtime used without exporting game bytes, saves or credentials.
     public static func compatibilityFingerprints(gameRoot: URL, runtime: URL) -> String {
-        var text = "Compatibility diagnostics: i386-subpage-v3\nSHA256 and bytes; no file contents or private paths\n"
+        var text = "Compatibility diagnostics: i386-arena-v4\nSHA256 and bytes; no file contents or private paths\n"
         let files = [
             ("game/SenrenBanka.exe", gameRoot.appendingPathComponent("SenrenBanka.exe")),
             ("game/SenrenBanka.exe.orig", gameRoot.appendingPathComponent("SenrenBanka.exe.orig")),

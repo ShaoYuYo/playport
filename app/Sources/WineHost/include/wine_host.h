@@ -28,6 +28,10 @@ extern "C" {
 
 #define WINE_HOST_ABI_VERSION 5
 
+/* UI policy before startup; denial counter for the running-game warning. */
+void wine_host_set_memory_headroom_mb(unsigned int mb);
+unsigned long long wine_host_memory_denials(void);
+
 typedef void (*wine_host_log_fn)(const char *line);
 
 typedef struct {

@@ -146,6 +146,7 @@ final class TitleLaunch: ObservableObject {
     /// that was refused gets its own; host I/O starts once.
     private func begin(screen: String? = nil, frameLimit: Int = 0) {
         running = true
+        MemorySafetyWatch.shared.start()
         // Steam work stops before the runtime starts (decision 0004); the JIT
         // wait ahead of wine_host_init leaves it ample time to disconnect. A play
         // with armed tickets keeps the CM logged on for them alone (decision 0062).
@@ -174,6 +175,7 @@ final class TitleLaunch: ObservableObject {
         step = nil
         showsSheet = false
         running = false
+        MemorySafetyWatch.shared.stop()
         InGameMenu.shared.gameEnded()
         GameWebSheet.shared.gameEnded()
         var why = LaunchMessage.of(outcome, title: title, spent: spent)

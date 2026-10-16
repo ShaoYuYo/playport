@@ -16,6 +16,8 @@ class Arena(unittest.TestCase):
             root = Path(t)
             subprocess.run(['git', 'init', '-q', str(root)], check=True)
             subprocess.run(['git', '-C', str(root), 'apply', '--include=build/ntdll-unix/wow64_fex_arena.h', str(PATCH)], check=True)
+            capacity = REPO / 'patches/madeira-unix/0102-ntdll-fit-WoW64-host-arenas-into-sub-gigabyte-gaps.patch'
+            subprocess.run(['git', '-C', str(root), 'apply', '--include=build/ntdll-unix/wow64_fex_arena.h', str(capacity)], check=True)
             (root / 'seed_api.h').write_text(helpers.patched_function(PATCH,
                 'static int ios_wow64_seed_fex_arena(void *image, size_t size)'))
             exe = root / 'test'

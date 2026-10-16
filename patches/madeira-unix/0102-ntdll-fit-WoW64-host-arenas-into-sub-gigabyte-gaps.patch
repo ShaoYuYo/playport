@@ -1,0 +1,48 @@
+From 6937ebd3178129e65ab83e10c9fa8767bac3112d Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Fri, 16 Oct 2026 17:46:07 +0800
+Subject: [PATCH] ntdll: fit the WoW64 host arena into sub-gigabyte gaps
+
+The r3 report leaves about 904 MiB after its independent 4 GiB guest
+window and native mappings. The existing 1 GiB minimum cannot fit, so
+FEX dies before the game starts. Try 768 and 512 MiB only after the
+existing candidates fail, only for i386 titles. Retain the actual
+reserved interval through the bounded pre-CRT handoff.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-16-arena-and-memory.md
+Offered-upstream: no (owned iOS placement)
+---
+ build/ntdll-unix/virtual_ios.c     | 2 ++
+ build/ntdll-unix/wow64_fex_arena.h | 2 +-
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/build/ntdll-unix/virtual_ios.c b/build/ntdll-unix/virtual_ios.c
+index c14f139..81a7926 100644
+--- a/build/ntdll-unix/virtual_ios.c
++++ b/build/ntdll-unix/virtual_ios.c
+@@ -19940,6 +19940,8 @@ void ios_reserve_fex_arena(void)
+         { 0x0200000000ull, 0x03ffffffffull, 0x100000000ull, "4GB @8-16G"               },
+         { 0x0200000000ull, 0x0fbfffffffull, 0x080000000ull, "2GB anywhere low"         },
+         { 0x0200000000ull, 0x0fbfffffffull, 0x040000000ull, "1GB WoW64 host fallback"   },
++        { 0x0200000000ull, 0x0fbfffffffull, 0x030000000ull, "768MB WoW64 host fallback" },
++        { 0x0200000000ull, 0x0fbfffffffull, 0x020000000ull, "512MB WoW64 host fallback" },
+     };
+     unsigned i;
+     unsigned long long arena_task_max = 0;
+diff --git a/build/ntdll-unix/wow64_fex_arena.h b/build/ntdll-unix/wow64_fex_arena.h
+index 7c59740..b5d9ce2 100644
+--- a/build/ntdll-unix/wow64_fex_arena.h
++++ b/build/ntdll-unix/wow64_fex_arena.h
+@@ -21,7 +21,7 @@ static inline int ios_fex_span(size_t size, uint32_t off, size_t bytes)
+ static inline int ios_wow64_fex_arena_valid(uint64_t base, uint64_t end)
+ {
+     return base >= UINT64_C(0x100000000) && end > base &&
+-           !(base & 0xffff) && !(end & 0xffff) && end - base >= UINT64_C(0x40000000);
++           !(base & 0xffff) && !(end & 0xffff) && end - base >= UINT64_C(0x20000000);
+ }
+ 
+ /* Only writable, non-executable, non-forwarded, distinct 64-bit DATA slots.
+-- 
+2.43.0
+

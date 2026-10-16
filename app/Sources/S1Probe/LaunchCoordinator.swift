@@ -431,6 +431,14 @@ enum LaunchCoordinator {
                 if let inheritedLocale { setenv("LC_ALL", inheritedLocale, 1) } else { unsetenv("LC_ALL") }
             }
         }
+        let headroom = MemorySafetyWatch.configuredMB
+        wine_host_set_memory_headroom_mb(UInt32(headroom))
+        let beforeRuntime = MemoryLimit.read()
+        log("memory-safety: configured headroom_mb=\(headroom); new Wine commitments checked against live availability")
+        if let limit = beforeRuntime.effectiveMB, limit - beforeRuntime.footprintMB < poolMB + headroom {
+            return Outcome(kind: .refused,
+                           line: MemoryNeed.refusalLine(limitMB: limit, needMB: beforeRuntime.footprintMB + poolMB + headroom))
+        }
         // Preserve errors and dialog text in the bounded player log before Wine reads its channels.
         setenv("WINEDEBUG", "-all,err+all,warn+all,+debugstr,+msgbox", 1)
         let started = runtime.start(poolMB: poolMB, wait: r.jitWait) { step(.startingRuntime) }
@@ -438,7 +446,7 @@ enum LaunchCoordinator {
         mark("runtime started")
         guard started.ok else {
             let line = started.selfcheck.map { "launch=failed selfcheck=\($0)" } ?? "launch=failed runtime=\(started.detail)"
-            return Outcome(kind: .failed, line: line)
+            return Outcome(kind: .failed, line: line, detail: MemorySafetyWatch.refusalDetail)
         }
 
         // After the session root started: its environment is the app's without the title's.
@@ -481,7 +489,7 @@ enum LaunchCoordinator {
                 let early = LaunchDiagnostics.endedBeforeDrawing(exitCode: exit, drewFrame: frame.read(), elapsed: elapsed)
                 let kind: Outcome.Kind = early ? .endedBeforeDrawing(exit) : .exited(exit)
                 return pool.end(Outcome(kind: kind, line: "exit=\(String(format: "0x%08x", exit)) after_s=\(Int(elapsed)) first_frame=\(frame.read() ? 1 : 0)",
-                                        detail: LaunchDiagnostics.windowsMessage(in: AppLog.url, after: logOffset)),
+                                        detail: LaunchDiagnostics.windowsMessage(in: AppLog.url, after: logOffset) ?? MemorySafetyWatch.refusalDetail),
                                 mark: mark)
             }
             if w.rc < 0 {

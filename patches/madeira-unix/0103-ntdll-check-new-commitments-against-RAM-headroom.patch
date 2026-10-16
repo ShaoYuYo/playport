@@ -1,0 +1,134 @@
+From 7cd494f57e1ea5d1c442aeb8d9b5157751fd220e Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Fri, 16 Oct 2026 17:47:00 +0800
+Subject: [PATCH] ntdll: admit new Wine commitments against configurable RAM
+ headroom
+
+Reserve-only requests remain sparse. Check newly committed logical pages
+against the current OS availability and the UI-configured safety margin.
+Existing commitments are not charged twice. Refuse with STATUS_NO_MEMORY,
+retain bounded denial evidence and expose a counter for the UI warning.
+This is conservative admission, not a process-wide resident-memory cap.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-16-arena-and-memory.md
+Offered-upstream: no (iOS process memory policy)
+---
+ build/ntdll-unix/ios_memory_safety.h | 29 +++++++++++++++++++
+ build/ntdll-unix/virtual_ios.c       | 43 +++++++++++++++++++++++++++-
+ 2 files changed, 71 insertions(+), 1 deletion(-)
+ create mode 100644 build/ntdll-unix/ios_memory_safety.h
+
+diff --git a/build/ntdll-unix/ios_memory_safety.h b/build/ntdll-unix/ios_memory_safety.h
+new file mode 100644
+index 0000000..ef19c78
+--- /dev/null
++++ b/build/ntdll-unix/ios_memory_safety.h
+@@ -0,0 +1,29 @@
++/* SPDX-License-Identifier: LGPL-2.1-or-later */
++/* Native Wine commit admission. Reserved VA is not resident memory. */
++#ifndef IOS_MEMORY_SAFETY_H
++#define IOS_MEMORY_SAFETY_H
++#include <stdatomic.h>
++static _Atomic unsigned int ios_memory_margin_mb;
++static _Atomic unsigned int ios_memory_safety_enabled;
++static _Atomic unsigned long long ios_memory_rejections;
++
++void ios_memory_configure(unsigned int margin_mb)
++{
++    atomic_store(&ios_memory_margin_mb, margin_mb > 1024 ? 1024 : margin_mb);
++    atomic_store(&ios_memory_safety_enabled, 1);
++}
++unsigned long long ios_memory_denials(void) { return atomic_load(&ios_memory_rejections); }
++
++static int ios_memory_admit_commit(size_t growth, uint64_t available)
++{
++    uint64_t margin = (uint64_t)atomic_load(&ios_memory_margin_mb) << 20;
++    if (!atomic_load(&ios_memory_safety_enabled) || !growth) return 1;
++    if (growth <= available && margin <= available - growth) return 1;
++    unsigned long long count = atomic_fetch_add(&ios_memory_rejections, 1) + 1;
++    if (count <= 24)
++        dprintf(2, "[memory-safety-v1] refused new_commit=%#llx available=%#llx margin=%#llx count=%llu\n",
++                (unsigned long long)growth, (unsigned long long)available,
++                (unsigned long long)margin, count);
++    return 0;
++}
++#endif
+diff --git a/build/ntdll-unix/virtual_ios.c b/build/ntdll-unix/virtual_ios.c
+index 81a7926..b9ff5be 100644
+--- a/build/ntdll-unix/virtual_ios.c
++++ b/build/ntdll-unix/virtual_ios.c
+@@ -13888,6 +13888,35 @@ static IMAGE_DATA_DIRECTORY *get_data_dir( IMAGE_NT_HEADERS *nt, SIZE_T total_si
+ #include "wow64_image.h"
+ #include "wow64_placement.h"
+ #include "wow64_vm.h"
++#include <os/proc.h>
++#include "ios_memory_safety.h"
++
++/* Query logical commitment under the same VM lock. Existing commitments and
++ * MEM_RESERVE alone consume no new admission credit. New commitments are
++ * checked conservatively as if every requested byte became resident. */
++static int ios_memory_allow_allocation(void *addr, SIZE_T size)
++{
++    SIZE_T growth;
++    sigset_t sigset;
++    if (size > SIZE_MAX - page_mask) return ios_memory_admit_commit(SIZE_MAX, os_proc_available_memory());
++    growth = (size + page_mask) & ~page_mask;
++    if (addr && size && size <= SIZE_MAX - page_mask &&
++        (uintptr_t)addr <= UINTPTR_MAX - size - page_mask)
++    {
++        uintptr_t start = (uintptr_t)addr & ~(uintptr_t)page_mask;
++        SIZE_T length = (size + (uintptr_t)addr - start + page_mask) & ~page_mask;
++        server_enter_uninterrupted_section(&virtual_mutex, &sigset);
++        if (find_view((void *)start, length))
++        {
++            growth = 0;
++            for (SIZE_T offset = 0; offset < length; offset += page_size)
++                if (!(get_page_vprot((void *)(start + offset)) & VPROT_COMMITTED)) growth += page_size;
++        }
++        server_leave_uninterrupted_section(&virtual_mutex, &sigset);
++    }
++    return ios_memory_admit_commit(growth, os_proc_available_memory());
++}
++
+ #include "wow64_query.h"
+ 
+ 
+@@ -18765,6 +18794,9 @@ static int ios_lowalloc_process_qualifies(void)
+ NTSTATUS WINAPI NtAllocateVirtualMemory( HANDLE process, PVOID *ret, ULONG_PTR zero_bits,
+                                          SIZE_T *size_ptr, ULONG type, ULONG protect )
+ {
++    if (process == NtCurrentProcess() && ret && size_ptr && (type & MEM_COMMIT) &&
++        !ios_memory_allow_allocation(*ret, *size_ptr)) return STATUS_NO_MEMORY;
++
+ #ifdef WINE_IOS
+     NTSTATUS wow64_status;
+     if (ios_wow64_route_vm( 0, process, ret, size_ptr, type, protect, zero_bits, NULL, &wow64_status ))
+@@ -20266,7 +20298,7 @@ void ios_reserve_fex_arena(void)
+              (unsigned)ARRAY_SIZE(plan) );
+ }
+ 
+-NTSTATUS WINAPI NtAllocateVirtualMemoryEx( HANDLE process, PVOID *ret, SIZE_T *size_ptr, ULONG type,
++static NTSTATUS ios_allocate_virtual_memory_ex( HANDLE process, PVOID *ret, SIZE_T *size_ptr, ULONG type,
+                                            ULONG protect, MEM_EXTENDED_PARAMETER *parameters,
+                                            ULONG count )
+ {
+@@ -20901,6 +20933,15 @@ NTSTATUS WINAPI NtAllocateVirtualMemoryEx( HANDLE process, PVOID *ret, SIZE_T *s
+ #endif
+ }
+ 
++NTSTATUS WINAPI NtAllocateVirtualMemoryEx( HANDLE process, PVOID *ret, SIZE_T *size_ptr, ULONG type,
++                                           ULONG protect, MEM_EXTENDED_PARAMETER *parameters,
++                                           ULONG count )
++{
++    if (process == NtCurrentProcess() && ret && size_ptr && (type & MEM_COMMIT) &&
++        !ios_memory_allow_allocation(*ret, *size_ptr)) return STATUS_NO_MEMORY;
++    return ios_allocate_virtual_memory_ex(process, ret, size_ptr, type, protect, parameters, count);
++}
++
+ 
+ /***********************************************************************
+  *             NtFreeVirtualMemory   (NTDLL.@)
+-- 
+2.43.0
+

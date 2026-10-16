@@ -54,6 +54,13 @@ int main(void)
     int selector_calls = 0;
     if (!base) selector_calls++; /* rpmalloc's existing first-allocation guard */
     assert(!selector_calls && end - base + 1 == UINT64_C(0x40000000));
+    for (uint64_t mb = 512; mb <= 768; mb += 256) {
+        fixture(backing);
+        ios_fex_arena_end_unix = ios_fex_arena_base_unix + (mb << 20);
+        assert(ios_wow64_seed_fex_arena(backing, sizeof(backing)));
+        memcpy(&base, backing + 0x800, 8); memcpy(&end, backing + 0x900, 8);
+        assert(end - base + 1 == (mb << 20));
+    }
     fixture(backing); fail_protection = 2;
     assert(!ios_wow64_seed_fex_arena(backing, sizeof(backing)));
     memcpy(&base, backing + 0x800, 8); memcpy(&end, backing + 0x900, 8); assert(!base && !end);
