@@ -325,6 +325,13 @@ enum LaunchCoordinator {
             $0.withMemoryRebound(to: CChar.self, capacity: 2048) { wine_host_prepare_title($0) }
         }
         log(String(format: "selected executable: COFF machine %#x; reserve WoW64 before FEX=%d", machine, machine == 0x14c ? 1 : 0))
+        let economy = UserDefaults.standard.object(forKey: TitleMemory.preferenceKey) as? Bool ?? true
+        let titleMemory = TitleMemory(steamAppID: r.steamAppID, i386: machine == 0x14c, enabled: economy)
+        let config = titleMemory.config(over: r.config)
+        args = titleMemory.arguments(over: args)
+        if titleMemory.active {
+            log("memory-economy: profile=senren-v1 default_pool_mb=256 cpu_count=\(config["cpu-count"] ?? "default") engine_cache_default=low explicit_arguments=preserved")
+        }
 
         // The backend's builtins go before the runtime's own (wine_host_init,
         // WINEDLLPATH). One this build does not carry refuses the launch
@@ -340,7 +347,7 @@ enum LaunchCoordinator {
         }
         log("graphics: \(r.graphics.rawValue)")
 
-        if r.config.isEmpty {
+        if config.isEmpty {
             // Undo an earlier launch's title config: this one reads the shared file.
             if let inherited = inheritedDocsDir { setenv("MADEIRA_DOCS_DIR", inherited, 1) } else { unsetenv("MADEIRA_DOCS_DIR") }
         } else {
@@ -349,9 +356,9 @@ enum LaunchCoordinator {
             let docs = runtime.prefixURL.appendingPathComponent("Documents", isDirectory: true)
             let shared = inheritedDocsDir.map { URL(fileURLWithPath: $0) } ?? docs
             do {
-                let dir = try TitleConfig.prepare(shared: shared, documents: docs, exe: r.exe, config: r.config, title: r.exe)
+                let dir = try TitleConfig.prepare(shared: shared, documents: docs, exe: r.exe, config: config, title: r.exe)
                 setenv("MADEIRA_DOCS_DIR", dir.path, 1)
-                log("config: MADEIRA_DOCS_DIR=\(dir.path) with " + r.config.keys.sorted().map { "\($0) = \(r.config[$0]!)" }.joined(separator: ", "))
+                log("config: MADEIRA_DOCS_DIR=\(dir.path) with " + config.keys.sorted().map { "\($0) = \(config[$0]!)" }.joined(separator: ", "))
             } catch {
                 return Outcome(kind: .refused, line: "launch=refused config=\(error)")
             }
@@ -405,7 +412,7 @@ enum LaunchCoordinator {
         // Every byte of the pool counts against the limit from the bless on. Read
         // again: Game Mode may have raised the limit since the Play.
         memory = MemoryLimit.read()
-        let poolMB = r.poolMB ?? MemoryLimit.poolMB(memory)
+        let poolMB = r.poolMB ?? MemoryLimit.poolMB(memory, titlePoolMB: titleMemory.poolMB)
         log("jit pool: \(poolMB) MiB for a memory limit of \(memory.effectiveMB.map { "\($0) MB" } ?? "not reported")"
             + (memory.simulatedPoolMB != nil ? " (simulated pool)" : ""))
         mark("surface ready; asking for JIT")

@@ -264,6 +264,7 @@ private struct GraphicsSettings: View {
     @ObservedObject private var launchSettings = LaunchSettingsStore.shared
     @AppStorage(MetalHUD.key) private var metalHUD = false
     @AppStorage(MemorySafety.preferenceKey) private var memoryHeadroom = MemorySafety.defaultMB
+    @AppStorage(TitleMemory.preferenceKey) private var memoryEconomy = true
 
     var body: some View {
         SettingsNote(text: "What every game uses unless you change it on the game's page.")
@@ -285,7 +286,10 @@ private struct GraphicsSettings: View {
                     index: MemorySafety.choices.firstIndex(of: memoryHeadroom) ?? 1) {
             memoryHeadroom = MemorySafety.choices[$0]
         }
-        SettingsNote(text: "預設保留 100 MB。遊戲與模擬器按需使用 RAM，目標隨實際用量調整；這不會提高 iOS 上限或強行回收已用資料。JIT 程式碼池在啟動時固定大小。")
+        SettingsNote(text: "預設安全餘裕 100 MB，這是配置前的安全檢查，不會預先占用這些 RAM。JIT 程式碼池在啟動時固定大小。")
+        SettingsSwitchRow(id: "memory-economy", title: "遊戲省記憶體模式",
+                          subtitle: "目前適用於千戀＊萬花：256 MB JIT、較少工作執行緒、降低引擎快取。可能增加圖片重載時間；下次啟動套用。",
+                          on: $memoryEconomy)
         SettingsSwitchRow(id: "metalHUD", title: "Metal HUD", subtitle: "Frame rate, frame time and memory over a game",
                           on: $metalHUD)
         SettingsNote(text: "From each game's next start. 720p at 60 fps keeps the phone cool enough to hold its "

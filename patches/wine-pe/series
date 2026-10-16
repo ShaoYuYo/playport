@@ -31,3 +31,4 @@
 0032-wow64-preserve-class-atoms-in-unicode-strings.patch
 0033-kernelbase-record-bounded-i386-compatibility-evidence.patch
 0034-wow64win-convert-and-audit-menu-item-info.patch
+0035-ntdll-accept-owned-sub-gigabyte-arenas-in-the-root.patch

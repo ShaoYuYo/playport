@@ -114,7 +114,7 @@ resource	Runtime/arm64ec-windows/ncrypt.dll	655360	6f4dddc285de2149257f85a36f834
 resource	Runtime/arm64ec-windows/netapi32.dll	655360	d881f11781b354a88b8a19bddfa106adc898cf1b2e43285f33794a74ba0681fa	wine-build	build-arm64ec/dlls/netapi32/arm64ec-windows/netapi32.dll	P2
 resource	Runtime/arm64ec-windows/netutils.dll	655360	f8f303467f3eb482f1e8baa0e94e428894f3c8fb2a9f729e9d0da4b54bf07624	wine-build	build-arm64ec/dlls/netutils/arm64ec-windows/netutils.dll	P2
 resource	Runtime/arm64ec-windows/nsi.dll	655360	ada3001ea979e11d17ed50d5d441a26c9aa2714c1bc4742bbad6b48924c81e51	wine-build	build-arm64ec/dlls/nsi/arm64ec-windows/nsi.dll	P2
-resource	Runtime/arm64ec-windows/ntdll.dll	1572864	867a8b01169208b13f92782610deb76c7a6ca26a7371c7c1ad775264d571e56f	wine-build	build-arm64ec/dlls/ntdll/arm64ec-windows/ntdll.dll	P2-ec
+resource	Runtime/arm64ec-windows/ntdll.dll	1572864	70b7422a07d3b45c987c29ce432507057b7c953752b52a0d155b1ce228884a39	wine-build	build-arm64ec/dlls/ntdll/arm64ec-windows/ntdll.dll	P2-ec
 resource	Runtime/arm64ec-windows/ole32.dll	1638400	ba28bc412a2072b90ff03e9efd238192f0ab2afe599570a6eb1e2a13ad2c8cb0	wine-build	build-arm64ec/dlls/ole32/arm64ec-windows/ole32.dll	P2
 resource	Runtime/arm64ec-windows/oleacc.dll	786432	6f2f8ab7fe54e9eea0e18d66a17df03d811bf78290d6da4923c73d2c80b09b34	wine-build	build-arm64ec/dlls/oleacc/arm64ec-windows/oleacc.dll	P2
 resource	Runtime/arm64ec-windows/oleaut32.dll	1507328	b6322c406627463c14ba753e4c6cb5aad3c74e046a583b46fe57d5363baef47e	wine-build	build-arm64ec/dlls/oleaut32/arm64ec-windows/oleaut32.dll	P2

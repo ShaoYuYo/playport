@@ -24,9 +24,11 @@ int host_memory_read(host_memory *out)
 
     out->available = (uint64_t)os_proc_available_memory();
     out->footprint = 0;
+    out->compressed = 0;
     if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS)
         return -1;
     out->footprint = info.phys_footprint;
+    out->compressed = info.compressed;
     return 0;
 }
 

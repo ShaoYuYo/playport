@@ -38,9 +38,9 @@ final class MemorySafetyWatch: ObservableObject {
                 let next: String? = rejected ? "記憶體安全餘裕不足，已拒絕新的記憶體配置。" :
                     low ? "記憶體即將不足：剩餘約 \(available ?? 0) MB，安全餘裕 \(reserve) MB。" : nil
                 if next != warning { warning = next }
-                if rejected || ticks % 10 == 0 {
+                if rejected || ticks % 2 == 0 {
                     let target = MemorySafety.targetMB(used: reading.footprintMB, limit: reading.effectiveMB, margin: reserve)
-                    AppLog.append("memory-safety: used_mb=\(reading.footprintMB) target_mb=\(target) headroom_mb=\(reserve) available_mb=\(available.map(String.init) ?? "unknown") denied=\(denials)")
+                    AppLog.append("memory-safety: used_mb=\(reading.footprintMB) compressed_original_mb=\(reading.compressedMB) target_mb=\(target) headroom_mb=\(reserve) available_mb=\(available.map(String.init) ?? "unknown") denied=\(denials)")
                 }
                 self.lastDenials = denials
                 ticks += 1

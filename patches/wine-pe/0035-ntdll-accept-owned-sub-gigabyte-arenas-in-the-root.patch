@@ -1,0 +1,70 @@
+From f12d1ed2ffde646c346f2cf5e470f66f82c76c4e Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Fri, 16 Oct 2026 18:42:52 +0800
+Subject: [PATCH] ntdll: accept owned sub-gigabyte arenas in the ARM64EC root
+
+The r5 report reserves a 768 MiB native arena, then SessionRoot rejects
+it against an obsolete 1 GiB minimum. The root starts before the i386
+child, so updating the child handoff alone did not cover this path.
+Use the same 512 MiB floor and retain alignment, nonzero and interval
+checks; explicitly reject bases inside the 32-bit guest address range.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-16-memory-economy.md
+Offered-upstream: no (owned iOS arena channel)
+---
+ dlls/ntdll/signal_arm64ec.c | 23 +++++++++++++++--------
+ 1 file changed, 15 insertions(+), 8 deletions(-)
+
+diff --git a/dlls/ntdll/signal_arm64ec.c b/dlls/ntdll/signal_arm64ec.c
+index 9d53a2f..a168f38 100644
+--- a/dlls/ntdll/signal_arm64ec.c
++++ b/dlls/ntdll/signal_arm64ec.c
+@@ -596,6 +596,19 @@ static void arm64x_check_call(void);
+  * to phase 2 (arm64ec_process_init_finish), which runs AFTER DllMains
+  * because FEX's CRT init requires ucrtbase to be initialized.
+  */
++/* The native selector publishes an owned, end-exclusive arena. It can be
++ * 768 or 512 MiB for an i386 title; SessionRoot is ARM64EC even then. */
++static const char *ios_fex_arena_rejection( ULONG_PTR b, ULONG_PTR e )
++{
++    if (!b || !e) return "zero base or end";
++    if (e <= b) return "end is not above base";
++    if (b < 0x100000000ull) return "base overlaps 32-bit guest addresses";
++    if (b & 0xffff) return "base is not 64K aligned";
++    if (e & 0xffff) return "end is not 64K aligned";
++    if (e - b < 0x20000000ull) return "range is under the 512MB minimum";
++    return NULL;
++}
++
+ NTSTATUS arm64ec_process_init_dispatchers( HMODULE module )
+ {
+     CHPEV2_PROCESS_INFO *info = (CHPEV2_PROCESS_INFO *)(RtlGetCurrentPeb() + 1);
+@@ -737,14 +750,8 @@ NTSTATUS arm64ec_process_init_dispatchers( HMODULE module )
+                  "band, as before\n" );
+         else
+         {
+-            const char *why = NULL;
+             ULONG_PTR b = ios_fex_arena_base, e = ios_fex_arena_end;
+-
+-            if (!b || !e)                     why = "zero base or end";
+-            else if (e <= b)                  why = "end is not above base";
+-            else if (b & 0xffff)              why = "base is not 64K aligned";
+-            else if (e & 0xffff)              why = "end is not 64K aligned";
+-            else if (e - b < 0x40000000ull)   why = "range is under the 1GB minimum";
++            const char *why = ios_fex_arena_rejection( b, e );
+ 
+             if (why)
+             {
+@@ -758,7 +765,7 @@ NTSTATUS arm64ec_process_init_dispatchers( HMODULE module )
+             {
+                 *band_base = b;
+                 *band_end  = e - 1;   /* the selector's end is INCLUSIVE */
+-                ERR( "[fex-arena] ml797 ARENA HANDED OVER base=%p end=%p (inclusive) -- the "
++                ERR( "[fex-arena] handoff-v2 ARENA HANDED OVER base=%p end=%p (inclusive) -- the "
+                      "selector must not run\n", (void *)*band_base, (void *)*band_end );
+             }
+         }
+-- 
+2.43.0
+

@@ -145,7 +145,12 @@ int main(void){
  puts("Production menu thunks: insert/set, A/W get, bitmap/sentinel, opaque data, scalar methods and menu info pass");
 }
 '''
-for label,text,success in [('after',user,True),('before',subprocess.check_output(['git','-C',str(t),'show','HEAD^:dlls/wow64win/user.c']).decode(),False)]:
+fix=subprocess.check_output(['git','-C',str(t),'log','-1','--format=%H',
+                             '--grep=^wow64win: convert menu item strings through the guest window$',
+                             '--','dlls/wow64win/user.c']).decode().strip()
+if not fix:raise RuntimeError('menu conversion patch is absent from this source history')
+before=subprocess.check_output(['git','-C',str(t),'show',fix+'^:dlls/wow64win/user.c']).decode()
+for label,text,success in [('after',user,True),('before',before,False)]:
  code=prefix+structs+'\n'+(t/'dlls/wow64/wow64_window.h').read_text()+'\n'+helpers+middle+function(text,'NTSTATUS WINAPI wow64_NtUserThunkedMenuItemInfo(')+function(text,'NTSTATUS WINAPI wow64_NtUserThunkedMenuInfo(')+function(text,'NTSTATUS WINAPI wow64_NtUserGetMenuBarInfo(')+suffix
  p=out/(label+'.c');p.write_text(code);exe=out/label
  subprocess.run(['clang','-std=c11','-O1','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-missing-field-initializers','-fsanitize=undefined','-fno-sanitize-recover=all',str(p),'-o',str(exe)],check=True)

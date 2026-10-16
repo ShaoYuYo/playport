@@ -51,13 +51,13 @@ configured() { [ -f "$WINE/$1/Makefile" ] && [ "$(cat "$WINE/$1/.pp-configured" 
 # 2. Native (Linux) Wine build tools: makedep, winebuild, winegcc, widl, wrc,
 #    wmc, sfnt2fon, make_xftmpl. wrc resolves nls/locale.nls relative to the
 #    tools tree, so create that link too.
-if [ "${PLAYPORT_WOW64_ONLY:-0}" = 1 ]; then
-    # Only the two audited bridge DLLs: no multimedia headers are used by them.
+if [ "${PLAYPORT_WOW64_ONLY:-0}" = 1 ] || [ "${PLAYPORT_ROOT_NTDLL_ONLY:-0}" = 1 ]; then
+    # The audited bridges and ntdll use no multimedia headers.
     GST=$OUT/no-gstreamer
 else
     GST=$(bash "$HERE/gstreamer.sh" fetch)
 fi
-KEY=$({ sha256sum "$HERE/wine-pe.sh" "$WINE/configure"; echo "$M $MACSDK $GST ${PLAYPORT_WOW64_ONLY:-0}"
+KEY=$({ sha256sum "$HERE/wine-pe.sh" "$WINE/configure"; echo "$M $MACSDK $GST ${PLAYPORT_WOW64_ONLY:-0} ${PLAYPORT_ROOT_NTDLL_ONLY:-0}"
         /usr/bin/clang --version; "$M/bin/clang" --version; } | sha256sum | cut -c1-16)
 if configured build-tools; then
     echo "build-tools: configured as before; make rebuilds what changed"
@@ -129,6 +129,13 @@ configure_tree() {
           --with-mingw="$M/bin/clang" --enable-archs="$2" \
           > "$OUT/config-$1.log" 2>&1 ) && echo "$KEY" > "$WINE/$1/.pp-configured"
 }
+if [ "${PLAYPORT_ROOT_NTDLL_ONLY:-0}" = 1 ]; then
+    configure_tree build-arm64ec arm64ec
+    ( cd "$WINE/build-arm64ec" && make -j"$JOBS" \
+          dlls/ntdll/arm64ec-windows/ntdll.dll > "$OUT/make-root-ntdll-only.log" 2>&1 )
+    echo "Built only ARM64EC ntdll.dll from the actual Wine tree."
+    exit 0
+fi
 configure_tree build-macos i386,aarch64
 if [ "${PLAYPORT_WOW64_ONLY:-0}" = 1 ]; then
     ( cd "$WINE/build-macos" && make -j"$JOBS" \

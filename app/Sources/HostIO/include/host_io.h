@@ -49,6 +49,8 @@ void host_log_set_limit(long bytes);
  * Returns 0, or -1 when task_info fails (available is still set). */
 typedef struct {
     uint64_t available, footprint;
+    /* Pages compressed by iOS, in original bytes; already part of footprint. */
+    uint64_t compressed;
 } host_memory;
 int host_memory_read(host_memory *out);
 /* host_memory.c: 1 when the signature's entitlement name is true, 0 when it is

@@ -25,6 +25,8 @@ enum MemoryLimit {
         /// Available plus footprint; nil when iOS reports no limit for the process.
         var limitMB: Int?
         var footprintMB: Int
+        /// iOS-compressed pages (original bytes), already included in footprint.
+        var compressedMB: Int = 0
         /// The phone's RAM.
         var physicalMB: Int
         /// Whether the signature carries increased-memory-limit; nil when it cannot be read.
@@ -50,8 +52,8 @@ enum MemoryLimit {
     #endif
 
     /// The JIT pool a Play gets under this reading, in MiB (a multiple of 16 KiB).
-    static func poolMB(_ r: Reading) -> Int {
-        r.simulatedPoolMB ?? JitPool.sizeMB(limitMB: r.effectiveMB)
+    static func poolMB(_ r: Reading, titlePoolMB: Int? = nil) -> Int {
+        r.simulatedPoolMB ?? titlePoolMB ?? JitPool.sizeMB(limitMB: r.effectiveMB)
     }
 
     static func read() -> Reading {
@@ -66,6 +68,7 @@ enum MemoryLimit {
         #endif
         return Reading(limitMB: m.available > 0 ? Int((m.available + m.footprint) >> 20) : nil,
                        footprintMB: Int(m.footprint >> 20),
+                       compressedMB: Int(m.compressed >> 20),
                        physicalMB: Int(ProcessInfo.processInfo.physicalMemory >> 20),
                        entitled: entitled, simulatedMB: simulated, simulatedPoolMB: simulatedPool)
     }

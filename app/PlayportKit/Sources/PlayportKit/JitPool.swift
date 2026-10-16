@@ -6,9 +6,9 @@
 // its head, from the bottom up; a pure x86-64 image is not (madeira-unix 0090:
 // FEX runs it at its PE address). FEX's translated code goes into its tail, from
 // the top down. Its size is fixed at the Play, and every byte of it
-// counts against the app's memory limit from the bless on, so every Play gets the
-// least that the games measured need (`sizeMB`, decision 0036, which replaced 0019's
-// eighth of the limit). A launch logs its use as `pool:` lines
+// counts against the app's memory limit from the bless on. `sizeMB` is the
+// general budget (0036); TitleMemory can select a smaller measured profile
+// (0069). A launch logs its use as `pool:` lines
 // (`Use.line`), and one that ran out of it ends with its own outcome
 // (`Use.exhaustion`).
 
@@ -23,14 +23,14 @@ public enum JitPool {
     /// (0x140000000-0x15c000000) at every slide seen; 896 MiB keeps it only at the
     /// lowest slides, and a launch that loses it logs `executable window: not held`.
     public static let maximumMB = 896
-    /// What every Play gets: the high-water marks measured (The Witcher 3: head
+    /// The general budget: the high-water marks measured (The Witcher 3: head
     /// 206 MiB, tail 145 MiB; Kingdom Come: Deliverance: head 182, tail 161) with
     /// FEX's 128 MiB code buffer still granted (docs/evidence/2026-09-28-jit-pool.md,
     /// 2026-10-01-kcd-memory.md). More would come out of the game's memory: Kingdom
     /// Come loads Rattay about 100 MB under the 8 GB limit only with this size.
     public static let minimumMB = 512
 
-    /// The pool a Play gets: `minimumMB`, whatever the memory limit (decision 0036).
+    /// The general pool: `minimumMB`, whatever the memory limit (decision 0036).
     /// The limit is still taken, for the day a size depends on it again.
     public static func sizeMB(limitMB: Int?) -> Int {
         minimumMB
