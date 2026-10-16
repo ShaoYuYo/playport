@@ -1,0 +1,91 @@
+From a244e68b50e082dcb49f38c5098c5ad83329e19c Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Fri, 16 Oct 2026 18:16:29 +0800
+Subject: [PATCH] wow64win: convert menu item strings through the guest window
+
+The r4 game run reaches menu creation and stops at unaudited syscall
+15d0. Translate nested string buffers in both directions, preserve
+legacy bitmap handles and the signed callback sentinel, and keep opaque
+item data scalar. Audit the structure-only menu-info setter as well.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-16-menu-thunk.md
+Offered-upstream: no (iOS guest window)
+---
+ dlls/wow64win/user.c           | 17 +++++++++++++----
+ dlls/wow64win/window_audited.h |  3 +++
+ 2 files changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/dlls/wow64win/user.c b/dlls/wow64win/user.c
+index cc84fb6..5201889 100644
+--- a/dlls/wow64win/user.c
++++ b/dlls/wow64win/user.c
+@@ -5215,16 +5215,17 @@ NTSTATUS WINAPI wow64_NtUserThunkedMenuItemInfo( UINT *args )
+             info.hbmpChecked = UlongToHandle( info32->hbmpChecked );
+             info.hbmpUnchecked = UlongToHandle( info32->hbmpUnchecked );
+             info.dwItemData = info32->dwItemData;
+-            info.dwTypeData = UlongToPtr( info32->dwTypeData );
++            info.dwTypeData = (info.fMask & MIIM_STRING) ? wow64_to_host( info32->dwTypeData ) :
++                              UlongToPtr( info32->dwTypeData );
+             info.cch = info32->cch;
+-            info.hbmpItem = UlongToHandle( info32->hbmpItem );
++            info.hbmpItem = LongToHandle( info32->hbmpItem ); /* HBMMENU_CALLBACK is -1 */
+             break;
+         case NtUserCheckMenuRadioItem:
+             info.cch = info32->cch;
+             break;
+         case NtUserGetMenuItemInfoA:
+         case NtUserGetMenuItemInfoW:
+-            info.dwTypeData = UlongToPtr( info32->dwTypeData );
++            info.dwTypeData = wow64_to_host( info32->dwTypeData );
+             info.cch = info32->cch;
+             break;
+         }
+@@ -5247,7 +5248,8 @@ NTSTATUS WINAPI wow64_NtUserThunkedMenuItemInfo( UINT *args )
+                 info32->hbmpItem = HandleToUlong( info.hbmpItem );
+             if (info.fMask & (MIIM_TYPE | MIIM_STRING))
+             {
+-                info32->dwTypeData = (UINT_PTR)info.dwTypeData;
++                info32->dwTypeData = (info.fMask & MIIM_TYPE) && (info.fType & MFT_BITMAP) ?
++                                     HandleToUlong( info.dwTypeData ) : wow64_to_guest( info.dwTypeData );
+                 info32->cch = info.cch;
+             }
+             if (info.fMask & MIIM_STATE) info32->fState = info.fState;
+@@ -5263,6 +5265,13 @@ NTSTATUS WINAPI wow64_NtUserThunkedMenuItemInfo( UINT *args )
+         }
+     }
+ 
++    if (wow64_window_base)
++    {
++        static unsigned int menu_logs;
++        if (menu_logs++ < 16)
++            ERR( "[wow64-menu-v1] method=%u mask=%#x pos=%#x result=%#x\n",
++                 method, info32 ? info32->fMask : 0, pos, ret );
++    }
+     return ret;
+ }
+ 
+diff --git a/dlls/wow64win/window_audited.h b/dlls/wow64win/window_audited.h
+index 8d65d9c..9ee19b2 100644
+--- a/dlls/wow64win/window_audited.h
++++ b/dlls/wow64win/window_audited.h
+@@ -286,6 +286,7 @@
+ #define WINDOW_AUDITED_NtUserGetKeyboardLayoutName ~, 1
+ #define WINDOW_AUDITED_NtUserGetKeyboardState ~, 1
+ #define WINDOW_AUDITED_NtUserGetLayeredWindowAttributes ~, 1
++#define WINDOW_AUDITED_NtUserGetMenuBarInfo ~, 1
+ #define WINDOW_AUDITED_NtUserGetMenuItemRect ~, 1
+ #define WINDOW_AUDITED_NtUserGetMessage ~, 1
+ #define WINDOW_AUDITED_NtUserGetMessagePos ~, 1
+@@ -429,6 +430,8 @@
+ #define WINDOW_AUDITED_NtUserSwitchDesktop ~, 1
+ #define WINDOW_AUDITED_NtUserSystemParametersInfo ~, 1
+ #define WINDOW_AUDITED_NtUserSystemParametersInfoForDpi ~, 1
++#define WINDOW_AUDITED_NtUserThunkedMenuInfo ~, 1
++#define WINDOW_AUDITED_NtUserThunkedMenuItemInfo ~, 1
+ #define WINDOW_AUDITED_NtUserToUnicodeEx ~, 1
+ #define WINDOW_AUDITED_NtUserTrackMouseEvent ~, 1
+ #define WINDOW_AUDITED_NtUserTrackPopupMenuEx ~, 1
+-- 
+2.43.0
+

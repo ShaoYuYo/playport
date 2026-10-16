@@ -297,7 +297,7 @@ resource	Runtime/aarch64-windows/wintrust.dll	589824	ac6ca5396cea5494d3f19b780ec
 resource	Runtime/aarch64-windows/winusb.dll	458752	4dd34f8d7e7fd217263aaa9918374e691685a76b5caa387e860b46911b721fbe	wine-build	build-macos/dlls/winusb/aarch64-windows/winusb.dll	P2
 resource	Runtime/aarch64-windows/wlanapi.dll	458752	39e2690beaba427d0f556e18bce40758e187d1bb50fbb9cce6b30a3370e5b41b	wine-build	build-macos/dlls/wlanapi/aarch64-windows/wlanapi.dll	P2
 resource	Runtime/aarch64-windows/wow64.dll	524288	f25fa96417ec377967c88c9eb215677c6a7b3f3d34f62eb571abb66827bc4ee0	wine-build	build-macos/dlls/wow64/aarch64-windows/wow64.dll	P2
-resource	Runtime/aarch64-windows/wow64win.dll	917504	20e06118111fa810861acfafcca0e4a264d133add675e3fe3c3439c948ff2b83	wine-build	build-macos/dlls/wow64win/aarch64-windows/wow64win.dll	P2
+resource	Runtime/aarch64-windows/wow64win.dll	917504	0ecdfe9e2adcee454b2cd75e2b94ee340648129002c522d7669bf6605da00e5d	wine-build	build-macos/dlls/wow64win/aarch64-windows/wow64win.dll	P2
 resource	Runtime/aarch64-windows/ws2_32.dll	589824	5e72ad97ff013b2697fce438c2a3af1f1783ddc94386c9c4f8083600d4ca3cbe	wine-build	build-macos/dlls/ws2_32/aarch64-windows/ws2_32.dll	P2
 resource	Runtime/aarch64-windows/wsock32.dll	524288	f95d62eaff5bf9d23ca25f2659fc50c331ddc7de3b65666952198d6895411c7f	wine-build	build-macos/dlls/wsock32/aarch64-windows/wsock32.dll	P2
 resource	Runtime/aarch64-windows/wtsapi32.dll	458752	d7526b794846a94f2cb9a131e3ade61d59fd837e14d2bfa7c31540ca07052281	wine-build	build-macos/dlls/wtsapi32/aarch64-windows/wtsapi32.dll	P2
