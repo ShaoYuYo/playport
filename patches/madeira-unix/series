@@ -103,3 +103,4 @@
 0102-ntdll-fit-WoW64-host-arenas-into-sub-gigabyte-gaps.patch
 0103-ntdll-check-new-commitments-against-RAM-headroom.patch
 0104-ntdll-gate-iOS-self-suspend-before-returning-to-guest.patch
+0105-ntdll-report-compact-FEX-span-and-callret-geometry.patch

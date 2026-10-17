@@ -1,0 +1,172 @@
+From 54e48689beb5d9fcb170f33b329d988cb5681629 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 12:58:00 +0800
+Subject: [PATCH] iOS: trim callret reservations while preserving the hot
+ window
+
+The r11 report reaches 34 threads before a new 16 MiB prediction
+reservation fails. Reserve 8 MiB on iOS, retaining the full 2..6 MiB
+CALL/RET window and the 4 MiB default pointer. Bound callback pushes
+before access on both iOS targets. Keep full-allocation reset/decommit,
+all allocation failure handling and non-iOS reservation geometry.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-17-callret-reservation.md
+Offered-upstream: no (bounded iOS host arena)
+---
+ FEXCore/Source/Interface/Core/Core.cpp        |  4 +-
+ .../Interface/Core/Dispatcher/Dispatcher.cpp  | 17 +++---
+ .../FEXCore/Debug/InternalThreadState.h       | 58 ++++++-------------
+ Source/Windows/Common/CallRetStack.h          |  2 +-
+ 4 files changed, 32 insertions(+), 49 deletions(-)
+
+diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
+index e326b4925..17e78ab43 100644
+--- a/FEXCore/Source/Interface/Core/Core.cpp
++++ b/FEXCore/Source/Interface/Core/Core.cpp
+@@ -1873,7 +1873,7 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+           }
+           LogMan::Msg::EFmt("[callret-chain] #{:<2} guest_ret={:#x} host={:#x}", i, GuestRet, HostRet);
+         }
+-        LogMan::Msg::EFmt("[callret-chain] depth_used={:#x} nonzero={} (sp={:#x} base={:#x})", CRBase + FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE / 4 - CRSp,
++        LogMan::Msg::EFmt("[callret-chain] depth_used={:#x} nonzero={} (sp={:#x} base={:#x})", CRBase + FEXCore::Core::InternalThreadState::CALLRET_DEFAULT_OFFSET - CRSp,
+                           NonZero, CRSp, CRBase);
+       }
+     }
+@@ -1909,7 +1909,7 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+     if (crbase != 0 && (crsp < crbase || crsp >= crend)) {
+       static volatile uint32_t oob_cnt = 0;
+       uint32_t n = __sync_add_and_fetch(&oob_cnt, 1);
+-      uint64_t default_loc = crbase + FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE / 4;
++      uint64_t default_loc = crbase + FEXCore::Core::InternalThreadState::CALLRET_DEFAULT_OFFSET;
+       const char *kind = (crsp < crbase) ? "UNDERFLOW" : "OVERFLOW";
+       if (n <= 16) {
+         LogMan::Msg::EFmt("[CALLRET_OOB #{}] {} callret_sp=0x{:x}  "
+diff --git a/FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp b/FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp
+index 0ef3cedbe..1a06e33bb 100644
+--- a/FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp
++++ b/FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp
+@@ -697,20 +697,23 @@ void Dispatcher::EmitDispatcher() {
+ 
+     // load static regs
+     FillStaticRegs();
+-#ifdef ARCHITECTURE_arm64ec
+-    // iOS-Madeira 2026-05-18: inline bounds-guard (Tier-2). The JITCallback
+-    // sentinel push uses REG_CALLRET_SP after FillStaticRegs, which on iOS
+-    // ARM64EC reloads x17 from State.callret_sp. If State has drifted OOB
+-    // (e.g. underflow during prior dispatch), reset before stp to avoid
+-    // writing the sentinel into JIT code memory.
++#if defined(ARCHITECTURE_arm64ec) || defined(FEX_IOS_HOST)
++    // [callret-callback-v1] Bound the sentinel push before any memory access.
++    // Match CALL/RET's prediction window on iOS, including WoW64. The old
++    // full-reservation check accepted base itself before a predecrement push.
+     {
+       ARMEmitter::ForwardLabel l_callret_ok;
+       ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp_base));
+       sub(ARMEmitter::Size::i64Bit, TMP1, REG_CALLRET_SP, TMP1);
++#ifdef FEX_IOS_HOST
++      sub(ARMEmitter::Size::i64Bit, TMP1, TMP1, FEXCore::Core::InternalThreadState::CALLRET_LIVE_OFFSET);
++      lsr(ARMEmitter::Size::i64Bit, TMP1, TMP1, std::countr_zero(FEXCore::Core::InternalThreadState::CALLRET_LIVE_SIZE));
++#else
+       lsr(ARMEmitter::Size::i64Bit, TMP1, TMP1, 24);
++#endif
+       (void)cbz(ARMEmitter::Size::i64Bit, TMP1, &l_callret_ok);
+       ldr(REG_CALLRET_SP, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp_base));
+-      add(ARMEmitter::Size::i64Bit, REG_CALLRET_SP, REG_CALLRET_SP, 0x400000);
++      add(ARMEmitter::Size::i64Bit, REG_CALLRET_SP, REG_CALLRET_SP, FEXCore::Core::InternalThreadState::CALLRET_DEFAULT_OFFSET);
+       (void)Bind(&l_callret_ok);
+     }
+ #endif
+diff --git a/FEXCore/include/FEXCore/Debug/InternalThreadState.h b/FEXCore/include/FEXCore/Debug/InternalThreadState.h
+index cbded16d8..91a47c809 100644
+--- a/FEXCore/include/FEXCore/Debug/InternalThreadState.h
++++ b/FEXCore/include/FEXCore/Debug/InternalThreadState.h
+@@ -109,45 +109,25 @@ struct alignas(FEXCore::Utils::FEX_PAGE_SIZE) InternalThreadState : public FEXCo
+   ///< Data pointer for exclusive use by the frontend
+   void* FrontendPtr;
+ 
+-  // iOS-Madeira 2026-05-13: bumped 4MB → 16MB. SEH unwinds through translated
+-  // code on iOS don't pop FEX callret entries (FEX has no SEH-aware callret
+-  // cleanup yet), so caught faults leak entries. With 9700+ caught faults
+-  // observed in Thumper FMOD worker, the original 4MB filled up. 16MB buys
+-  // ~1M entries — enough to survive normal game runtimes that have a few
+-  // hundred per-thread caught faults. Real fix: callret-aware SEH unwind.
++  // The prediction cache is not the guest architectural return stack.
++  // iOS CALL/RET guards already use [base+2MiB, base+6MiB), starting at
++  // base+4MiB. Keep that full prediction window while reserving 8MiB,
++  // instead of 16MiB per thread. Callback pushes use the same window.
++#ifdef FEX_IOS_HOST
++  static constexpr size_t CALLRET_STACK_SIZE {0x800000};
++#else
+   static constexpr size_t CALLRET_STACK_SIZE {0x1000000};
+-
+-  // iOS-Madeira ml609/ml610: NAMED bounds for the window the CALL/RET guard enforces.
+-  //
+-  // The default sp sits at base + SIZE/4 = base+4MB and the predictor grows DOWN
+-  // from there; BranchOps.cpp bounds sp to [base+2MB, base+6MB).
+-  //
+-  // ⚠️ These are NAMED because several sites derive their own bounds from
+-  // CALLRET_STACK_SIZE (/4 for the default location, +SIZE for the end). Changing
+-  // CALLRET_STACK_SIZE alone does NOT move the window — fix these together.
+-  //
+-  // ⛔ THIS WINDOW IS NOT THE LIVE SET, AND MUST NOT BE USED TO SIZE A CLEAR.
+-  // ml609 assumed it was and clipped ResetCallRetStack() to it; the build
+-  // regressed by ~388MB of `fex` band at a matched cycle and still died of
+-  // jetsam. Two reasons, both checkable in source:
+-  //
+-  //   (a) Dispatcher.cpp's JITCallback sentinel push tests only
+-  //       (sp - base) >> 24 — the WHOLE 16MB — so the callback path is not
+-  //       bounded by this window at all. (What fraction of the 16MB it really
+-  //       touches is measured by [dc-census] in wine's decommit_pages().)
+-  //
+-  //   (b) The clear RECLAIMS rather than dirties. VirtualDontNeed() is
+-  //       MEM_DECOMMIT + MEM_COMMIT, and on this (non-pool-aliased) range wine's
+-  //       decommit_pages() does anon_mmap_fixed() — a fresh MAP_ANON|MAP_FIXED
+-  //       that drops the physical pages and installs zero-fill-on-demand. The
+-  //       recommit only restores access. So a full-size clear RETURNS memory,
+-  //       and shrinking it strands the remainder resident.
+-  //
+-  // Clear CALLRET_STACK_SIZE. These constants describe the guard, not the cost.
+-  static constexpr size_t CALLRET_DEFAULT_OFFSET {CALLRET_STACK_SIZE / 4};        // 4MB: initial sp
+-  static constexpr size_t CALLRET_LIVE_OFFSET {CALLRET_STACK_SIZE / 8};           // 2MB: guard low bound
+-  static constexpr size_t CALLRET_LIVE_SIZE {CALLRET_STACK_SIZE / 4};             // 4MB: guard window [2MB,6MB)
+-
++#endif
++  static constexpr size_t CALLRET_DEFAULT_OFFSET {0x400000};
++  static constexpr size_t CALLRET_LIVE_OFFSET {0x200000};
++  static constexpr size_t CALLRET_LIVE_SIZE {0x400000};
++  static_assert(CALLRET_DEFAULT_OFFSET >= CALLRET_LIVE_OFFSET + 16);
++  static_assert(CALLRET_DEFAULT_OFFSET < CALLRET_LIVE_OFFSET + CALLRET_LIVE_SIZE);
++  static_assert(CALLRET_LIVE_OFFSET + CALLRET_LIVE_SIZE < CALLRET_STACK_SIZE);
++
++  // ResetCallRetStack must still clear the FULL allocation: callbacks and
++  // recovery can leave entries outside the hot CALL/RET window. A clipped
++  // decommit would strand physical pages rather than reclaiming them.
+   // The low address of the call-ret stack allocation (not including guard pages)
+   void* CallRetStackBase {};
+ 
+@@ -174,7 +154,7 @@ static_assert(
+ 
+ // ml609/ml610: THE single callret reset path, shared by Core.cpp/CPUBackend.cpp/JIT.cpp.
+ // Defined in Core.cpp. Clears the FULL [base, base+CALLRET_STACK_SIZE) reservation —
+-// see the ⛔ note above for why a smaller clear is a regression, not an optimisation.
++// Never clip the decommit to the hot guard window.
+ // Site must be one of the literals in Core.cpp's CallRetSiteNames[] to be counted.
+ void ResetCallRetStack(InternalThreadState* Thread, const char* Site);
+ 
+diff --git a/Source/Windows/Common/CallRetStack.h b/Source/Windows/Common/CallRetStack.h
+index 6a2421a32..063a77a65 100644
+--- a/Source/Windows/Common/CallRetStack.h
++++ b/Source/Windows/Common/CallRetStack.h
+@@ -25,7 +25,7 @@ CallRetStackInfo GetInfoThread(FEXCore::Core::InternalThreadState* Thread) {
+   uint64_t Base = reinterpret_cast<uint64_t>(Thread->CallRetStackBase);
+   // Leave some room from the base for the default location to allow for underflows without constant exceptions
+   return {Base - FEXCore::Utils::FEX_PAGE_SIZE, Base + FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE + FEXCore::Utils::FEX_PAGE_SIZE,
+-          Base + FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE / 4};
++          Base + FEXCore::Core::InternalThreadState::CALLRET_DEFAULT_OFFSET};
+ }
+ 
+ /* Returns false if the call-ret stack could not be placed.
+-- 
+2.43.0
+

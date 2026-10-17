@@ -106,3 +106,34 @@ for label,source,ios,ec in [('before-wow64',old,True,False),('after-wow64',fixed
         if label=='before-wow64': assert not code,'old WoW64 unexpectedly has inline guards'
     print(label+': '+str(checks)+' AArch64 guard boundary/flag/register cases passed')
 print('Old WoW64 leaves the reported underflow pointer unchanged; all three new sites reset it before memory access.')
+
+# Execute the production callback guard AND its following sentinel push.
+# Include the real thread-state constants: changing the reservation must not
+# silently move the existing CALL/RET window or the default pointer.
+callback=(tree/'FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp').read_text()
+if '[callret-callback-v1]' in callback:
+    a=callback.index('#if defined(ARCHITECTURE_arm64ec) || defined(FEX_IOS_HOST)',callback.index('// load static regs',callback.index('JITCallback') if 'JITCallback' in callback else 0))
+    b=callback.index('    // Now go back to the regular dispatcher loop',a)
+    body=callback[a:b]
+    for ec in [False,True]:
+        label='callback-ec' if ec else 'callback-wow64'
+        src=out/(label+'.cpp');exe=out/label
+        callback_prefix=prefix.replace('#include <FEXCore/Core/CoreState.h>','#include <FEXCore/Core/CoreState.h>\n#include <FEXCore/Debug/InternalThreadState.h>\n#include <bit>')
+        src.write_text(callback_prefix+'case 0: {\n'+body+'break;}\n'+suffix)
+        command=['g++','-std=c++23','-O2','-DFMT_HEADER_ONLY=1','-DASSERTIONS_ENABLED=1','-DFEX_IOS_HOST=1',str(src),'-o',str(exe)]
+        if ec:command.append('-DARCHITECTURE_arm64ec=1')
+        command += ['-I'+str(tree/'FEXCore/include')]+['-I'+str(p) for p in includes]
+        subprocess.run(command,check=True)
+        binary=out/(label+'.bin');sp_off,base_off=map(int,subprocess.check_output([str(exe),'0',str(binary)]).decode().split())
+        for value in cases+[base+(8<<20),base+(16<<20)-16]:
+            uc=Uc(UC_ARCH_ARM64,UC_MODE_ARM);uc.mem_map(code_at,4096);uc.mem_map(state_at,4096);uc.mem_map(base,8<<20)
+            uc.mem_write(state_at+sp_off,struct.pack('<Q',value));uc.mem_write(state_at+base_off,struct.pack('<Q',base))
+            uc.mem_write(code_at,binary.read_bytes());reg=UC_ARM64_REG_X17 if ec else UC_ARM64_REG_X25
+            uc.reg_write(reg,value);uc.reg_write(UC_ARM64_REG_X28,state_at);uc.reg_write(UC_ARM64_REG_NZCV,0xa0000000)
+            expected=value if base+(2<<20)<=value<base+(6<<20) else base+(4<<20)
+            uc.mem_write(expected-16,b'\xff'*16)
+            uc.emu_start(code_at,code_at+len(binary.read_bytes()),count=64)
+            assert uc.reg_read(reg)==expected-16,(label,hex(value))
+            assert uc.mem_read(expected-16,16)==b'\0'*16
+            assert uc.reg_read(UC_ARM64_REG_NZCV)==0xa0000000
+        print(label+': 12 actual AArch64 callback guard-and-push boundary cases passed')

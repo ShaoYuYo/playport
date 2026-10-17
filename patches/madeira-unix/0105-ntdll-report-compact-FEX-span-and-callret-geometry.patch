@@ -1,0 +1,63 @@
+From 51f89a4fddb43142dc9e4c94674740a81d462822 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 12:58:05 +0800
+Subject: [PATCH] ntdll: report compact FEX span and callret geometry
+
+Update the diagnostic shape classifier and aligned-slot count for
+4 MiB rpmalloc spans and 8 MiB prediction stacks. The census ABI and
+allocator behavior stay unchanged; this keeps future launch reports
+useful after the corresponding FEX geometry change.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-17-callret-reservation.md
+Offered-upstream: no (bounded iOS host arena)
+---
+ build/ntdll-unix/virtual_ios.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/build/ntdll-unix/virtual_ios.c b/build/ntdll-unix/virtual_ios.c
+index b9ff5be..b4e4127 100644
+--- a/build/ntdll-unix/virtual_ios.c
++++ b/build/ntdll-unix/virtual_ios.c
+@@ -5085,7 +5085,8 @@ struct ios_band_census
+     unsigned long long spans, callret, l1, other_bytes;
+ };
+ 
+-#define IOS_BAND_SPAN 0x1000000ULL   /* rpmalloc's span: 16 MiB, 16 MiB-aligned */
++#define IOS_BAND_SPAN 0x400000ULL    /* rpmalloc: 4 MiB, 4 MiB-aligned */
++#define IOS_BAND_CALLRET 0x800000ULL /* prediction reservation, plus guards */
+ 
+ static void ios_band_gap( struct ios_band_census *c, ULONG_PTR b, ULONG_PTR e )
+ {
+@@ -5116,8 +5117,8 @@ static struct wine_rb_entry *ios_band_first_locked( ULONG_PTR lo )
+     return first;
+ }
+ 
+-/* What each view is, by its shape: an rpmalloc span is exactly 16 MiB on a
+- * 16 MiB boundary, a call-return stack is 16 MiB plus its two guard pages, an
++/* What each view is, by its shape: an rpmalloc span is exactly 4 MiB on a
++ * 4 MiB boundary, a call-return stack is 8 MiB plus its two guard pages, an
+  * L1 lookup cache is 2 MiB; the rest (rpmalloc heap metadata and large blocks,
+  * FEX's pooled buffers) is counted in bytes. virtual_mutex must be held. */
+ static void ios_band_census_locked( struct ios_band_census *c )
+@@ -5139,7 +5140,7 @@ static void ios_band_census_locked( struct ios_band_census *c )
+         c->used += e - b;
+         c->views++;
+         if (view->size == IOS_BAND_SPAN && !(b & (IOS_BAND_SPAN - 1))) c->spans++;
+-        else if (view->size > IOS_BAND_SPAN && view->size <= IOS_BAND_SPAN + 0x10000) c->callret++;
++        else if (view->size > IOS_BAND_CALLRET && view->size <= IOS_BAND_CALLRET + 0x10000) c->callret++;
+         else if (view->size == 0x200000) c->l1++;
+         else c->other_bytes += e - b;
+         if (e > cursor) cursor = e;
+@@ -5250,7 +5251,7 @@ static void ios_band_unlock( sigset_t *sigset )
+  *    2 peak          the most `used` any census or refusal saw
+  *    3 views         views inside it
+  *    4 largest_free  the largest free range
+- *    5 span_slots    free 16 MiB-aligned 16 MiB blocks: new rpmalloc spans that fit
++ *    5 span_slots    free 4 MiB-aligned 4 MiB blocks: new rpmalloc spans that fit
+  *    6 spans         rpmalloc spans
+  *    7 callret       call-return stacks (one per live emulator thread)
+  *    8 l1            L1 lookup caches (one per live emulator thread)
+-- 
+2.43.0
+

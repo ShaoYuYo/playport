@@ -173,7 +173,7 @@ resource	Runtime/arm64ec-windows/xinput1_2.dll	655360	181b97eabcc4ecce9938c67fd6
 resource	Runtime/arm64ec-windows/xinput1_3.dll	655360	d3e6d24a5209b120a248419dc659d7c8a9da6b4493b7f6a9a1728cd9ff4ab8f1	wine-build	build-arm64ec/dlls/xinput1_3/arm64ec-windows/xinput1_3.dll	P2
 resource	Runtime/arm64ec-windows/xinput1_4.dll	720896	071d91d437a8094ed5afbdb0f42e1cd3ae88d01a8d2b18d75b921227fb8e49f8	wine-build	build-arm64ec/dlls/xinput1_4/arm64ec-windows/xinput1_4.dll	P2
 resource	Runtime/arm64ec-windows/xinput9_1_0.dll	655360	a03da9029bc3687eea0b0c4218875f8c783d31d60ef49dbe220f69bd125b40e2	wine-build	build-arm64ec/dlls/xinput9_1_0/arm64ec-windows/xinput9_1_0.dll	P2
-resource	Runtime/arm64ec-windows/xtajit64.dll	5705728	2e8a4f8ae490329379dac1d5dc31dd04f7ce7bf17c01e95626fd1352fdc4075f	fex	libarm64ecfex.dll	P1-de
+resource	Runtime/arm64ec-windows/xtajit64.dll	5705728	b4884ba3a05d8b4eb2a696056510e54b3efaf7c21d706cc4a8f5aec6389c4fdb	fex	libarm64ecfex.dll	P1-de
 resource	Runtime/aarch64-windows/actxprxy.dll	786432	756eeb30e1ada3ae4a8a3948c78a3e14aa6fe3793ba8f68d0fe694ef53f89ae5	wine-build	build-macos/dlls/actxprxy/aarch64-windows/actxprxy.dll	P2
 resource	Runtime/aarch64-windows/advapi32.dll	786432	4bfe64eda653854d62f2d91d52ea2e073a278602d1474f5cb05a6c911f245500	wine-build	build-macos/dlls/advapi32/aarch64-windows/advapi32.dll	P2
 resource	Runtime/aarch64-windows/apisetschema.dll	196608	678533718e811293367b8d82374d7dee3673cdf25f179e06d0152011425d0d19	wine-build	build-macos/dlls/apisetschema/aarch64-windows/apisetschema.dll	P2
@@ -925,7 +925,7 @@ resource	Runtime/i386-windows/xmllite.dll	131072	9c6241bb79e409156f6ca7b9862b7ad
 resource	Runtime/i386-windows/xolehlp.dll	217088	e433dd03690f521e2566c60ec4b852206759cb5057eaec85b2f61fc723bb988f	wine-build	build-macos/dlls/xolehlp/i386-windows/xolehlp.dll	P2
 resource	Runtime/i386-windows/xpsprint.dll	32768	c541f912e7410d784af4fdcc9103657e1712fce9132f1fc3f6c4e010a37d5505	wine-build	build-macos/dlls/xpsprint/i386-windows/xpsprint.dll	P2
 resource	Runtime/i386-windows/xpssvcs.dll	28672	8c9325062a7ec3e86ede2d039f8b5cecbac28c95d95f291c37d87b39cf81fa36	wine-build	build-macos/dlls/xpssvcs/i386-windows/xpssvcs.dll	P2
-resource	Runtime/aarch64-windows/xtajit.dll	5093888	3ecc1a5925af7828afa92834b81a3beba2f1b772e792ef4b02c778ab6378c516	fex-wow64	libwow64fex.dll	P1-de
+resource	Runtime/aarch64-windows/xtajit.dll	5094400	b856877627b9ab30bb25f2b772223052c956f7a5cbb00a82249ec6bdd365201a	fex-wow64	libwow64fex.dll	P1-de
 resource	Runtime/vulkan/arm64ec-windows/d3d8.dll	1830912	c67da9490485f1a8401337ad6c9b5a0e00c125a238fb6c01c59656f812a2c4e1	vulkan-pe	arm64ec-windows/d3d8.dll	P6-vulkan-pe
 resource	Runtime/vulkan/arm64ec-windows/d3d9.dll	7405568	fafdca3792b084f788f52eae8d1d9a43d28cb0abb996c945403b0112809abf3d	vulkan-pe	arm64ec-windows/d3d9.dll	P6-vulkan-pe
 resource	Runtime/vulkan/arm64ec-windows/d3d10core.dll	430080	e59df3579d0faedd3df42719a799e1370d69808fa2c7dc45fceaaeb8a01f704c	vulkan-pe	arm64ec-windows/d3d10core.dll	P6-vulkan-pe
@@ -960,7 +960,7 @@ resource	Runtime/registry/system.reg	506267	10fc366caf0cbaa72fd003adc79dc39c2a49
 resource	Runtime/registry/user.reg	1610	590b70ff4b8a797c3c1d385550b22765d7c8c9ac2e8d0581f679e2b5fd49a75b	registry	user.reg	P7-reg
 resource	Runtime/registry/cjk-fonts.reg	636	d7eac888a403e4e9a5af256ce6963e26a6d889c1b680b1bfa6fef526e1f61b7b	registry	cjk-fonts.reg	P7-reg
 resource	Runtime/certs/cacert.pem	188900	a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505	ca-bundle	cacert.pem	ca-bundle
-link	lib/libntdll_unix.a	3119520	a606eb427546f0771946b1db8ea544c2fd30f730a33d87a4dcdc75af9a31caff	unix	mythic/app/Madeira/libntdll_unix.a	P3
+link	lib/libntdll_unix.a	3119520	b38a4a8221159aa31ea6ab1b873df3bfb7dcc88a4871f732711f63c69f01367f	unix	mythic/app/Madeira/libntdll_unix.a	P3
 link	lib/libwin32u_unix.a	4122192	15db0738a2bea85078c91a24850e5cbec4a98decdf6b051b7c0edc8f2a676956	unix	mythic/app/Madeira/libwin32u_unix.a	P4-win32u
 link	lib/libwineserver.a	1218648	dac2a2f898b268b7b684cd825e9639d8de33e1c24112818c0a605d5f9e598b10	unix	mythic/app/Madeira/libwineserver.a	P4-server
 link	lib/libgnutls.a	3603280	e9fb697d624bb63d1c89e8569f1a8e0e69e576175407853bf34a6279fa1673b3	unix	mythic/toolchains/gnutls-ios/lib/libgnutls.a	P4-crypto
