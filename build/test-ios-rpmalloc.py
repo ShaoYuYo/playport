@@ -6,7 +6,7 @@ Linux TLS/map callbacks replace Windows glue. The allocator algorithms, class
 table, alignment, lists and failure paths are compiled from the supplied tree.
 """
 from pathlib import Path
-import subprocess, sys
+import json, subprocess, sys
 tree=Path(sys.argv[1]).resolve()
 out=Path(__file__).resolve().parent.parent/'.work/tests/ios-rpmalloc'
 out.mkdir(parents=True,exist_ok=True)
@@ -45,6 +45,7 @@ volatile int FEX_AllocWatch_Armed;
 void FEX_AllocWatch_Event(const void* p,unsigned int e){(void)p;(void)e;}
 #define M ((size_t)1024*1024)
 #define CAP (768*M)
+#define ARENA_ALIGNMENT (16*M)
 static unsigned char* arena;
 static unsigned char slots[768*16]; /* 64 KiB granules */
 static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;
@@ -60,6 +61,8 @@ static void* map_mem(size_t size,size_t align,size_t* off,size_t* mapped) {
   size_t j=0;while(j<count&&!slots[i+j])++j;
   if(j!=count){i+=j;continue;}
   memset(slots+i,1,count);*off=0;*mapped=count*65536;
+  /* A fresh OS mapping is zero-filled, including after address reuse. */
+  assert(!madvise(arena+i*65536,*mapped,MADV_DONTNEED));
   current+=*mapped;if(current>peak)peak=current;
   if(align==SPAN_SIZE){if(size==SMALL_SPAN_SIZE)++small_maps;else if(size==MEDIUM_SPAN_SIZE)++medium_maps;else if(size==SPAN_SIZE)++large_maps;}
   pthread_mutex_unlock(&lock);return arena+i*65536;
@@ -74,7 +77,7 @@ static void unmap_mem(void* p,size_t off,size_t size) {
  current-=size;pthread_mutex_unlock(&lock);
 }
 static void commit_mem(void* p,size_t n){assert(p);(void)n;}
-static void decommit_mem(void* p,size_t n){assert(p);(void)n;}
+static void decommit_mem(void* p,size_t n){assert(p);if(n)assert(!madvise(p,n,MADV_DONTNEED));}
 static pthread_barrier_t barrier;
 #define CLASSES 37
 static void* blocks[10][CLASSES];
@@ -114,10 +117,12 @@ static void* failure_worker(void* arg) {
  assert(!rpmalloc(16));assert(!rpmalloc(8192));assert(!rpmalloc(9*M));
  rpmalloc_thread_finalize();return 0;
 }
+static void* free_huge_worker(void* p){rpfree(p);return 0;}
+// REPLAY_FIXTURE
 int main(void) {
  setbuf(stdout,0);signal(SIGABRT,aborted);
- void* raw=mmap(0,CAP+SPAN_SIZE,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);assert(raw!=MAP_FAILED);
- arena=(void*)(((uintptr_t)raw+SPAN_SIZE-1)&SPAN_MASK);
+ void* raw=mmap(0,CAP+ARENA_ALIGNMENT,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);assert(raw!=MAP_FAILED);
+ arena=(void*)(((uintptr_t)raw+ARENA_ALIGNMENT-1)&~(uintptr_t)(ARENA_ALIGNMENT-1));
  rpmalloc_interface_t iface={.memory_map=map_mem,.memory_unmap=unmap_mem,.memory_commit=commit_mem,.memory_decommit=decommit_mem};
  rpmalloc_config_t config={.page_size=65536,.unmap_on_finalize=1};
  rpmalloc_initialize_config(&iface,&config);list_checks();
@@ -127,8 +132,9 @@ int main(void) {
  for(size_t i=0;i<10;++i)assert(!pthread_create(threads+i,0,worker,(void*)i));
  pthread_barrier_wait(&barrier);
  printf("10 live worker heaps x 37 classes: mapped=%zu MiB peak=%zu MiB 4-MiB-maps=%zu 16-MiB-maps=%zu\n",current/M,peak/M,small_maps+medium_maps,large_maps);
- assert(small_maps+medium_maps==20&&large_maps==10);
- assert(current<242*M);
+ assert(small_maps+medium_maps+large_maps==30);
+ size_t expected=10*(SMALL_SPAN_SIZE+MEDIUM_SPAN_SIZE+SPAN_SIZE);
+ assert(current>=expected&&current<expected+2*M);
  pthread_barrier_wait(&barrier);pthread_barrier_wait(&barrier);
  for(int i=0;i<10;++i)pthread_join(threads[i],0);
  /* Every class boundary and realloc preserves data, including 8 MiB blocks. */
@@ -141,6 +147,20 @@ int main(void) {
   }
  }
  for(size_t a=32;a<=65536;a*=2){void* p=rpaligned_alloc(a,12345);assert(p&&!((uintptr_t)p&(a-1)));memset(p,7,12345);rpfree(p);}
+ /* Large requests still work when moved from cached classes to exact maps. */
+ const size_t large_sizes[]={2*M-1,2*M,2*M+1,3*M,4*M,5*M,8*M,9*M,16*M};
+ const size_t large_alignments[]={16,65536,131072};
+ for(size_t i=0;i<sizeof(large_sizes)/sizeof(large_sizes[0]);++i) {
+  for(size_t k=0;k<sizeof(large_alignments)/sizeof(large_alignments[0]);++k) {
+   size_t a=large_alignments[k];
+   size_t n=large_sizes[i];unsigned char* p=rpaligned_alloc(a,n);assert(p&&!((uintptr_t)p&(a-1)));
+   assert(rpmalloc_usable_size(p)>=n);memset(p,0x3d,n);
+   unsigned char* q=rpaligned_realloc(p,a,n+4096,0,0);assert(q);
+   for(size_t j=0;j<n;++j)assert(q[j]==0x3d);rpfree(q);
+  }
+ }
+ void* remote_huge=rpmalloc(8*M);assert(remote_huge);memset(remote_huge,0x67,8*M);
+ pthread_t freer;assert(!pthread_create(&freer,0,free_huge_worker,remote_huge));pthread_join(freer,0);
  assert(!atomic_load(&reports));rpmalloc_finalize();assert(!current);
  /* Inject metadata OOM with no cached heaps available; no recursion or NULL commit. */
  deny=1;rpmalloc_initialize_config(&iface,&config);assert(!rpmalloc(16));assert(!rpmalloc(9*M));
@@ -149,10 +169,49 @@ int main(void) {
  void* original=rpmalloc(128);assert(original);memset(original,0x6b,128);
  deny=1;assert(!rprealloc(original,9*M));for(int i=0;i<128;++i)assert(((unsigned char*)original)[i]==0x6b);rpfree(original);
  deny=1;assert(!rpmalloc(9*M));assert(!rpaligned_alloc(65536,9*M));deny=0;
- rpmalloc_finalize();assert(!current);munmap(raw,CAP+SPAN_SIZE);
+ rpmalloc_finalize();assert(!current);
+ replay_fixture(&iface,&config);
+ munmap(raw,CAP+ARENA_ALIGNMENT);
  puts("PASS: real allocator classes, alignment, lists, remote frees, metadata OOM/retry and huge OOM");
 }
 '''
+fixture=json.loads((Path(__file__).parent/'tests/fixtures/host-arena-r10.json').read_text())
+assert fixture['arena_bytes']==768*1024*1024
+regions=',\n'.join('{'+str(a)+','+str(n)+'}' for a,n in fixture['regions'])
+replay=r'''
+static const size_t replay_regions[][2]={REGIONS};
+static void replay_fixture(rpmalloc_interface_t* iface,rpmalloc_config_t* config) {
+ assert(!current);memset(slots,0,sizeof(slots));
+ for(size_t i=0;i<sizeof(replay_regions)/sizeof(replay_regions[0]);++i) {
+  size_t a=replay_regions[i][0],n=replay_regions[i][1];
+  assert(!(a%65536)&&!(n%65536));
+  memset(slots+a/65536,2,n/65536);
+  memset(arena+a,0xa5,16);memset(arena+a+n-16,0xa5,16);
+ }
+ size_t off=0,mapped=0;
+ assert(!map_mem(4*M,16*M,&off,&mapped));
+ rpmalloc_initialize_config(iface,config);
+ void* p=rpmalloc(16);
+#ifdef EXPECT_FRAGMENTED
+ assert(!p);puts("REPRODUCED: r10 layout has hundreds of free MiB but rejects a 16-MiB-aligned span");
+#else
+ assert(p);memset(p,0x29,16);assert(rpmalloc_usable_size(p)>=16);
+ void* medium=rpmalloc(8192);void* large=rpmalloc(300*1024);void* huge=rpaligned_alloc(65536,8*M);
+ assert(medium&&large&&huge);memset(medium,0x31,8192);memset(large,0x42,300*1024);memset(huge,0x53,8*M);
+ for(size_t i=0;i<8*M;++i)assert(((unsigned char*)huge)[i]==0x53);
+ rpfree(huge);rpfree(large);rpfree(medium);rpfree(p);
+ puts("PASS: actual allocator uses the r10 fragmented layout for small, medium, large and aligned 8-MiB allocations");
+#endif
+ rpmalloc_finalize();assert(!current);
+ for(size_t i=0;i<sizeof(replay_regions)/sizeof(replay_regions[0]);++i) {
+  size_t a=replay_regions[i][0],n=replay_regions[i][1];
+  for(int j=0;j<16;++j){assert(arena[a+j]==0xa5);assert(arena[a+n-16+j]==0xa5);}
+ }
+ memset(slots,0,sizeof(slots));assert(!atomic_load(&reports));
+}
+'''.replace('REGIONS',regions)
+c=c.replace('// REPLAY_FIXTURE',replay)
 (out/'test.c').write_text(c)
-subprocess.run(['clang','-std=c11','-O1','-g','-DENABLE_OVERRIDE=0','-DENABLE_ASSERTS=1','-fsanitize=address,undefined','-fno-omit-frame-pointer','-pthread',str(out/'test.c'),'-o',str(out/'test')],check=True)
+flags=['-DEXPECT_FRAGMENTED=1'] if '--expect-fragmented' in sys.argv[2:] else []
+subprocess.run(['clang','-std=c11','-O1','-g','-DENABLE_OVERRIDE=0','-DENABLE_ASSERTS=1','-fsanitize=address,undefined','-fno-omit-frame-pointer','-pthread',*flags,str(out/'test.c'),'-o',str(out/'test')],check=True)
 subprocess.run([str(out/'test')],check=True,timeout=120)
