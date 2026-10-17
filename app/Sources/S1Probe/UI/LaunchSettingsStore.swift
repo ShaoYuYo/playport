@@ -27,6 +27,15 @@ final class LaunchSettingsStore: ObservableObject {
 
     func settings(for id: String) -> LaunchSettings { games[id] ?? LaunchSettings() }
 
+    var displayDefaults: LaunchSettings { global.followingPanel(maxRate: UIScreen.main.maximumFramesPerSecond) }
+
+    func setDisplay(for id: String, screen: String? = nil, fps: Int? = nil) {
+        var value = settings(for: id)
+        if let screen { value.screen = screen }
+        if let fps { value.frameLimit = fps }
+        games[id] = value
+    }
+
     /// A binding to one game's settings; a game left with nothing set is dropped.
     func binding(for id: String) -> Binding<LaunchSettings> {
         Binding(get: { self.settings(for: id) },
@@ -37,7 +46,7 @@ final class LaunchSettingsStore: ObservableObject {
         var game = games[title.id]
         if inheritingGraphics { game?.graphics = nil }
         let arguments = (try? title.launchPlan(cohort: LibraryModel.cohort))?.args ?? []
-        return LaunchSettings.resolve(game: game, global: global,
+        return LaunchSettings.resolve(game: game, global: displayDefaults,
                                       importsDirect3D12: title.detectsDirect3D12, i386: title.isI386,
                                       arguments: arguments)
     }

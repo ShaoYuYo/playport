@@ -66,6 +66,7 @@ final class TitleLaunch: ObservableObject {
         guard !running, !spent else { return false }
         self.title = title
         self.titleID = titleID
+        TouchControlsStore.shared.load(titleID: titleID)
         appID = steamAppID
         startedAt = Date()
         quitting = false

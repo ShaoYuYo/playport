@@ -41,6 +41,8 @@ final class InGameMenu: ObservableObject {
     @Published private(set) var quitting = false
     /// The session root holds the game's threads.
     @Published private(set) var paused = false
+    enum Panel: String, Identifiable { case controls, display; var id: String { rawValue } }
+    @Published var panel: Panel?
 
     private static func log(_ line: String) { HostIO.log("menu: " + line) }
 
@@ -72,6 +74,10 @@ final class InGameMenu: ObservableObject {
     /// A press from a pad (HostIO) or, in a dev build, the driver.
     func press(_ b: NavButton) {
         guard isOpen, !quitting else { return }
+        if panel != nil {
+            if b == .b || b == .menu { panel = nil }
+            return
+        }
         switch b {
         case .up: menu.move(down: false)
         case .down: menu.move(down: true)
@@ -92,6 +98,8 @@ final class InGameMenu: ObservableObject {
         case .resume: resume()
         case .screenshot: screenshot()
         case .overlay: toggleOverlay()
+        case .controls: panel = .controls
+        case .display: panel = .display
         case .controller: PadRouter.shared.refreshControllers()
         case .quit: quit()
         }
@@ -101,6 +109,7 @@ final class InGameMenu: ObservableObject {
     func resume() {
         guard isOpen, !quitting else { return }
         isOpen = false
+        panel = nil
         paused = false
         HostIO.sessionControl(Int(PP_CONTROL_RESUME), "resume")
         HostIO.shared.releaseGuest()
@@ -115,6 +124,7 @@ final class InGameMenu: ObservableObject {
 
     /// The launch ended (TitleLaunch.end): nothing is left to resume.
     func gameEnded() {
+        panel = nil
         isOpen = false
         paused = false
         quitting = false
@@ -222,9 +232,17 @@ struct InGameMenuView: View {
                     .padding(.horizontal, 14)
                 Text(launch.title).font(PP.display(24)).lineLimit(1).minimumScaleFactor(0.6)
                     .padding(.horizontal, 14).padding(.bottom, 10)
-                ForEach(QuickMenuItem.allCases, id: \.self) { item in
-                    row(item)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 3) {
+                            ForEach(QuickMenuItem.allCases, id: \.self) { item in row(item).id(item) }
+                        }
+                    }
+                    .onChange(of: model.menu.ring) { _, item in
+                        withAnimation(.easeInOut(duration: 0.15)) { proxy.scrollTo(item) }
+                    }
                 }
+                .padding(.bottom, 45)
                 Spacer(minLength: 0)
             }
             .padding(.top, 22).padding(.leading, lead).padding(.trailing, 20)
@@ -265,6 +283,12 @@ struct InGameMenuView: View {
         .foregroundStyle(PP.text)
         .statusBarHidden()
         .accessibilityIdentifier("in-game-menu")
+        .sheet(item: $model.panel) { panel in
+            switch panel {
+            case .controls: TouchMappingEditor()
+            case .display: GameDisplayView()
+            }
+        }
     }
 
     private func row(_ item: QuickMenuItem) -> some View {
@@ -293,6 +317,8 @@ struct InGameMenuView: View {
         case .resume: nil
         case .screenshot: model.shot ?? "Saved to Photos"
         case .overlay: model.overlay ? "On" : "Off"
+        case .controls: "觸控配置"
+        case .display: "解析度 · FPS · 音訊"
         case .controller: QuickMenu.controller(name: router.controller?.name, battery: router.controller?.battery)
         case .quit: model.quitting ? "Closing…" : "Saves first"
         }

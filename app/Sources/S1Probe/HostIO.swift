@@ -61,6 +61,7 @@ final class HostIO {
     nonisolated static let surfaceReady = DispatchSemaphore(value: 0)
 
     private var lifecycle = Lifecycle()
+    private var inputOwners = InputOwners()
     private var slots = PadSlots<ObjectIdentifier>()
     private var motion = RelativeMotion()
     /// The Home button and the in-game menu's presses, from every pad.
@@ -97,9 +98,16 @@ final class HostIO {
             try session.setCategory(.playback, mode: .default, options: [])
             try session.setActive(true)
             log("hostio: audio session active, \(Int(session.sampleRate)) Hz, output latency \(Int(session.outputLatency * 1000)) ms")
+            logAudioRoute("active", log: log)
         } catch {
             log("hostio: audio session: \(error)")
         }
+    }
+
+    nonisolated private static func logAudioRoute(_ reason: String, log: (String) -> Void = HostIO.log) {
+        let session = AVAudioSession.sharedInstance()
+        let ports = session.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ",")
+        log("hostio: audio \(reason): route=\(ports) rate=\(Int(session.sampleRate)) channels=\(session.outputNumberOfChannels) volume=\(Int(session.outputVolume * 100))% buffer=\(Int(session.ioBufferDuration * 1000))ms; PCM, no app lossy encoding")
     }
 
     /// On the main thread, before the runtime thread starts: the environment the
@@ -129,6 +137,9 @@ final class HostIO {
             let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             let began = raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .began
             MainActor.assumeIsolated { HostIO.shared.handle(began ? .interruptionBegan : .interruptionEnded) }
+        })
+        observers.append(nc.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { _ in
+            Self.audioQueue.async { Self.logAudioRoute("route changed") }
         })
         #if !PLAYPORT_RELEASE
         // On the posting thread, before any hop to the main queue: shows whether
@@ -189,6 +200,7 @@ final class HostIO {
 
     private func handle(_ event: LifecycleEvent) {
         let actions = lifecycle.handle(event)
+        if event == .resignActive || event == .menuOpened { inputOwners.clear() }
         if event == .resignActive { motion.reset() }
         for a in actions {
             switch a {
@@ -207,6 +219,7 @@ final class HostIO {
                 Self.audioQueue.async {
                     do { try AVAudioSession.sharedInstance().setActive(true) } catch { NSLog("hostio: setActive(true): \(error)") }
                     _ = ios_audio_host_suspend(0)
+                    Self.logAudioRoute("resumed")
                 }
             case .gpu(let open):
                 // Here, not on a queue: iOS refuses the commits that come after
@@ -225,9 +238,24 @@ final class HostIO {
 
     func key(hidUsage: Int, down: Bool) -> Bool {
         guard let vk = KeyMap.virtualKey(hidUsage: hidUsage) else { return false }
-        if down && menuUp { return true }   // a key let go while the menu is up still reaches the game
-        if down ? lifecycle.keyDown(vk) : lifecycle.keyUp(vk) { winios_post_key(Int32(vk), down ? 1 : 0) }
+        sendKey(vk, source: "hardware-\(hidUsage)", down: down)
         return true
+    }
+
+    private func sendKey(_ vk: UInt8, source: String, down: Bool) {
+        if down && (menuUp || !lifecycle.active || lifecycle.background) { return }
+        guard inputOwners.update(code: Int(vk), source: source, down: down) else { return }
+        if down ? lifecycle.keyDown(vk) : lifecycle.keyUp(vk) { winios_post_key(Int32(vk), down ? 1 : 0) }
+    }
+
+    func mappedInput(_ action: TouchAction, source: String, down: Bool) {
+        if let hid = action.hidUsage, let vk = KeyMap.virtualKey(hidUsage: hid) {
+            sendKey(vk, source: source, down: down)
+        } else if action == .mouseLeft {
+            mouseButton(down: down, downFlag: Pointer.leftDown, upFlag: Pointer.leftUp, source: source)
+        } else if action == .mouseRight {
+            mouseButton(down: down, downFlag: Pointer.rightDown, upFlag: Pointer.rightUp, source: source)
+        }
     }
 
     /// A direct touch as the left button, at the same point of the client area.
@@ -237,10 +265,13 @@ final class HostIO {
         if menuUp && phase != .ended && phase != .cancelled { return }
         switch phase {
         case .began:
+            guard lifecycle.active, !lifecycle.background else { return }
+            guard inputOwners.update(code: 65536 + Int(Pointer.leftUp), source: "surface", down: true) else { return }
             if lifecycle.buttonDown(upFlag: Pointer.leftUp) { winios_post_client_pointer(f.0, f.1, Pointer.move | Pointer.leftDown, 0) }
         case .moved:
             winios_post_client_pointer(f.0, f.1, Pointer.move, 0)
         case .ended, .cancelled:
+            guard inputOwners.update(code: 65536 + Int(Pointer.leftUp), source: "surface", down: false) else { return }
             if lifecycle.buttonUp(upFlag: Pointer.leftUp) { winios_post_client_pointer(f.0, f.1, Pointer.move | Pointer.leftUp, 0) }
         default:
             break
@@ -286,8 +317,9 @@ final class HostIO {
         }
     }
 
-    private func mouseButton(down: Bool, downFlag: UInt32, upFlag: UInt32) {
-        if down && menuUp { return }
+    private func mouseButton(down: Bool, downFlag: UInt32, upFlag: UInt32, source: String = "mouse") {
+        if down && (menuUp || !lifecycle.active || lifecycle.background) { return }
+        guard inputOwners.update(code: 65536 + Int(upFlag), source: source, down: down) else { return }
         if down ? lifecycle.buttonDown(upFlag: upFlag) : lifecycle.buttonUp(upFlag: upFlag) {
             HostIO.trace.update { $0.mouseButtons += 1 }
             winios_pointer(0, 0, down ? downFlag : upFlag, 0)

@@ -655,8 +655,10 @@ final class LaunchSettingsTests: XCTestCase {
     }
 
     func testLimitsDivideThePanelsRate() {
-        XCTAssertEqual(LaunchSettings.frameLimits(maxRate: 120), [30, 40, 60])
-        XCTAssertEqual(LaunchSettings.frameLimits(maxRate: 60), [30])
+        XCTAssertEqual(LaunchSettings.frameLimits(maxRate: 120), [30, 40, 60, 120])
+        XCTAssertEqual(LaunchSettings.frameLimits(maxRate: 60), [30, 60])
+        XCTAssertEqual(LaunchSettings.frameLimits(maxRate: 90), [30, 90])
+        XCTAssertEqual(LaunchSettings.frameLimits(maxRate: 0), [30, 60])
     }
 
     func testOrderingIsPerGameAndRoundTrips() throws {
@@ -1905,6 +1907,22 @@ final class JitMethodTests: XCTestCase {
     }
 }
 
+final class PanelDefaultsTests: XCTestCase {
+    func testUnsetFollowsPanelWhileExplicitGameAndGlobalChoicesSurvive() {
+        let panel = LaunchSettings().followingPanel(maxRate: 120)
+        XCTAssertEqual(panel.screen, "native")
+        XCTAssertEqual(panel.frameLimit, 120)
+        let global = LaunchSettings(screen: "900", frameLimit: 60).followingPanel(maxRate: 120)
+        XCTAssertEqual(global.screen, "900")
+        XCTAssertEqual(global.frameLimit, 60)
+        let game = LaunchSettings(screen: "720", frameLimit: 30)
+        let effective = LaunchSettings.resolve(game: game, global: panel)
+        XCTAssertEqual(effective.screen, "720")
+        XCTAssertEqual(effective.frameLimit, 30)
+        XCTAssertEqual(LaunchSettings.resolve(game: nil, global: panel).frameLimit, 120)
+    }
+}
+
 final class QuickMenuTests: XCTestCase {
     func testTheRingMovesAlongTheRowsAndStopsAtTheEnds() {
         var m = QuickMenu()
@@ -1915,7 +1933,7 @@ final class QuickMenuTests: XCTestCase {
         XCTAssertEqual(m.ring, .quit)
         m.move(down: false)
         XCTAssertEqual(m.ring, .controller)
-        XCTAssertEqual(QuickMenu.steps(from: .resume, to: .quit), [true, true, true, true])
+        XCTAssertEqual(QuickMenu.steps(from: .resume, to: .quit), [true, true, true, true, true, true])
         XCTAssertEqual(QuickMenu.steps(from: .overlay, to: .resume), [false, false])
         XCTAssertEqual(QuickMenu.steps(from: .quit, to: .quit), [])
     }
@@ -1927,7 +1945,7 @@ final class QuickMenuTests: XCTestCase {
         XCTAssertEqual(QuickMenu.controller(name: "DualSense", battery: nil), "DualSense")
         XCTAssertEqual(QuickMenu.controller(name: nil, battery: nil), "None")
         XCTAssertEqual(QuickMenuItem.allCases.map(\.title),
-                       ["Resume", "Screenshot", "Performance overlay", "Controller", "Quit game"])
+                       ["Resume", "Screenshot", "Performance overlay", "按鍵映射", "畫面與聲音", "Controller", "Quit game"])
     }
 }
 

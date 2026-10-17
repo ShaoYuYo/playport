@@ -140,6 +140,8 @@ public struct Lifecycle {
         case .menuOpened:
             guard !menu else { return [] }
             menu = true
+            if !keys.isEmpty { out.append(.releaseKeys(keys)); keys = [] }
+            if !buttons.isEmpty { out.append(.releaseButtons(buttons)); buttons = [] }
             // The session stays active: the menu is in front and closes back into the game.
             if !audioSuspended { audioSuspended = true; out.append(.suspendAudio(deactivate: false)) }
         case .menuClosed:

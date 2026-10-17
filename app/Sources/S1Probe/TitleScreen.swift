@@ -22,8 +22,10 @@ enum TitleScreen {
     /// What configure() chose, for the title's log.
     nonisolated(unsafe) private(set) static var summary = "not configured"
 
-    /// Whether startDisplayLink ran: configure may run again for a later title.
-    @MainActor private static var linked = false
+    /// Retain the refresh request so the in-game FPS picker can change it.
+    @MainActor private static var link: CADisplayLink?
+    @MainActor private(set) static var frameLimit = 0
+    @MainActor private(set) static var configuredSize = "—"
 
     /// On the main thread, before the runtime reads its environment; again
     /// for each title a process starts, since the environment it sets is only
@@ -38,21 +40,19 @@ enum TitleScreen {
             setenv("MADEIRA_SCREEN_W", String(w), 1)
             setenv("MADEIRA_SCREEN_H", String(h), 1)
             screen = "\(w)x\(h)" + (title.map { " (the title's screen \($0))" } ?? "")
+            configuredSize = "\(w)×\(h)"
         } else {
             screen = "\(title ?? "") not understood; the runtime's 1024x768"
+            configuredSize = "1024×768"
         }
         madeira_set_vsync_locked(0)
-        PacedMetalLayer.limit(fps: frameLimit)
+        setFrameLimit(frameLimit)
         // The refresh the guest's monitor reports (patches/madeira-unix/0011-win32u-report-the-host-panel-s-refresh-rate-for-the-.patch).
         let hz = UIScreen.main.maximumFramesPerSecond
-        setenv("MADEIRA_SCREEN_HZ", String(hz), 0)
-        if !linked {
-            linked = true
-            startDisplayLink()
-        }
+        setenv("MADEIRA_SCREEN_HZ", String(hz), 1)
         summary = "screen \(screen) (panel \(Int(px.width))x\(Int(px.height)) px), landscape, swap chain aspect-fitted, "
-            + "presents free-running, display link asks for up to \(hz) Hz"
-            + (frameLimit > 0 ? ", frames limited to \(frameLimit) FPS" : ", no frame rate limit")
+            + "presents free-running, display link asks for up to \(Self.frameLimit > 0 ? Self.frameLimit : hz) Hz"
+            + (Self.frameLimit > 0 ? ", frames limited to \(Self.frameLimit) FPS" : ", no frame rate limit")
             + ", guest monitor \(ProcessInfo.processInfo.environment["MADEIRA_SCREEN_HZ"] ?? "60") Hz"
     }
 
@@ -60,11 +60,18 @@ enum TitleScreen {
     /// CADisableMinimumFrameDurationOnPhone (Info.plist) and a display link's
     /// preferred range. The link does no work; it only states the rate.
     @MainActor
-    private static func startDisplayLink() {
-        let link = CADisplayLink(target: Tick.shared, selector: #selector(Tick.tick))
-        let top = Float(UIScreen.main.maximumFramesPerSecond)
+    static func setFrameLimit(_ fps: Int) {
+        let maximum = UIScreen.main.maximumFramesPerSecond
+        frameLimit = fps > 0 ? min(fps, maximum) : 0
+        PacedMetalLayer.limit(fps: frameLimit)
+        if link == nil {
+            let newLink = CADisplayLink(target: Tick.shared, selector: #selector(Tick.tick))
+            newLink.add(to: .main, forMode: .common)
+            link = newLink
+        }
+        let top = Float(frameLimit > 0 ? frameLimit : maximum)
+        guard let link else { return }
         link.preferredFrameRateRange = CAFrameRateRange(minimum: min(60, top), maximum: top, preferred: top)
-        link.add(to: .main, forMode: .common)
     }
 
     private final class Tick: NSObject, Sendable {

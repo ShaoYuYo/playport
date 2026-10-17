@@ -661,13 +661,18 @@ private struct GameDetailPage: View {
     private func graphicsRows(_ t: InstalledTitle) -> some View {
         let settings = launchSettings.binding(for: t.id)
         let own = settings.wrappedValue
-        let inherited = LaunchSettings.resolve(game: nil, global: launchSettings.global)
+        let inherited = LaunchSettings.resolve(game: nil, global: launchSettings.displayDefaults)
         let screenName: (String?) -> String = { LaunchSettingsText.screen($0, pixels: false) }
         let screen = OptionValue.of(own: own.screen.map(Optional.some), inherited: inherited.screen, name: screenName)
         let limit = OptionValue.of(own: own.frameLimit, inherited: inherited.frameLimit, name: LaunchSettingsText.frameLimit)
         let inheritedGraphics = launchSettings.effective(for: t, inheritingGraphics: true).graphics
         let d3d = OptionValue.of(own: own.graphics, inherited: inheritedGraphics, name: LaunchSettingsText.graphics)
         PadSectionHeader(text: "Graphics").id("graphics")
+        PadRow(id: "opt:device-display", title: "套用此裝置畫面", value: "原生解析度 · \(UIScreen.main.maximumFramesPerSecond) FPS",
+               accessory: .chevron, style: .plain) {
+            settings.wrappedValue.screen = "native"
+            settings.wrappedValue.frameLimit = UIScreen.main.maximumFramesPerSecond
+        }
         PadRow(id: "opt:screen", title: "Resolution", value: screen.text, accessory: .chevron, changed: screen.changed,
                style: .plain, reset: screen.changed ? { settings.wrappedValue.screen = nil } : nil) {
             let native = LaunchSettingsText.screens.first == "native"

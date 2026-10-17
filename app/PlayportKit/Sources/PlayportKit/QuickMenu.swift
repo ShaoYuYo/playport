@@ -7,13 +7,15 @@
 import Foundation
 
 public enum QuickMenuItem: String, CaseIterable, Sendable {
-    case resume, screenshot, overlay, controller, quit
+    case resume, screenshot, overlay, controls, display, controller, quit
 
     public var title: String {
         switch self {
         case .resume: "Resume"
         case .screenshot: "Screenshot"
         case .overlay: "Performance overlay"
+        case .controls: "按鍵映射"
+        case .display: "畫面與聲音"
         case .controller: "Controller"
         case .quit: "Quit game"
         }

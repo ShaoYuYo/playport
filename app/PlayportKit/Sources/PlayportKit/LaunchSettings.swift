@@ -207,6 +207,15 @@ public struct LaunchSettings: Codable, Equatable, Sendable {
     public static let defaultScreen = "720"
     public static let defaultFrameLimit = 60
 
+    /// The app's display defaults follow its current panel. Explicit settings
+    /// survive device changes; clearing an override follows the panel again.
+    public func followingPanel(maxRate: Int) -> LaunchSettings {
+        var value = self
+        if value.screen == nil { value.screen = "native" }
+        if value.frameLimit == nil { value.frameLimit = max(1, maxRate) }
+        return value
+    }
+
     /// The game's value, else the global one, else the defaults (720 rows,
     /// 60 FPS, Vulkan for an i386 executable (decision 0047) or DX12 (0044), DXMT
     /// otherwise). Explicit graphics choices still win. `arguments` are the title's
@@ -236,7 +245,8 @@ public struct LaunchSettings: Codable, Equatable, Sendable {
     /// The limits the pickers offer for a panel refreshing at most `maxRate` times a
     /// second: the rates that divide it evenly, so each frame stays up equally long.
     public static func frameLimits(maxRate: Int) -> [Int] {
-        [30, 40, 60].filter { $0 < maxRate && maxRate % $0 == 0 }
+        guard maxRate > 0 else { return [30, 60] }
+        return Array(Set([30, 40, 60, 90, 120].filter { $0 <= maxRate && maxRate % $0 == 0 } + [maxRate])).sorted()
     }
 }
 
