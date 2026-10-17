@@ -122,3 +122,21 @@ Phone startup reliability, settings-page frame pacing and real Steam progress
 remain unverified. The next report must contain this revision, a failed launch
 if one occurs, settings-page activity and a cloud retry. Its hashes/open results
 can distinguish failed transfer, wrong backend and a game-side load failure.
+
+## Owner feedback after delivery
+
+The owner explicitly identifies the supplied settings-page screenshot as r18.
+Its HUD shows about 31.57 FPS, 31.68 ms frame interval, 4.96 ms GPU time and
+thermal state Fair. The owner reports visible graph variation while the scene
+is unchanged. r18 therefore does not establish a settings-page pacing fix.
+The memory banner reports about 1052 MiB remaining with a configured 750 MiB
+safety margin. The current warning threshold is twice that margin; the banner
+alone does not establish a refused allocation or an exhausted physical budget.
+
+Apple's [HUD metric definitions](https://developer.apple.com/documentation/xcode/understanding-metal-performance-hud-metrics)
+describe FPS, GPU time and presentation interval as separate rolling metrics.
+An unchanged scene can still be redrawn. These averages support investigating
+producer/translation/synchronization timing but do not identify a specific CPU
+or GPU bottleneck. The owner was asked to compare the same page with the app's
+FPS limiter disabled; that result and an r18 report remain pending. No new
+performance fix or different IPA is claimed from the screenshot alone.
