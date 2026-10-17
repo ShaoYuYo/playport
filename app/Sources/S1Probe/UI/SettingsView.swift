@@ -52,7 +52,7 @@ struct SettingsView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 22) {
-            sidebar.frame(width: 190)
+            sidebar.frame(width: 218)
             content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .padding(.horizontal, 44).padding(.top, 12)
@@ -76,14 +76,8 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(SettingsSection.shown, id: \.self) { s in
                 let on = navigation.settingsSection == s
-                Text(LocalizedStringKey(s.title))
-                    .font(.system(size: 15, weight: on ? .semibold : .medium))
-                    .foregroundStyle(on ? PP.accent : PP.soft)
-                    .padding(.horizontal, 14)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .background(on ? PP.accent.opacity(0.18) : Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(on ? 0.22 : 0.08), lineWidth: 0.5))
-                    .padItem(s.navItem, hint: "Open", cornerRadius: 10) {
+                GlassSidebarRowLabel(title: s.title, icon: sectionIcon(s), selected: on)
+                    .padItem(s.navItem, hint: "Open", cornerRadius: 13) {
                         navigation.settingsSection = s
                         SettingsRing.enter()
                     }
@@ -92,6 +86,19 @@ struct SettingsView: View {
         .padding(8)
         }
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: navigation.settingsSection)
+    }
+
+    private func sectionIcon(_ section: SettingsSection) -> String {
+        switch section {
+        case .accounts: "person.crop.circle"
+        case .graphics: "display"
+        case .downloads: "arrow.down.circle"
+        case .controllers: "gamecontroller"
+        case .storage: "internaldrive"
+        case .setup: "checkmark.shield"
+        case .about: "info.circle"
+        case .developer: "hammer"
+        }
     }
 
     private var content: some View {

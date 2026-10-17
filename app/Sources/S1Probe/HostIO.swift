@@ -558,9 +558,10 @@ final class PacedMetalLayer: CAMetalLayer {
     static func healthReport() -> String? {
         guard let s = health.withLock({ $0.sample(at: CACurrentMediaTime()) }) else { return nil }
         let size = lastPresented.map { "\($0.width)x\($0.height)" } ?? "none"
-        return String(format: "render-health: fps=%.1f frames=%d gaps_over50ms=%d max_gap_ms=%.1f drawable_wait_avg_ms=%.1f drawable_wait_max_ms=%.1f failed=%d pixels=%@ pacer_wait_avg_ms=%.1f pacer_wait_max_ms=%.1f",
+        return String(format: "render-health: fps=%.1f frames=%d gaps_over50ms=%d max_gap_ms=%.1f drawable_wait_avg_ms=%.1f drawable_wait_max_ms=%.1f failed=%d pixels=%@ pacer_wait_avg_ms=%.1f pacer_wait_max_ms=%.1f present_gap_avg_ms=%.1f present_jitter_ms=%.1f request_gap_max_ms=%.1f",
             s.fps, s.frames, s.longGaps, s.maximumGapMS, s.averageDrawableWaitMS,
-            s.maximumDrawableWaitMS, s.failedDrawables, size, s.averagePacerWaitMS, s.maximumPacerWaitMS)
+            s.maximumDrawableWaitMS, s.failedDrawables, size, s.averagePacerWaitMS, s.maximumPacerWaitMS,
+            s.averagePresentationGapMS, s.presentationJitterMS, s.maximumRequestGapMS)
     }
 
     /// The frame on screen, nil before the first.
@@ -595,6 +596,7 @@ final class PacedMetalLayer: CAMetalLayer {
 
     override func nextDrawable() -> (any CAMetalDrawable)? {
         let pacingStart = CACurrentMediaTime()
+        Self.health.withLock { $0.requested(at: pacingStart) }
         let wait = Self.pacer.withLock { $0.delay(now: pacingStart) }
         if wait > 0 { Thread.sleep(forTimeInterval: wait) }
         let t0 = CACurrentMediaTime()

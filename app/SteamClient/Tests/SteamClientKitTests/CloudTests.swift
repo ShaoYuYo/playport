@@ -494,4 +494,40 @@ final class CloudServiceTests: XCTestCase {
         let retry = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, restoreSteam: true)
         XCTAssertEqual(retry.downloaded, [saveName]); XCTAssertEqual(text(save), "Steam original")
     }
+
+    func testCloudAuditComparesObservedSteamBytesAndBothBackendsWithoutPayloads() async throws {
+        let b = FakeBackend(), name = "datasu.ksd"
+        await b.set(cloud: [name: Array("synthetic progress".utf8), "private-note.txt": Array("private text".utf8)])
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        let matched = await s.cloudSaveEvidence(appID: 367520, roots: roots)
+        XCTAssertTrue(matched.contains("remote-local=matches native-local=matches"))
+        XCTAssertFalse(matched.contains("synthetic progress"))
+        XCTAssertFalse(matched.contains("private-note"))
+        XCTAssertFalse(matched.contains(dir.path))
+        try Data("changed after sync".utf8).write(to: roots.mirrorFile(name)!)
+        let changed = await s.cloudSaveEvidence(appID: 367520, roots: roots)
+        XCTAssertTrue(changed.contains("remote-local=matches native-local=differs"))
+        try FileManager.default.removeItem(at: roots.mirrorFile(name)!)
+        try FileManager.default.createSymbolicLink(at: roots.mirrorFile(name)!, withDestinationURL: roots.file(name)!)
+        let linked = await s.cloudSaveEvidence(appID: 367520, roots: roots)
+        // mirrorFile rejects links before the audit can read their bytes.
+        XCTAssertTrue(linked.contains("native-local=unmapped"))
+    }
+
+    func testLegacyCloudRecordStillDecodesAndDoesNotInventRemoteEvidence() async throws {
+        let b = FakeBackend()
+        await b.set(cloud: ["datasu.ksd": Array("PC".utf8)])
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        let url = dir.appendingPathComponent("state/steam-cloud/367520.json")
+        var old = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        old.removeValue(forKey: "remoteSnapshot")
+        try JSONSerialization.data(withJSONObject: old).write(to: url)
+        let kept = await s.keptCloud(appID: 367520)
+        XCTAssertNotNil(kept)
+        let report = await s.cloudSaveEvidence(appID: 367520, roots: roots)
+        XCTAssertTrue(report.contains("snapshot: unavailable"))
+    }
 }

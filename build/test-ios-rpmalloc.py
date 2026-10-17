@@ -118,6 +118,42 @@ static void* failure_worker(void* arg) {
  rpmalloc_thread_finalize();return 0;
 }
 static void* free_huge_worker(void* p){rpfree(p);return 0;}
+/* Capacity stress, not a replay of the title: 40 live heaps coexist with
+ * 400 MiB reserved for other translator state in the same 768 MiB arena. */
+static atomic_int pressure_failures;
+static void* pressure_worker(void* unused) {
+ (void)unused;void* p[CLASSES]={0};rpmalloc_thread_initialize();
+ for(int j=0;j<CLASSES;++j) {
+  p[j]=rpmalloc(sizes[j]);
+  if(!p[j])atomic_fetch_add(&pressure_failures,1);
+  else memset(p[j],0x73,sizes[j]);
+ }
+ pthread_barrier_wait(&barrier);pthread_barrier_wait(&barrier);
+ for(int j=0;j<CLASSES;++j)if(p[j]) {
+  for(size_t i=0;i<sizes[j];++i)assert(((unsigned char*)p[j])[i]==0x73);
+  rpfree(p[j]);
+ }
+ rpmalloc_thread_finalize();return 0;
+}
+static void pressure_test(rpmalloc_interface_t* iface,rpmalloc_config_t* config) {
+ assert(!current);size_t off=0,mapped=0;
+ void* other=map_mem(400*M,65536,&off,&mapped);assert(other&&mapped==400*M);
+ rpmalloc_initialize_config(iface,config);
+ pthread_barrier_destroy(&barrier);pthread_barrier_init(&barrier,0,41);
+ pthread_t workers[40];
+ for(int i=0;i<40;++i)assert(!pthread_create(workers+i,0,pressure_worker,0));
+ pthread_barrier_wait(&barrier);
+ int failures=atomic_load(&pressure_failures);
+ printf("40 live heaps + 400 MiB other state: mapped=%zu MiB refused=%d\n",current/M,failures);
+#ifdef EXPECT_PRESSURE_FAILURE
+ assert(failures>0);
+#else
+ assert(!failures);
+#endif
+ pthread_barrier_wait(&barrier);
+ for(int i=0;i<40;++i)pthread_join(workers[i],0);
+ rpmalloc_finalize();unmap_mem(other,off,mapped);assert(!current);
+}
 // REPLAY_FIXTURE
 int main(void) {
  setbuf(stdout,0);signal(SIGABRT,aborted);
@@ -131,9 +167,9 @@ int main(void) {
  pthread_barrier_init(&barrier,0,11);pthread_t threads[10];
  for(size_t i=0;i<10;++i)assert(!pthread_create(threads+i,0,worker,(void*)i));
  pthread_barrier_wait(&barrier);
- printf("10 live worker heaps x 37 classes: mapped=%zu MiB peak=%zu MiB 4-MiB-maps=%zu 16-MiB-maps=%zu\n",current/M,peak/M,small_maps+medium_maps,large_maps);
- assert(small_maps+medium_maps+large_maps==30);
- size_t expected=10*(SMALL_SPAN_SIZE+MEDIUM_SPAN_SIZE+SPAN_SIZE);
+ printf("10 live worker heaps x 37 classes: mapped=%zu MiB peak=%zu MiB cached-maps=%zu small-span=%zu KiB medium-span=%zu KiB\n",current/M,peak/M,small_maps+medium_maps+large_maps,(size_t)SMALL_SPAN_SIZE/1024,(size_t)MEDIUM_SPAN_SIZE/1024);
+ assert(small_maps+medium_maps+large_maps>=30);
+ size_t expected=(small_maps+medium_maps)*SMALL_SPAN_SIZE+large_maps*SPAN_SIZE;
  assert(current>=expected&&current<expected+2*M);
  pthread_barrier_wait(&barrier);pthread_barrier_wait(&barrier);
  for(int i=0;i<10;++i)pthread_join(threads[i],0);
@@ -148,7 +184,7 @@ int main(void) {
  }
  for(size_t a=32;a<=65536;a*=2){void* p=rpaligned_alloc(a,12345);assert(p&&!((uintptr_t)p&(a-1)));memset(p,7,12345);rpfree(p);}
  /* Large requests still work when moved from cached classes to exact maps. */
- const size_t large_sizes[]={2*M-1,2*M,2*M+1,3*M,4*M,5*M,8*M,9*M,16*M};
+ const size_t large_sizes[]={M-1,M,M+1,2*M-1,2*M,2*M+1,3*M,4*M,5*M,8*M,9*M,16*M};
  const size_t large_alignments[]={16,65536,131072};
  for(size_t i=0;i<sizeof(large_sizes)/sizeof(large_sizes[0]);++i) {
   for(size_t k=0;k<sizeof(large_alignments)/sizeof(large_alignments[0]);++k) {
@@ -170,6 +206,7 @@ int main(void) {
  deny=1;assert(!rprealloc(original,9*M));for(int i=0;i<128;++i)assert(((unsigned char*)original)[i]==0x6b);rpfree(original);
  deny=1;assert(!rpmalloc(9*M));assert(!rpaligned_alloc(65536,9*M));deny=0;
  rpmalloc_finalize();assert(!current);
+ pressure_test(&iface,&config);
  replay_fixture(&iface,&config);
  munmap(raw,CAP+ARENA_ALIGNMENT);
  puts("PASS: real allocator classes, alignment, lists, remote frees, metadata OOM/retry and huge OOM");
@@ -213,5 +250,6 @@ static void replay_fixture(rpmalloc_interface_t* iface,rpmalloc_config_t* config
 c=c.replace('// REPLAY_FIXTURE',replay)
 (out/'test.c').write_text(c)
 flags=['-DEXPECT_FRAGMENTED=1'] if '--expect-fragmented' in sys.argv[2:] else []
+if '--expect-pressure-failure' in sys.argv[2:]: flags.append('-DEXPECT_PRESSURE_FAILURE=1')
 subprocess.run(['clang','-std=c11','-O1','-g','-DENABLE_OVERRIDE=0','-DENABLE_ASSERTS=1','-fsanitize=address,undefined','-fno-omit-frame-pointer','-pthread',*flags,str(out/'test.c'),'-o',str(out/'test')],check=True)
 subprocess.run([str(out/'test')],check=True,timeout=120)

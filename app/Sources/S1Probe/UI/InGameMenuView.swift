@@ -226,24 +226,35 @@ struct InGameMenuView: View {
     @ObservedObject private var model = InGameMenu.shared
     @ObservedObject private var launch = TitleLaunch.shared
     @ObservedObject private var router = PadRouter.shared
-    @ObservedObject private var safe = WindowInsets.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var visible: Bool { (model.isOpen || model.quitting) && !model.editingControls }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            if visible {
-                Color.black.opacity(0.4).ignoresSafeArea()
-                    .contentShape(Rectangle()).onTapGesture { model.resume() }
-                    .transition(.opacity)
-                menuBody
-                    .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
+        GlassSidebar(isPresented: visible, title: launch.title,
+                     subtitle: model.quitting ? "正在結束遊戲" : "遊戲選單", dismiss: { model.resume() }) {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 8) {
+                        ForEach(QuickMenuItem.allCases, id: \.self) { item in
+                            GlassSidebarRow(title: item.title, icon: icon(item), detail: value(item),
+                                            selected: model.menu.ring == item, destructive: item == .quit) {
+                                model.choose(item)
+                            }
+                            .id(item).accessibilityIdentifier("menu-\(item.rawValue)")
+                        }
+                    }
+                }
+                .onChange(of: model.menu.ring) { _, item in
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) { proxy.scrollTo(item) }
+                }
+            }
+            if downloadsWaiting {
+                Label("Downloads paused while you play", systemImage: "pause.circle")
+                    .font(.system(size: 11)).foregroundStyle(PP.muted)
             }
         }
-        .animation(reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.32, dampingFraction: 0.9), value: visible)
-        .allowsHitTesting(visible)
-        .accessibilityHidden(!visible)
+        .statusBarHidden().accessibilityIdentifier("in-game-menu")
         .sheet(item: $model.panel) { panel in
             switch panel {
             case .controls: TouchMappingEditor()
@@ -252,93 +263,22 @@ struct InGameMenuView: View {
         }
     }
 
-    @ViewBuilder private var menuBody: some View {
-        let lead = safe.side(44, safe.insets.leading), trail = safe.side(44, safe.insets.trailing)
-        ZStack(alignment: .topLeading) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(QuickMenu.playing(seconds: Date().timeIntervalSince(launch.startedAt)).uppercased())
-                    .font(.system(size: 11, weight: .semibold)).tracking(1.1).foregroundStyle(PP.muted)
-                    .padding(.horizontal, 14)
-                Text(launch.title).font(PP.display(24)).lineLimit(1).minimumScaleFactor(0.6)
-                    .padding(.horizontal, 14).padding(.bottom, 10)
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(spacing: 8) {
-                            ForEach(QuickMenuItem.allCases, id: \.self) { item in row(item).id(item) }
-                        }
-                    }
-                    .onChange(of: model.menu.ring) { _, item in
-                        withAnimation(.easeInOut(duration: 0.15)) { proxy.scrollTo(item) }
-                    }
-                }
-                .padding(.bottom, 45)
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 22).padding(.leading, lead).padding(.trailing, 20)
-            .frame(width: 330 + lead - 44, alignment: .leading)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .ppGlass(cornerRadius: 26, interactive: false)
-            .padding(.vertical, 12).padding(.leading, 12)
-            .ignoresSafeArea()
-            if downloadsWaiting {
-                HStack(spacing: 8) {
-                    Circle().fill(PP.muted).frame(width: 8, height: 8)
-                    Text("Downloads paused while you play")
-                }
-                .font(.system(size: 13)).foregroundStyle(PP.soft)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .ppGlass(cornerRadius: 18, interactive: false)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.trailing, trail).padding(.top, 22)
-            }
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    PadFooter(hints: [
-                        PadHint(button: .a, label: "Choose") { model.press(.a) },
-                        PadHint(button: .b, label: "Back to game") { model.resume() },
-                    ], leading: true)
-                    .fixedSize()
-                }
-                .padding(.trailing, trail)
-                .padding(.bottom, safe.insets.bottom)
-            }
+    private func icon(_ item: QuickMenuItem) -> String {
+        switch item {
+        case .resume: "play.fill"
+        case .screenshot: "camera"
+        case .overlay: "chart.xyaxis.line"
+        case .controls: "hand.tap"
+        case .display: "display"
+        case .controller: "gamecontroller"
+        case .quit: "power"
         }
-        // The margins above come from the window's insets themselves: laid out over the
-        // whole screen, or the note and the footer would be inset twice (the overlay
-        // keeps the safe area although the game surface under it ignores it).
-        .ignoresSafeArea()
-        .foregroundStyle(PP.text)
-        .statusBarHidden()
-        .accessibilityIdentifier("in-game-menu")
-    }
-
-    private func row(_ item: QuickMenuItem) -> some View {
-        let ringed = model.menu.ring == item
-        return Button { model.choose(item) } label: {
-            HStack(spacing: 12) {
-                Text(LocalizedStringKey(item.title)).font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(ringed ? PP.background : item == .quit ? Color(hex: 0xFF9A8A) : PP.text)
-                Spacer(minLength: 0)
-                if let v = value(item) {
-                    Text(v).font(.system(size: 13)).foregroundStyle(ringed ? PP.background.opacity(0.7) : PP.muted)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 42)
-            .background(ringed ? PP.text : .clear, in: RoundedRectangle(cornerRadius: 10))
-            .contentShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("menu-\(item.rawValue)")
     }
 
     private func value(_ item: QuickMenuItem) -> String? {
         switch item {
         case .resume: nil
-        case .screenshot: model.shot ?? "Saved to Photos"
+        case .screenshot: model.shot
         case .overlay: model.overlay ? "On" : "Off"
         case .controls: "新增 · 拖曳 · 對應按鍵"
         case .display: "解析度 · FPS · 音訊"

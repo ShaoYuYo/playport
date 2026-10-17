@@ -69,4 +69,25 @@ final class RenderTouchTests: XCTestCase {
         XCTAssertEqual(stall.longGaps, 1)
         XCTAssertEqual(stall.maximumDrawableWaitMS, 300, accuracy: 0.001)
     }
+
+    func testEqualAverageFPSSeparatesSteadyFramesFromUnevenPresentation() {
+        var steady = FrameHealth(), uneven = FrameHealth()
+        for n in 0..<30 {
+            let time = Double(n) / 30
+            steady.requested(at: time); steady.presented(at: time)
+            let irregular = time + (n.isMultiple(of: 2) ? 0 : 0.025)
+            uneven.requested(at: irregular); uneven.presented(at: irregular)
+        }
+        let a = steady.sample(at: 1)!, b = uneven.sample(at: 1)!
+        XCTAssertEqual(a.fps, b.fps)
+        XCTAssertEqual(a.averagePresentationGapMS, 1000 / 30, accuracy: 0.001)
+        XCTAssertEqual(a.presentationJitterMS, 0, accuracy: 0.001)
+        XCTAssertGreaterThan(b.presentationJitterMS, 24)
+        XCTAssertGreaterThan(b.maximumRequestGapMS, 58)
+        // A late callback must not move the previous presentation backwards.
+        steady.presented(at: 0.5); steady.presented(at: 1)
+        let next = steady.sample(at: 2)!
+        XCTAssertEqual(next.maximumGapMS, 1000 / 30, accuracy: 0.001)
+        XCTAssertEqual(next.presentationJitterMS, 0, accuracy: 0.001)
+    }
 }

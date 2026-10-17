@@ -32,6 +32,96 @@ enum PP {
     }
 }
 
+/// One drawer surface for library navigation and the paused game.
+struct GlassSidebar<Content: View>: View {
+    let isPresented: Bool
+    let title: String
+    let subtitle: String
+    let dismiss: () -> Void
+    @ViewBuilder let content: () -> Content
+    @ObservedObject private var safe = WindowInsets.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                if isPresented {
+                    Color.black.opacity(0.38).contentShape(Rectangle())
+                        .onTapGesture(perform: dismiss).transition(.opacity)
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(alignment: .top, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(LocalizedStringKey(subtitle)).font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(PP.muted)
+                                Text(title).font(PP.display(23)).lineLimit(2).minimumScaleFactor(0.8)
+                            }
+                            Spacer(minLength: 0)
+                            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).frame(width: 36, height: 36) }
+                                .buttonStyle(.plain).background(.white.opacity(0.08), in: Circle())
+                                .accessibilityLabel("Close")
+                        }
+                        content()
+                    }
+                    .padding(18)
+                    .padding(.leading, max(0, safe.insets.leading - 12))
+                    .padding(.top, max(0, safe.insets.top - 12))
+                    .padding(.bottom, max(0, safe.insets.bottom - 12))
+                    .frame(width: min(360 + max(0, safe.insets.leading - 12), max(0, geometry.size.width - 24)))
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .ppGlass(cornerRadius: 26, interactive: false)
+                    .padding(12)
+                    .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.32, dampingFraction: 0.9), value: isPresented)
+        }
+        .ignoresSafeArea()
+        .foregroundStyle(PP.text)
+        .allowsHitTesting(isPresented).accessibilityHidden(!isPresented)
+    }
+}
+
+struct GlassSidebarRow: View {
+    let title: String
+    let icon: String
+    var detail: String? = nil
+    var selected = false
+    var destructive = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            GlassSidebarRowLabel(title: title, icon: icon, detail: detail, selected: selected, destructive: destructive)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Presentation shared by ordinary buttons and the controller focus system.
+struct GlassSidebarRowLabel: View {
+    let title: String
+    let icon: String
+    var detail: String? = nil
+    var selected = false
+    var destructive = false
+
+    var body: some View {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.system(size: 17, weight: .medium)).frame(width: 23)
+                Text(LocalizedStringKey(title)).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                Spacer(minLength: 4)
+                if let detail { Text(LocalizedStringKey(detail)).font(.system(size: 11)).foregroundStyle(PP.muted).lineLimit(1) }
+            }
+            .foregroundStyle(destructive ? Color(hex: 0xFF9A8A) : PP.text)
+            .padding(.horizontal, 14).frame(minHeight: 48)
+            .background(selected ? PP.accent.opacity(0.2) : .white.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
+            .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(.white.opacity(selected ? 0.24 : 0.07), lineWidth: 0.5))
+            .contentShape(RoundedRectangle(cornerRadius: 13))
+    }
+}
+
 extension Color {
     init(hex: UInt32) {
         self.init(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)

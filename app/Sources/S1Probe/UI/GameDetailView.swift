@@ -1264,6 +1264,16 @@ enum ProblemReport {
                     if steamAppID == 1144400 {
                         let saves = LaunchDiagnostics.senrenSaveState(prefix: WineHostRuntime.shared.prefixURL, gameRoot: root)
                         try saves.write(to: folder.appendingPathComponent("save-backends.txt"), atomically: true, encoding: .utf8)
+                        if let service = SteamAccountModel.current?.service {
+                            let user = WineHostRuntime.shared.prefixURL.resolvingSymlinksInPath()
+                                .appendingPathComponent("drive_c/users/playport")
+                            let auditRoots = Cloud.Roots(user: user, gameInstall: root,
+                                remote: user.appendingPathComponent("AppData/Roaming/GSE Saves/1144400/remote"),
+                                gameSaveMirror: user.appendingPathComponent("AppData/Roaming/YuzuSoft/SenrenBanka"))
+                            let cloud = await service.cloudSaveEvidence(appID: 1144400,
+                                roots: auditRoots)
+                            try cloud.write(to: folder.appendingPathComponent("steam-save-transfer.txt"), atomically: true, encoding: .utf8)
+                        }
                         let fingerprints = LaunchDiagnostics.compatibilityFingerprints(gameRoot: root, runtime: runtime)
                         try fingerprints.write(to: folder.appendingPathComponent("compatibility-fingerprints.txt"), atomically: true, encoding: .utf8)
                     }

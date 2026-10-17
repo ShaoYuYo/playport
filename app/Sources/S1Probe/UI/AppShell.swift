@@ -39,6 +39,9 @@ struct AppShell: View {
     @Environment(\.launchingFromPage) private var launchingFromPage
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showingMenu = false
+    @State private var menuSelection = 0
+    private static let menuPages = ["home", "library", "downloads", "settings"]
     @State private var importing = false
     /// What the one Files picker is open for: a pairing file, or a game (UI/Import.swift).
     @State private var importingGame = false
@@ -48,7 +51,7 @@ struct AppShell: View {
     var body: some View {
         VStack(spacing: 0) {
             GlassEffectContainer(spacing: 12) {
-                TopBar(installs: model.installs).openingChrome()
+                TopBar(openMenu: openMenu).openingChrome()
                     .padding(.horizontal, 12)
             }
             .frame(height: 52)
@@ -75,6 +78,21 @@ struct AppShell: View {
                 ZStack { PP.background; GameHeroArt { art.view } }.ignoresSafeArea()
             } else {
                 ambientBackground
+            }
+        }
+        .overlay {
+            GlassSidebar(isPresented: showingMenu, title: "PlayPort", subtitle: "遊戲啟動器",
+                         dismiss: { showingMenu = false }) {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 8) {
+                        ForEach(Array(Self.menuPages.enumerated()), id: \.element) { index, key in
+                            GlassSidebarRow(title: menuTitle(key), icon: menuIcon(key),
+                                            detail: key == "downloads" && !model.installs.jobs.isEmpty ? "\(model.installs.jobs.count)" : nil,
+                                            selected: menuSelection == index) { chooseMenu(index) }
+                                .accessibilityIdentifier(key == "settings" ? "navigation-settings" : "page-\(key)")
+                        }
+                    }
+                }
             }
         }
         // The controller keyboard or a picker, over everything with its own footer.
@@ -230,6 +248,10 @@ struct AppShell: View {
 
     /// The footer: what each button does here.
     private var hints: [PadHint] {
+        if showingMenu {
+            return [PadHint(button: .a, label: "Open") { chooseMenu(menuSelection) },
+                    PadHint(button: .b, label: "Close") { showingMenu = false }]
+        }
         if nav.signIn { return SignInState.shared.hints(model) }
         if nav.onGamePage { return gamePageHints }
         if onSetup { return SetupView.hints() }
@@ -244,7 +266,7 @@ struct AppShell: View {
         if nav.page == .downloads {
             h += DownloadsPage.hints(model.installs, focused: focus.focused)
             // Main sections switch with LB/RB; B never leaves this page.
-            return h + [PadHint(button: .menu, label: "Settings") { _ = nav.open("settings") }]
+            return h + [PadHint(button: .menu, label: "選單", action: openMenu)]
         }
         if !nav.settings, nav.page == .library {
             let grid = LibraryGrid.shared
@@ -254,14 +276,14 @@ struct AppShell: View {
             h.append(PadHint(button: .x, label: "Add a game") { GameImports.requests.send() })
             if !grid.search.isEmpty {
                 h.append(PadHint(button: .b, label: "Clear search") { grid.clearSearch() })
-                return h + [PadHint(button: .menu, label: "Settings") { _ = nav.open("settings") }]
+                return h + [PadHint(button: .menu, label: "選單", action: openMenu)]
             }
         }
         if nav.canGoBack {
             h.append(PadHint(button: .b, label: "Back") { _ = nav.back() })
         }
         if !nav.settings {
-            h.append(PadHint(button: .menu, label: "Settings") { _ = nav.open("settings") })
+            h.append(PadHint(button: .menu, label: "選單", action: openMenu))
         }
         return h
     }
@@ -287,6 +309,25 @@ struct AppShell: View {
         return h
     }
 
+    private func openMenu() {
+        menuSelection = Self.menuPages.firstIndex(of: nav.settings ? "settings" : nav.page.rawValue) ?? 0
+        showingMenu = true
+    }
+
+    private func chooseMenu(_ index: Int) {
+        guard Self.menuPages.indices.contains(index) else { return }
+        _ = nav.open(Self.menuPages[index])
+        showingMenu = false
+    }
+
+    private func menuTitle(_ key: String) -> String {
+        switch key { case "home": "Home"; case "library": "Library"; case "downloads": "Downloads"; default: "Settings" }
+    }
+
+    private func menuIcon(_ key: String) -> String {
+        switch key { case "home": "house"; case "library": "square.grid.2x2"; case "downloads": "arrow.down.circle"; default: "gearshape" }
+    }
+
     private func press(_ b: NavButton) {
         // The opening animation covers the shell: nothing to press yet.
         if opening.covering { return }
@@ -304,6 +345,17 @@ struct AppShell: View {
         if ProblemReport.sheetUp { return ProblemReport.sheetPress(b) }
         // The controller keyboard or a picker takes every press while it is up.
         if modal.isUp { return modal.press(b) }
+        if showingMenu {
+            switch b {
+            case .up: menuSelection = (menuSelection + Self.menuPages.count - 1) % Self.menuPages.count
+            case .down: menuSelection = (menuSelection + 1) % Self.menuPages.count
+            case .a: chooseMenu(menuSelection)
+            case .b, .menu: showingMenu = false
+            default: break
+            }
+            return
+        }
+        if b == .menu { openMenu(); return }
         // Sign in to Steam covers everything under it (UI/SignInView.swift).
         if nav.signIn { return SignInState.shared.press(b, model) }
         // Settings keeps the ring on its list or in the shown section (SettingsView.swift).
@@ -337,86 +389,37 @@ private struct RootPageVisibility: ViewModifier {
     }
 }
 
-/// A single floating glass rail. Selection moves inside one surface.
+/// One navigation entry point; the drawer shares its surface with the game.
 private struct TopBar: View {
-    @ObservedObject var installs: Downloads
+    let openMenu: () -> Void
     @ObservedObject private var nav = AppNavigation.shared
     @ObservedObject private var router = PadRouter.shared
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var selection
 
     private var secondary: Bool { nav.settings || nav.setup || nav.signIn || nav.onGamePage }
-    private var title: String {
-        nav.signIn ? "Steam" : nav.settings ? "Settings" : nav.setup ? "Setup" : "Library"
-    }
-    private var motion: Animation { reduceMotion ? .easeOut(duration: 0.12) : .spring(duration: 0.32, bounce: 0.12) }
+    private var title: String { nav.signIn ? "Steam" : nav.settings ? "Settings" : nav.setup ? "Setup" : nav.page.title }
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack(alignment: .leading) {
-                if secondary {
-                    HStack(spacing: 10) {
-                        Button { _ = nav.back() } label: {
-                            Label("Back", systemImage: "chevron.left")
-                                .font(.system(size: 14, weight: .semibold))
-                                .padding(.horizontal, 14).padding(.vertical, 10)
-                        }
-                        .buttonStyle(.plain).glassEffect(.regular.interactive(), in: Capsule())
-                        .disabled(!nav.canGoBack).accessibilityIdentifier("navigation-back")
-                        if !nav.onGamePage {
-                            Text(LocalizedStringKey(title)).font(.system(size: 16, weight: .semibold))
-                        }
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
-                } else {
-                    HStack(spacing: 0) {
-                        ForEach(AppNavigation.Page.allCases, id: \.self) { page in
-                            Button { withAnimation(motion) { nav.show(page) } } label: {
-                                HStack(spacing: 5) {
-                                    Text(LocalizedStringKey(page.title))
-                                    if page == .downloads, !installs.jobs.isEmpty {
-                                        Text("\(installs.jobs.count)").font(.system(size: 10, weight: .bold))
-                                    }
-                                }
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(nav.page == page ? PP.text : PP.soft)
-                                .padding(.horizontal, 15).padding(.vertical, 10)
-                                .background {
-                                    if nav.page == page {
-                                        Capsule().fill(.white.opacity(0.16))
-                                            .overlay(Capsule().strokeBorder(.white.opacity(0.24), lineWidth: 0.5))
-                                            .matchedGeometryEffect(id: "selected-page", in: selection)
-                                    }
-                                }
-                                .contentShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(nav.page == page ? .isSelected : [])
-                            .accessibilityIdentifier("page-\(page.rawValue)")
-                        }
-                    }
-                    .padding(4).fixedSize()
-                    .glassEffect(.regular, in: Capsule())
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
-                }
+            Button(action: openMenu) {
+                Image(systemName: "sidebar.left").font(.system(size: 17, weight: .medium)).frame(width: 42, height: 42)
             }
+            .buttonStyle(.plain).glassEffect(.regular.interactive(), in: Circle())
+            .accessibilityLabel("選單").accessibilityIdentifier("navigation-menu")
+            if secondary {
+                Button { _ = nav.back() } label: {
+                    Label("Back", systemImage: "chevron.left").font(.system(size: 14, weight: .semibold))
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                }
+                .buttonStyle(.plain).glassEffect(.regular.interactive(), in: Capsule())
+                .disabled(!nav.canGoBack).accessibilityIdentifier("navigation-back")
+            }
+            if !nav.onGamePage { Text(LocalizedStringKey(title)).font(.system(size: 16, weight: .semibold)) }
             Spacer(minLength: 8)
             if let controller = router.controller {
-                Image(systemName: "gamecontroller.fill").font(.system(size: 15))
-                    .foregroundStyle(PP.muted).accessibilityLabel(controller.name)
-                    .transition(.opacity.combined(with: .scale))
-            }
-            if !secondary {
-                Button { _ = nav.open("settings") } label: {
-                    Image(systemName: "gearshape").font(.system(size: 16, weight: .medium)).padding(11)
-                }
-                .buttonStyle(.plain).glassEffect(.regular.interactive(), in: Circle())
-                .accessibilityLabel("Settings")
-                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                Image(systemName: "gamecontroller.fill").font(.system(size: 15)).foregroundStyle(PP.muted)
+                    .accessibilityLabel(controller.name)
             }
         }
         .foregroundStyle(PP.text)
-        .animation(motion, value: secondary)
-        .animation(motion, value: nav.page)
     }
 }

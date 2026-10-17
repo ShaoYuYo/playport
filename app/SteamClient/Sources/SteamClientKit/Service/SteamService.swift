@@ -808,6 +808,9 @@ public actor SteamService {
         /// Old records only tracked the remote backend. Their baseline must
         /// not authorize uploading a native backend's previously unseen save.
         var nativeMirrorVersion: Int?
+        /// Steam's list before this sync transferred anything, distinct from
+        /// the agreement baseline. Optional for records from older builds.
+        var remoteSnapshot: [String: Cloud.Remote]?
     }
 
     /// Brings the game's cloud files on Steam and on the phone together
@@ -956,10 +959,43 @@ public actor SteamService {
         let mirrorVersion = roots.gameSaveMirror != nil && failed.isEmpty && conflicts.isEmpty ? 1
             : (mirrorEstablished ? 1 : nil)
         saveCloud(appID, CloudRecord(accountTag: account, baseline: Cloud.Baseline(changeNumber: changes.currentChangeNumber, files: next),
-                                     conflicts: conflicts, at: at, nativeMirrorVersion: mirrorVersion))
+                                     conflicts: conflicts, at: at, nativeMirrorVersion: mirrorVersion, remoteSnapshot: remote))
         log.info("cloud", "app \(appID): \(remote.count) on Steam, \(local.count) on the phone; \(downloaded.count) down, "
                  + "\(uploaded.count) up, \(conflicts.count) conflict(s), \(mirrored) local save placement(s)" + (failed.isEmpty ? "" : ", \(failed.count) failed"))
         return CloudSync(downloaded: downloaded, uploaded: uploaded, conflicts: conflicts, failed: failed, at: at)
+    }
+
+    /// Fixed Senren save metadata for an exported report. No network request,
+    /// account identifiers, settings, payloads or arbitrary cloud names.
+    public func cloudSaveEvidence(appID: UInt32, roots: Cloud.Roots) async -> String {
+        let header = "Steam save transfer audit v1 (last observed list before transfer; not a live query)\n"
+        guard let stored = try? await backend.storedSession(), let record = loadCloud(appID),
+              record.accountTag == Account(stored: stored).accountTag,
+              let snapshot = record.remoteSnapshot else { return header + "snapshot: unavailable; sync again\n" }
+        func known(_ name: String) -> Bool {
+            let n = name.lowercased()
+            return n == "savecheck" || n.range(of: #"^data[a-z0-9_]{1,32}\.(ksd|bmp)$"#, options: .regularExpression) != nil
+        }
+        var bytes = 0
+        func compare(_ url: URL?, _ expected: String) -> String {
+            guard let url else { return "unmapped" }
+            guard url.resolvingSymlinksInPath().standardizedFileURL == url.standardizedFileURL else { return "linked-omitted" }
+            guard let attr = try? FileManager.default.attributesOfItem(atPath: url.path) else { return "missing" }
+            guard attr[.type] as? FileAttributeType == .typeRegular,
+                  let size = (attr[.size] as? NSNumber)?.intValue, size <= 2 << 20,
+                  bytes + size <= 8 << 20, let data = try? Data(contentsOf: url) else { return "omitted" }
+            bytes += data.count
+            return SHA1.hash(Array(data)).hex == expected ? "matches" : "differs"
+        }
+        var result = header + "observed-at: \(Int(record.at.timeIntervalSince1970)) total-files: \(snapshot.count)\n"
+        let names = Set(snapshot.keys).union(record.baseline.files.keys).filter(known).sorted().prefix(64)
+        for name in names {
+            let observed = snapshot[name]?.sha ?? "absent"
+            let agreed = record.baseline.files[name] ?? "absent"
+            result += "\(name.lowercased()) steam-sha1=\(observed) agreed-sha1=\(agreed)"
+                + " remote-local=\(compare(roots.file(name), observed)) native-local=\(compare(roots.mirrorFile(name), observed))\n"
+        }
+        return result
     }
 
     /// The conflicts and time of the last sync, for the paired account.
