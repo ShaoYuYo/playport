@@ -554,14 +554,17 @@ final class PacedMetalLayer: CAMetalLayer {
     private static let pacer = OSAllocatedUnfairLock(initialState: FramePacer(fps: 0))
     private static let shown = OSAllocatedUnfairLock<(any MTLTexture)?>(uncheckedState: nil)
     private static let health = OSAllocatedUnfairLock(initialState: FrameHealth())
-    static func resetHealth() { health.withLock { $0 = FrameHealth() } }
+    private static let latest = OSAllocatedUnfairLock<FrameHealth.Sample?>(initialState: nil)
+    static var latestHealth: FrameHealth.Sample? { latest.withLock { $0 } }
+    static func resetHealth() { health.withLock { $0 = FrameHealth() }; latest.withLock { $0 = nil } }
     static func healthReport() -> String? {
         guard let s = health.withLock({ $0.sample(at: CACurrentMediaTime()) }) else { return nil }
+        latest.withLock { $0 = s }
         let size = lastPresented.map { "\($0.width)x\($0.height)" } ?? "none"
-        return String(format: "render-health: fps=%.1f frames=%d gaps_over50ms=%d max_gap_ms=%.1f drawable_wait_avg_ms=%.1f drawable_wait_max_ms=%.1f failed=%d pixels=%@ pacer_wait_avg_ms=%.1f pacer_wait_max_ms=%.1f present_gap_avg_ms=%.1f present_jitter_ms=%.1f request_gap_max_ms=%.1f",
+        return String(format: "render-health: fps=%.1f frames=%d gaps_over50ms=%d max_gap_ms=%.1f drawable_wait_avg_ms=%.1f drawable_wait_max_ms=%.1f failed=%d pixels=%@ pacer_wait_avg_ms=%.1f pacer_wait_max_ms=%.1f present_gap_avg_ms=%.1f present_jitter_ms=%.1f request_gap_max_ms=%.1f request_gap_avg_ms=%.1f",
             s.fps, s.frames, s.longGaps, s.maximumGapMS, s.averageDrawableWaitMS,
             s.maximumDrawableWaitMS, s.failedDrawables, size, s.averagePacerWaitMS, s.maximumPacerWaitMS,
-            s.averagePresentationGapMS, s.presentationJitterMS, s.maximumRequestGapMS)
+            s.averagePresentationGapMS, s.presentationJitterMS, s.maximumRequestGapMS, s.averageRequestGapMS)
     }
 
     /// The frame on screen, nil before the first.

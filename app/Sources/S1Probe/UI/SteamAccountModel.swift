@@ -199,6 +199,20 @@ final class SteamAccountModel: ObservableObject {
         }
     }
 
+    func restoreCloudBackup(_ appID: UInt32, id: String) async {
+        guard !TitleLaunch.shared.running, !suspendedForLaunch, !cloudSyncing.contains(appID),
+              preparingCloudLaunch == 0,
+              let title = LibraryModel.shared.catalog.titles.first(where: { $0.appID == appID }) else { return }
+        cloudSyncing.insert(appID)
+        defer { cloudSyncing.remove(appID) }
+        do {
+            cloud[appID] = try await service.restoreCloudBackup(appID: appID,
+                roots: LibraryModel.cloudRoots(appID: appID, installDir: title.installDir),
+                backups: LibraryModel.cloudBackups, id: id)
+            cloudErrors[appID] = nil
+        } catch { cloudErrors[appID] = InstallCopy.reason(error) }
+    }
+
     #if !PLAYPORT_RELEASE
     /// A dev build's Game options: forget the game's last sync, then sync as a first one.
     func forgetCloud(_ appID: UInt32) async {

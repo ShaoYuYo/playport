@@ -47,6 +47,7 @@ public enum LaunchDiagnostics {
             }
             report += "emulator-site-\(index): save-root=\(state)\n"
         }
+        report += "native-engine-log: " + (nativeGameLogs(prefix: prefix, steamAppID: 1144400).isEmpty ? "missing, linked or over limit" : "included in report") + "\n"
         report += engineTimingOptions(gameRoot: gameRoot, native: locations[1].1)
         return report
     }
@@ -184,6 +185,19 @@ public enum LaunchDiagnostics {
             bytes += item.size
             return item.url
         }.prefix(32).map { $0 }
+    }
+
+    /// The title writes script/storage exceptions outside its install folder.
+    /// Include only that fixed diagnostic log, never save contents or INIs.
+    public static func nativeGameLogs(prefix: URL, steamAppID: UInt32?) -> [URL] {
+        guard steamAppID == 1144400 else { return [] }
+        let url = prefix.resolvingSymlinksInPath()
+            .appendingPathComponent("drive_c/users/playport/AppData/Roaming/YuzuSoft/SenrenBanka/krkr.console.log")
+        guard url.resolvingSymlinksInPath().standardizedFileURL == url.standardizedFileURL,
+              let attr = try? FileManager.default.attributesOfItem(atPath: url.path),
+              attr[.type] as? FileAttributeType == .typeRegular,
+              let size = (attr[.size] as? NSNumber)?.intValue, size > 0, size <= 2 << 20 else { return [] }
+        return [url]
     }
 
     /// Names and sizes only: enough to spot a missing archive/plugin or a language depot mismatch.

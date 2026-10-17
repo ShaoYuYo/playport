@@ -553,6 +553,29 @@ final class CloudServiceTests: XCTestCase {
         XCTAssertTrue(kept.contains("old remote")); XCTAssertTrue(kept.contains("old native"))
     }
 
+    func testChoosingSteamForTheGameRestoresTheWholeSnapshotWithoutUploadingFreshSystemProgress() async throws {
+        let b = FakeBackend()
+        let original = ["datasu.ksd": "PC progress", "data_0010_01.bmp": "PC slot", "savecheck": "check"]
+        await b.set(cloud: original.mapValues { Array($0.utf8) })
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        // System progress changed only locally; the slot changed on both sides.
+        // Choosing Steam for the game must not upload that fresh system file.
+        try Data("fresh local progress".utf8).write(to: roots.file("datasu.ksd")!)
+        try Data("local slot".utf8).write(to: roots.file("data_0010_01.bmp")!)
+        await b.set(cloud: ["datasu.ksd": Array("PC progress".utf8),
+                           "data_0010_01.bmp": Array("new PC slot".utf8), "savecheck": Array("check".utf8)])
+        let conflict = try await s.syncCloud(appID: 367520, roots: roots, backups: backups,
+                                             resolve: ["data_0010_01.bmp": .steam])
+        XCTAssertTrue(conflict.uploaded.isEmpty)
+        XCTAssertTrue(conflict.failed.isEmpty)
+        XCTAssertEqual(text(roots.file("datasu.ksd")!), "PC progress")
+        XCTAssertEqual(text(roots.mirrorFile("datasu.ksd")!), "PC progress")
+        let remoteProgress = await b.cloudFile("datasu.ksd")
+        XCTAssertEqual(remoteProgress, Array("PC progress".utf8))
+    }
+
     func testRestoreRefusesAgreementWhenAnotherWriterChangesDownloadedBytes() async throws {
         let b = FakeBackend(), name = "datasu.ksd"
         await b.set(cloud: [name: Array("Steam progress".utf8), "savecheck": Array("check".utf8)])
@@ -572,4 +595,119 @@ final class CloudServiceTests: XCTestCase {
         XCTAssertEqual(text(source), "Steam progress")
         XCTAssertEqual(text(roots.mirrorFile(name)!), "Steam progress")
     }
+    func testBackupRecoveryKeepsCurrentCopiesAndRequiresAChoiceBeforeAnyUpload() async throws {
+        let b = FakeBackend(), name = "datasu.ksd", app: UInt32 = 1144400
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        await b.set(cloud: [name: Array("previous Steam progress".utf8)])
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: app, roots: roots, backups: backups)
+        try Data("new phone progress".utf8).write(to: roots.file(name)!)
+        _ = try await s.syncCloud(appID: app, roots: roots, backups: backups)
+        let points = Cloud.Backups.recoveryPoints(in: backups, appID: app)
+        let point = try XCTUnwrap(points.first { $0.source == "steam" })
+        XCTAssertEqual(point.names, [name])
+        let restored = try await s.restoreCloudBackup(appID: app, roots: roots, backups: backups, id: point.id)
+        XCTAssertTrue(restored.uploaded.isEmpty)
+        XCTAssertEqual(restored.conflicts.map(\.name), [name])
+        XCTAssertEqual(restored.conflicts.first?.recoveredBackup, true)
+        XCTAssertNil(restored.conflicts.first?.localCopiesDiffer)
+        XCTAssertEqual(text(roots.file(name)!), "previous Steam progress")
+        XCTAssertEqual(text(roots.mirrorFile(name)!), "previous Steam progress")
+        let next = try await s.syncCloud(appID: app, roots: roots, backups: backups)
+        XCTAssertTrue(next.uploaded.isEmpty)
+        XCTAssertEqual(next.conflicts.map(\.name), [name])
+        XCTAssertEqual(next.conflicts.first?.recoveredBackup, true)
+        XCTAssertEqual(next.conflicts.first?.phoneTime, restored.conflicts.first?.phoneTime)
+        let untouched = await b.cloudFile(name)
+        XCTAssertEqual(untouched, Array("new phone progress".utf8))
+        let losing = TitleInstaller.regularFiles(under: backups).compactMap { text(backups.appendingPathComponent($0)) }
+        XCTAssertTrue(losing.contains("new phone progress"))
+        let accepted = try await s.syncCloud(appID: app, roots: roots, backups: backups, resolve: [name: .phone])
+        XCTAssertEqual(accepted.uploaded, [name])
+    }
+
+    func testRecoveryIgnoresLinksUnknownFilesAndOtherTitlesAndRejectsOversizedCopies() throws {
+        let fm = FileManager.default, app: UInt32 = 1144400
+        let folder = Cloud.Backups.snapshotFolder(in: backups, appID: app, at: Date())
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("private".utf8).write(to: folder.appendingPathComponent("credentials.json.steam"))
+        let outside = dir.appendingPathComponent("outside")
+        try Data("outside".utf8).write(to: outside)
+        try fm.createSymbolicLink(at: folder.appendingPathComponent("datasu.ksd.steam"), withDestinationURL: outside)
+        XCTAssertTrue(Cloud.Backups.recoveryPoints(in: backups, appID: app).isEmpty)
+        XCTAssertThrowsError(try Cloud.Backups.recoveryFiles(in: backups, appID: app, id: "../outside|steam"))
+        try fm.removeItem(at: folder.appendingPathComponent("datasu.ksd.steam"))
+        try Data(repeating: 1, count: (2 << 20) + 1).write(to: folder.appendingPathComponent("datasu.ksd.steam"))
+        let point = try XCTUnwrap(Cloud.Backups.recoveryPoints(in: backups, appID: app).first)
+        XCTAssertThrowsError(try Cloud.Backups.recoveryFiles(in: backups, appID: app, id: point.id))
+        XCTAssertTrue(Cloud.Backups.recoveryPoints(in: backups, appID: 367520).isEmpty)
+        XCTAssertEqual(text(outside), "outside")
+    }
+
+    func testBackupSnapshotsWithinOneSecondRemainDistinctAndInventoryGroupsSlots() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let a = Cloud.Backups.snapshotFolder(in: backups, appID: 1144400, at: now)
+        let b = Cloud.Backups.snapshotFolder(in: backups, appID: 1144400, at: now)
+        XCTAssertNotEqual(a, b)
+        XCTAssertEqual(Cloud.Backups.date(ofFolder: a.lastPathComponent), now)
+        let inventory = Cloud.SaveInventory(names: ["data_0010_01.bmp", "DATA_0010_01.BMP", "data_0010_02.bmp",
+            "data_quick_01.bmp", "data_continue.bmp", "private.bmp", "../data_0010_03.bmp"])
+        XCTAssertEqual(inventory.manualGroups, ["0010": 2])
+        XCTAssertEqual(inventory.manual, 2); XCTAssertEqual(inventory.quick, 1); XCTAssertTrue(inventory.hasContinue)
+    }
+
+    func testRecoveryUsesSteamSpellingSoUppercaseBackupsCannotBypassTheConflictGate() async throws {
+        let b = FakeBackend(), app: UInt32 = 1144400
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        await b.set(cloud: ["datasu.ksd": Array("current Steam".utf8)])
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: app, roots: roots, backups: backups)
+        let folder = Cloud.Backups.snapshotFolder(in: backups, appID: app, at: Date())
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("older backup".utf8).write(to: folder.appendingPathComponent("DATASU.KSD.steam"))
+        let point = try XCTUnwrap(Cloud.Backups.recoveryPoints(in: backups, appID: app).first)
+        let restored = try await s.restoreCloudBackup(appID: app, roots: roots, backups: backups, id: point.id)
+        XCTAssertEqual(restored.conflicts.map(\.name), ["datasu.ksd"])
+        let next = try await s.syncCloud(appID: app, roots: roots, backups: backups)
+        XCTAssertTrue(next.uploaded.isEmpty)
+        XCTAssertEqual(next.conflicts.map(\.name), ["datasu.ksd"])
+        let remote = await b.cloudFile("datasu.ksd")
+        XCTAssertEqual(remote, Array("current Steam".utf8))
+    }
+
+    func testFailedSteamRestoreKeepsItsDirectionAcrossAnOrdinaryRetry() async throws {
+        let b = FakeBackend(), name = "datasu.ksd"
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        await b.set(cloud: [name: Array("PC original".utf8)])
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        try Data("fresh phone progress".utf8).write(to: roots.file(name)!)
+        await b.replaceCloudDownload(Array("bad download".utf8))
+        let failed = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, restoreSteam: true)
+        XCTAssertNotNil(failed.failed[name])
+        await b.replaceCloudDownload(nil)
+        let retry = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        XCTAssertTrue(retry.uploaded.isEmpty)
+        XCTAssertEqual(retry.downloaded, [name])
+        XCTAssertEqual(text(roots.file(name)!), "PC original")
+        let remote = await b.cloudFile(name)
+        XCTAssertEqual(remote, Array("PC original".utf8))
+    }
+
+    func testRestoreMustPersistDirectionBeforeReplacingAnyFile() async throws {
+        let b = FakeBackend(), name = "datasu.ksd"
+        await b.set(cloud: [name: Array("PC".utf8)])
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        try Data("phone original".utf8).write(to: roots.file(name)!)
+        let record = dir.appendingPathComponent("state/steam-cloud/367520.json")
+        try FileManager.default.removeItem(at: record)
+        try FileManager.default.createDirectory(at: record, withIntermediateDirectories: false)
+        do {
+            _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, restoreSteam: true)
+            XCTFail("state write failure must stop restoration before changing any save")
+        } catch {}
+        XCTAssertEqual(text(roots.file(name)!), "phone original")
+    }
+
 }

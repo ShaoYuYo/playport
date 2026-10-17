@@ -182,6 +182,28 @@ public enum Cloud {
         return m(0, 0)
     }
 
+    /// Raw manual filename groups, without assuming their in-game page mapping.
+    public struct SaveInventory: Sendable, Equatable {
+        public var manualGroups: [String: Int] = [:]
+        public var quick = 0
+        public var hasContinue = false
+        public init(names: [String]) {
+            for name in Set(names.map { $0.lowercased() }) {
+                if name == "data_continue.bmp" { hasContinue = true }
+                else if name.range(of: #"^data_quick_[0-9]{2}\.bmp$"#, options: .regularExpression) != nil { quick += 1 }
+                else if name.range(of: #"^data_[0-9]{4}_[0-9]{2}\.bmp$"#, options: .regularExpression) != nil {
+                    manualGroups[String(name.dropFirst(5).prefix(4)), default: 0] += 1
+                }
+            }
+        }
+        public var manual: Int { manualGroups.values.reduce(0, +) }
+    }
+
+    static func recoverableSenrenName(_ name: String) -> Bool {
+        name.range(of: #"^(datas[cu]\.ksd|savecheck|data_(continue|quick_[0-9]{2}|[0-9]{4}_[0-9]{2})\.bmp)$"#,
+                   options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     // MARK: what to do
 
     /// A cloud file as Steam lists it.
@@ -269,7 +291,73 @@ extension Cloud {
             f.locale = Locale(identifier: "en_US_POSIX")
             f.timeZone = TimeZone(identifier: "UTC")
             f.dateFormat = "yyyy-MM-dd'T'HH-mm-ssXXXXX"
-            return f.date(from: name)
+            return f.date(from: String(name.split(separator: "_", maxSplits: 1).first ?? ""))
+        }
+
+        /// A unique directory per operation, including retries in one second.
+        public static func snapshotFolder(in root: URL, appID: UInt32, at date: Date) -> URL {
+            root.appendingPathComponent(String(appID), isDirectory: true)
+                .appendingPathComponent(folderName(for: date) + "_" + UUID().uuidString.lowercased(), isDirectory: true)
+        }
+
+        public struct RecoveryPoint: Sendable, Equatable, Identifiable {
+            public var id: String
+            public var at: Date
+            /// Previous Steam, previous phone, native, or remote backend copy.
+            public var source: String
+            public var names: [String]
+        }
+
+        static func regular(_ url: URL, directory: Bool = false) -> Bool {
+            (try? FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType)
+                == (directory ? .typeDirectory : .typeRegular)
+        }
+
+        /// Only fixed title save names and direct, non-linked children qualify.
+        /// Old backups may be partial: names are shown before choosing one.
+        public static func recoveryPoints(in root: URL, appID: UInt32) -> [RecoveryPoint] {
+            guard appID == 1144400 else { return [] }
+            let app = root.resolvingSymlinksInPath().appendingPathComponent(String(appID))
+            guard regular(app, directory: true) else { return [] }
+            let dirs = ((try? FileManager.default.contentsOfDirectory(at: app, includingPropertiesForKeys: nil)) ?? [])
+                .sorted { $0.lastPathComponent > $1.lastPathComponent }.prefix(256)
+            var points: [RecoveryPoint] = []
+            for dir in dirs where regular(dir, directory: true) {
+                guard let at = date(ofFolder: dir.lastPathComponent) else { continue }
+                let files = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+                    .filter { regular($0) }.prefix(256)
+                for source in ["steam", "previous", "game", "remote"] {
+                    let suffix = source == "previous" ? "" : "." + source
+                    let names = files.compactMap { file -> String? in
+                        let n = file.lastPathComponent
+                        guard suffix.isEmpty || n.hasSuffix(suffix) else { return nil }
+                        let name = suffix.isEmpty ? n : String(n.dropLast(suffix.count))
+                        return Cloud.recoverableSenrenName(name) ? name : nil
+                    }.sorted()
+                    if !names.isEmpty {
+                        points.append(RecoveryPoint(id: dir.lastPathComponent + "|" + source, at: at, source: source, names: names))
+                    }
+                }
+            }
+            return Array(points.prefix(128))
+        }
+
+        static func recoveryFiles(in root: URL, appID: UInt32, id: String) throws -> [String: Data] {
+            guard let point = recoveryPoints(in: root, appID: appID).first(where: { $0.id == id }),
+                  point.names.count <= 64, let folder = id.split(separator: "|", maxSplits: 1).first else {
+                throw SteamError.unsupported("save backup is unavailable")
+            }
+            let dir = root.resolvingSymlinksInPath().appendingPathComponent(String(appID)).appendingPathComponent(String(folder))
+            var result: [String: Data] = [:], total = 0
+            for name in point.names {
+                let file = dir.appendingPathComponent(name + (point.source == "previous" ? "" : "." + point.source))
+                guard regular(file), let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue,
+                      size <= 2 << 20, total + size <= 32 << 20 else { throw SteamError.unsupported("unsafe save backup") }
+                let data = try Data(contentsOf: file)
+                guard data.count == size else { throw SteamError.transport("save backup changed; retry") }
+                result[name] = data; total += size
+            }
+            return result
         }
 
         /// The sync folders under `root` older than `keep` at `now`. A folder

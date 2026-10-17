@@ -171,4 +171,21 @@ final class LaunchDiagnosticsTests: XCTestCase {
         XCTAssertTrue(LaunchDiagnostics.gameLogs(in: root).isEmpty)
         XCTAssertFalse(LaunchDiagnostics.inventory(in: root).contains("outside.log"))
     }
+    func testNativeEngineLogIsBoundedAndNeverIncludesOtherFilesOrLinks() throws {
+        let fm = FileManager.default, root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        let dir = root.appendingPathComponent("drive_c/users/playport/AppData/Roaming/YuzuSoft/SenrenBanka")
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let log = dir.appendingPathComponent("krkr.console.log")
+        try Data("synthetic engine exception".utf8).write(to: log)
+        try Data("private progress".utf8).write(to: dir.appendingPathComponent("datasu.ksd"))
+        XCTAssertEqual(LaunchDiagnostics.nativeGameLogs(prefix: root, steamAppID: 1144400), [log])
+        XCTAssertTrue(LaunchDiagnostics.nativeGameLogs(prefix: root, steamAppID: 1).isEmpty)
+        try Data(repeating: 1, count: (2 << 20) + 1).write(to: log)
+        XCTAssertTrue(LaunchDiagnostics.nativeGameLogs(prefix: root, steamAppID: 1144400).isEmpty)
+        try fm.removeItem(at: log)
+        try fm.createSymbolicLink(at: log, withDestinationURL: dir.appendingPathComponent("datasu.ksd"))
+        XCTAssertTrue(LaunchDiagnostics.nativeGameLogs(prefix: root, steamAppID: 1144400).isEmpty)
+    }
+
 }

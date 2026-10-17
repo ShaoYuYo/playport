@@ -52,6 +52,7 @@ enum LaunchCoordinator {
         var steamAppID: UInt32? = nil
         /// Which layer runs the game's Direct3D (LaunchSettings).
         var graphics: GraphicsBackend = .default
+        var frameLimit: Int = 60
         /// The game's Graphics options (LaunchSettings.graphicsEnvironment; dev builds only,
         /// decision 0060), over the backend's own environment.
         var graphicsEnvironment: [String: String] = [:]
@@ -331,8 +332,9 @@ enum LaunchCoordinator {
         let economy = UserDefaults.standard.object(forKey: TitleMemory.preferenceKey) as? Bool ?? true
         let titleMemory = TitleMemory(steamAppID: r.steamAppID, i386: machine == 0x14c, enabled: economy)
         let config = titleMemory.config(over: r.config)
-        args = titleMemory.arguments(over: args)
+        args = titleMemory.arguments(over: args, frameLimit: r.frameLimit)
         if titleMemory.active {
+            log("engine-pacing-v1: requested_hz=\(r.frameLimit) explicit_contfreq=preserved; runtime script overrides remain possible")
             log("memory-economy: profile=senren-v2 default_pool_mb=256 cpu_count=\(config["cpu-count"] ?? "default") engine_cache_default=normal graphics_cache_default_mb=64 explicit_arguments=preserved")
             if let root = r.steamAPI?.root,
                memory.effectiveMB.map({ $0 - memory.footprintMB >= 128 }) ?? false {
@@ -354,6 +356,7 @@ enum LaunchCoordinator {
             unsetenv("PLAYPORT_DLL_OVERLAY")
         }
         log("graphics: \(r.graphics.rawValue)")
+        log("graphics-metal-v1: " + r.graphics.metalTranslation)
 
         if config.isEmpty {
             // Undo an earlier launch's title config: this one reads the shared file.

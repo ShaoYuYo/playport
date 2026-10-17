@@ -90,4 +90,19 @@ final class RenderTouchTests: XCTestCase {
         XCTAssertEqual(next.maximumGapMS, 1000 / 30, accuracy: 0.001)
         XCTAssertEqual(next.presentationJitterMS, 0, accuracy: 0.001)
     }
+    func testSlowProducerAndDrawableBackpressureRemainSeparate() {
+        var h = FrameHealth()
+        for n in 0..<30 {
+            let t = Double(n) / 30
+            h.requested(at: t); h.drawable(at: t, wait: 0.001, succeeded: true); h.presented(at: t + 0.002)
+        }
+        let s = h.sample(at: 1)!
+        XCTAssertEqual(s.averageRequestGapMS, 1000 / 30, accuracy: 0.001)
+        XCTAssertEqual(s.averageDrawableWaitMS, 1, accuracy: 0.001)
+        h.requested(at: 0.5) // late instrumentation cannot rewind the request clock
+        h.requested(at: 1)
+        let next = h.sample(at: 2)!
+        XCTAssertEqual(next.averageRequestGapMS, 1000 / 30, accuracy: 0.001)
+    }
+
 }

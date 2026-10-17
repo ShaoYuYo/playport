@@ -60,7 +60,7 @@ struct GlassSidebar<Content: View>: View {
                                 .buttonStyle(.plain).background(.white.opacity(0.08), in: Circle())
                                 .accessibilityLabel("Close")
                         }
-                        content()
+                        GlassEffectContainer(spacing: 0) { content() }
                     }
                     .padding(18)
                     .padding(.leading, max(0, safe.insets.leading - 12))
@@ -94,7 +94,7 @@ struct GlassSidebarRow: View {
         Button(action: action) {
             GlassSidebarRowLabel(title: title, icon: icon, detail: detail, selected: selected, destructive: destructive)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GlassSidebarPressStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -106,6 +106,7 @@ struct GlassSidebarRowLabel: View {
     var detail: String? = nil
     var selected = false
     var destructive = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
             HStack(spacing: 12) {
@@ -116,9 +117,19 @@ struct GlassSidebarRowLabel: View {
             }
             .foregroundStyle(destructive ? Color(hex: 0xFF9A8A) : PP.text)
             .padding(.horizontal, 14).frame(minHeight: 48)
-            .background(selected ? PP.accent.opacity(0.2) : .white.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
-            .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(.white.opacity(selected ? 0.24 : 0.07), lineWidth: 0.5))
+            .ppGlass(cornerRadius: 13, tint: selected ? PP.accent.opacity(0.2) : nil)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: selected)
             .contentShape(RoundedRectangle(cornerRadius: 13))
+    }
+}
+
+private struct GlassSidebarPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }
 

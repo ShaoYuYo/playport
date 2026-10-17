@@ -44,6 +44,16 @@ struct GameDisplayView: View {
                     Text("保持遊戲原本比例，不拉伸畫面。遊戲可能使用固定解析度素材或自己的幀率上限；提高輸出解析度與上限不保證提高實際 FPS。若負載過高，改用較低解析度。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                if let sample = PacedMetalLayer.latestHealth {
+                    Section("開啟選單前的呈現紀錄") {
+                        LabeledContent("實際 FPS", value: String(format: "%.1f", sample.fps))
+                        LabeledContent("遊戲要求影格間隔", value: String(format: "%.1f ms", sample.averageRequestGapMS))
+                        LabeledContent("等待顯示影像", value: String(format: "%.1f ms", sample.averageDrawableWaitMS))
+                        LabeledContent("啟動器限幀等待", value: String(format: "%.1f ms", sample.averagePacerWaitMS))
+                        Text("這是遊戲暫停前最近一段紀錄；選單期間不計入遊戲 FPS。千戀萬花會在下次啟動時讓引擎更新節奏跟隨所選上限，遊戲腳本仍可自行限制更新。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 Section("聲音 · 保留原品質") {
                     LabeledContent("混音傳輸", value: "未壓縮 PCM · 32-bit float")
                     LabeledContent("裝置輸出", value: Self.audioDescription)

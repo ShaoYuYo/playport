@@ -24,13 +24,18 @@ public struct TitleMemory: Equatable, Sendable {
         return result
     }
 
-    public func arguments(over base: [String]) -> [String] {
+    public func arguments(over base: [String], frameLimit: Int? = nil) -> [String] {
         guard active else { return base }
         var result = base
         // The old low mode tells KiriKiri it has zero physical memory and
         // disables its segment/layer caches. Keep the bounded worker fleet,
         // but allow the engine's normal cache policy to reuse decoded scenes.
-        for (key, value) in [("memusage", "normal"), ("gclim", "64"), ("drawthread", "2")] {
+        var defaults = [("memusage", "normal"), ("gclim", "64"), ("drawthread", "2")]
+        // The actual title engine's continuous handler otherwise busy-spins
+        // when no script rate is set. Bound that work to the selected cadence;
+        // zero remains unlimited. Explicit player arguments still win.
+        if let frameLimit, frameLimit >= 0 { defaults.append(("contfreq", String(min(240, frameLimit)))) }
+        for (key, value) in defaults {
             let option = "-" + key
             if !base.contains(where: { $0.lowercased() == option || $0.lowercased().hasPrefix(option + "=") }) {
                 result.append(option + "=" + value)

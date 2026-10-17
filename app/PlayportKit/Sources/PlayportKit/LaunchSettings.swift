@@ -269,6 +269,82 @@ public enum GraphicsBackend: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    /// The actual translation route; Vulkan is a bridge to Metal on iOS.
+    public var metalTranslation: String {
+        switch self {
+        case .dxmt: "D3D10/11 -> DXMT -> Metal"
+        case .vulkan: "D3D8/9/10/11 -> DXVK -> Vulkan -> Metal; D3D12(64-bit) -> vkd3d-proton -> Vulkan -> Metal"
+        }
+    }
+
+    /// Required bundled pieces, not proof that every D3D feature is supported.
+    public var runtimeComponents: [String] {
+        guard self == .vulkan else { return [] }
+        return ["d3d8", "d3d9", "d3d10core", "d3d11", "dxgi", "d3d12", "d3d12core"]
+            .map { "vulkan/arm64ec-windows/" + $0 + ".dll" }
+            + ["vulkan/i386-windows/d3d9.dll", "Frameworks/KosmicKrisp.framework/KosmicKrisp"]
+    }
+
+    public func missingRuntimeComponents(in root: URL) -> [String] {
+        runtimeComponents.filter { path in
+            let url = root.appendingPathComponent(path)
+            guard let attr = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  attr[.type] as? FileAttributeType == .typeRegular,
+                  let size = (attr[.size] as? NSNumber)?.uint64Value, size > 0 else { return true }
+            guard path.hasSuffix(".dll") else { return false }
+            guard let file = try? FileHandle(forReadingFrom: url) else { return true }
+            defer { try? file.close() }
+            guard let header = try? file.read(upToCount: 64), header.count == 64,
+                  header[0] == 0x4d, header[1] == 0x5a else { return true }
+            let offset = header[60..<64].enumerated().reduce(UInt64(0)) { $0 | (UInt64($1.element) << (8 * $1.offset)) }
+            guard offset <= 1 << 20, offset + 6 <= size else { return true }
+            do { try file.seek(toOffset: offset) } catch { return true }
+            guard let pe = try? file.read(upToCount: 6), pe.count == 6, Array(pe.prefix(4)) == [0x50, 0x45, 0, 0] else { return true }
+            let machine = UInt16(pe[4]) | (UInt16(pe[5]) << 8)
+            if path.contains("/i386-windows/") { return machine != 0x14c }
+            // Final ARM64EC images use AMD64 + CHPE load-config metadata.
+            // A641 identifies intermediate COFF objects, not these DLLs.
+            return machine != 0x8664 || !Self.hasHybridMetadata(file, peOffset: offset, size: size)
+        }
+    }
+
+    private static func hasHybridMetadata(_ file: FileHandle, peOffset: UInt64, size: UInt64) -> Bool {
+        func read(_ offset: UInt64, _ count: Int) -> Data? {
+            guard offset <= size, UInt64(count) <= size - offset else { return nil }
+            do {
+                try file.seek(toOffset: offset)
+                guard let data = try file.read(upToCount: count), data.count == count else { return nil }
+                return data
+            } catch { return nil }
+        }
+        func word(_ data: Data, _ at: Int) -> UInt16 { UInt16(data[at]) | UInt16(data[at + 1]) << 8 }
+        func dword(_ data: Data, _ at: Int) -> UInt32 {
+            data[at..<(at + 4)].enumerated().reduce(0) { $0 | UInt32($1.element) << (8 * $1.offset) }
+        }
+        func qword(_ data: Data, _ at: Int) -> UInt64 {
+            data[at..<(at + 8)].enumerated().reduce(0) { $0 | UInt64($1.element) << (8 * $1.offset) }
+        }
+        guard let header = read(peOffset, 264), word(header, 24) == 0x20b,
+              word(header, 20) >= 200, dword(header, 132) > 10,
+              word(header, 6) > 0, word(header, 6) <= 96 else { return false }
+        let configRVA = UInt64(dword(header, 216)), configSize = dword(header, 220)
+        guard configRVA > 0, configSize >= 0xd0,
+              let sections = read(peOffset + 24 + UInt64(word(header, 20)), Int(word(header, 6)) * 40) else { return false }
+        func rawOffset(_ rva: UInt64, _ count: UInt64) -> UInt64? {
+            for i in 0..<Int(word(header, 6)) {
+                let at = i * 40, address = UInt64(dword(sections, at + 12)), rawSize = UInt64(dword(sections, at + 16))
+                guard rva >= address, rva - address <= rawSize, count <= rawSize - (rva - address) else { continue }
+                return UInt64(dword(sections, at + 20)) + rva - address
+            }
+            return nil
+        }
+        guard let offset = rawOffset(configRVA, 0xd0), let config = read(offset, 0xd0), dword(config, 0) >= 0xd0 else { return false }
+        let pointer = qword(config, 0xc8), imageBase = qword(header, 48)
+        guard pointer >= imageBase, pointer - imageBase < UInt64(dword(header, 80)),
+              let metadataOffset = rawOffset(pointer - imageBase, 4), let metadata = read(metadataOffset, 4) else { return false }
+        return (1...2).contains(dword(metadata, 0))
+    }
+
     /// Environment this backend's launches start with.
     ///
     /// None for DXMT. Vulkan turns DXVK's tiler mode off (decision 0066): on

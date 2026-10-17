@@ -751,18 +751,11 @@ private struct GameDetailPage: View {
                 }
             }
             if cloudOn, SteamAccountModel.cloudOn {
-                PadRow(id: "opt:cloud-sync-now", title: "立即同步 Steam 雲端", subtitle: cloudDetail(app),
-                       value: model.cloudSyncing.contains(app) ? "同步中…" : "同步／重試", accessory: .chevron,
-                       style: .plain) {
-                    guard !launch.running else { return }
-                    Task { await model.syncCloud(app) }
-                }
-                PadRow(id: "opt:cloud-restore-steam", title: "重新下載 Steam 存檔",
-                       subtitle: "以 Steam 目前版本重新放置；手機被取代的檔案會先備份。",
-                       value: model.cloudSyncing.contains(app) ? "同步中…" : "從 Steam 恢復", accessory: .chevron,
+                PadRow(id: "opt:cloud-manage", title: "管理 Steam 雲端存檔", subtitle: cloudDetail(app),
+                       value: model.cloudSyncing.contains(app) ? "同步中…" : "開啟", accessory: .chevron,
                        style: .plain) {
                     guard !launch.running, !model.cloudSyncing.contains(app) else { return }
-                    Task { await model.syncCloud(app, restoreSteam: true) }
+                    manageCloud(t, app)
                 }
             }
         }
@@ -890,13 +883,54 @@ private struct GameDetailPage: View {
         #endif
     }
 
+    private func manageCloud(_ title: InstalledTitle, _ app: UInt32) {
+        var options = [PadOption(id: "sync", label: "立即同步", detail: "檢查兩邊更新；有衝突時選擇版本。"),
+            PadOption(id: "steam", label: "重新下載 Steam 整組存檔", detail: "保留手機舊版備份，不上傳手機進度。")]
+        if app == 1144400 { options.append(PadOption(id: "backup", label: "復原先前備份", detail: "查看同步時保留的 Steam 與手機舊版。")) }
+        PadModal.shared.picker(title: "Steam 雲端存檔", context: title.name,
+            note: cloudDetail(app), options: options, selected: nil) { action in
+            switch action {
+            case "steam": Task { await model.syncCloud(app, restoreSteam: true) }
+            case "backup": chooseCloudBackup(title, app)
+            default: Task { await model.syncCloud(app) }
+            }
+        }
+    }
+
+    private func chooseCloudBackup(_ title: InstalledTitle, _ app: UInt32) {
+        Task {
+            let points = await Task.detached(priority: .utility) {
+                Cloud.Backups.recoveryPoints(in: LibraryModel.cloudBackups, appID: app)
+            }.value
+            let source = ["steam": "先前 Steam 版本", "previous": "先前手機版本", "game": "遊戲儲存區舊版", "remote": "Steam 儲存區舊版"]
+            PadModal.shared.picker(title: "復原先前備份", context: title.name,
+                note: points.isEmpty ? "目前沒有可恢復的舊版備份。" : "備份可能只含部分檔案。恢復後保留目前版本備份；請選「手機（已恢復備份）」才會將恢復的內容同步回 Steam。",
+                options: points.prefix(40).map { p in
+                    PadOption(id: p.id, label: p.at.formatted(date: .numeric, time: .standard) + " · " + (source[p.source] ?? "舊版"),
+                              detail: "\(p.names.count) 個檔案 · " + p.names.joined(separator: ", "))
+                }, selected: nil) { id in
+                    guard !launch.running else { return }
+                    Task {
+                        await model.restoreCloudBackup(app, id: id)
+                        if model.cloudErrors[app] == nil, let result = model.cloud[app], !result.conflicts.isEmpty {
+                            library.askCloud(title, app, result.conflicts, thenPlay: false)
+                        }
+                    }
+                }
+        }
+    }
+
     private func cloudDetail(_ app: UInt32) -> String? {
         if model.cloudSyncing.contains(app) { return "Syncing saves…" }
         if let e = model.cloudErrors[app] { return "Not synced: " + e }
         guard let c = model.cloud[app] else { return nil }
-        var s = (c.failed.isEmpty ? "Synced " : "Incomplete sync ") + c.at.formatted(date: .omitted, time: .shortened)
+        var s = (!c.failed.isEmpty ? "同步未完成 " : !c.conflicts.isEmpty ? "待選擇版本 " : "已核對存檔 ") + c.at.formatted(date: .omitted, time: .shortened)
         if !c.downloaded.isEmpty || !c.uploaded.isEmpty { s += " · \(c.downloaded.count) from Steam, \(c.uploaded.count) to Steam" }
         if !c.failed.isEmpty { s += " · \(c.failed.count) failed" }
+        if !c.conflicts.isEmpty { s += " · \(c.conflicts.count) 個檔案待選擇版本" }
+        if let inventory = c.inventory {
+            s += " · 手動 \(inventory.manual)／快速 \(inventory.quick)"
+        }
         return s
     }
 
@@ -1221,6 +1255,7 @@ enum ProblemReport {
     static func share(_ t: InstalledTitle) {
         let root = LibraryModel.paths.games.appendingPathComponent(t.installDir, isDirectory: true)
         let urls = files() + LaunchDiagnostics.gameLogs(in: root)
+            + LaunchDiagnostics.nativeGameLogs(prefix: WineHostRuntime.shared.prefixURL, steamAppID: t.appID)
         Task { @MainActor in
             let zip = await archive(urls, name: t.id, gameRoot: root, steamAppID: t.appID)
             LibraryModel.log("report a problem for \(t.id): sharing \(urls.map(\.lastPathComponent).joined(separator: ", "))"

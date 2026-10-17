@@ -114,6 +114,7 @@ final class InGameMenu: ObservableObject {
     /// Back to the game: its threads go on first, then its input and audio.
     func resume() {
         guard isOpen, !quitting else { return }
+        PacedMetalLayer.resetHealth()
         isOpen = false
         editingControls = false
         panel = nil

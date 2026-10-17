@@ -90,4 +90,42 @@ final class Direct3D12Tests: XCTestCase {
         XCTAssertEqual(LaunchSettings.resolve(game: LaunchSettings(graphics: .dxmt), global: global, i386: true).graphics, .dxmt)
         XCTAssertEqual(LaunchSettings.resolve(game: nil, global: LaunchSettings(graphics: .dxmt), i386: true).graphics, .dxmt)
     }
+    func testMetalTranslationRequiresRealArchitectureSpecificRuntimePieces() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let backend = GraphicsBackend.vulkan
+        XCTAssertEqual(backend.missingRuntimeComponents(in: root), backend.runtimeComponents)
+        for path in backend.runtimeComponents {
+            let file = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            var data = Data(repeating: 0, count: 1024)
+            func put(_ at: Int, _ value: UInt64, _ count: Int = 4) {
+                for i in 0..<count { data[at + i] = UInt8(truncatingIfNeeded: value >> (8 * i)) }
+            }
+            data[0] = 0x4d; data[1] = 0x5a; put(60, 64)
+            data.replaceSubrange(64..<68, with: [0x50, 0x45, 0, 0])
+            put(68, path.contains("/i386-windows/") ? 0x14c : 0x8664, 2)
+            put(70, 1, 2); put(84, 240, 2); put(88, 0x20b, 2)
+            put(112, 0x180000000, 8); put(144, 0x2000); put(196, 16)
+            put(280, 0x1000); put(284, 0xd0) // load config data directory
+            put(340, 0x1000); put(344, 512); put(348, 512) // section RVA/raw mapping
+            put(512, 0xd0); put(712, 0x180001100, 8); put(768, 2) // CHPE metadata
+            try data.write(to: file)
+        }
+        XCTAssertTrue(backend.missingRuntimeComponents(in: root).isEmpty)
+        if let bundle = ProcessInfo.processInfo.environment["PLAYPORT_TEST_RUNTIME"] {
+            XCTAssertTrue(backend.missingRuntimeComponents(in: URL(fileURLWithPath: bundle)).isEmpty,
+                          "exercise the exact packaged DLLs, not only synthetic PE headers")
+        }
+        let core = "vulkan/arm64ec-windows/d3d12core.dll"
+        var plain = try Data(contentsOf: root.appendingPathComponent(core))
+        plain.replaceSubrange(712..<720, with: repeatElement(UInt8(0), count: 8))
+        try plain.write(to: root.appendingPathComponent(core))
+        XCTAssertEqual(backend.missingRuntimeComponents(in: root), [core])
+        try Data().write(to: root.appendingPathComponent(core))
+        XCTAssertEqual(backend.missingRuntimeComponents(in: root), [core])
+        XCTAssertTrue(backend.metalTranslation.contains("vkd3d-proton -> Vulkan -> Metal"))
+        XCTAssertTrue(GraphicsBackend.dxmt.missingRuntimeComponents(in: root).isEmpty)
+    }
+
 }

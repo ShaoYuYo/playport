@@ -73,6 +73,7 @@ struct SettingsView: View {
 
     private var sidebar: some View {
         ScrollView(.vertical, showsIndicators: false) {
+        GlassEffectContainer(spacing: 0) {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(SettingsSection.shown, id: \.self) { s in
                 let on = navigation.settingsSection == s
@@ -84,6 +85,7 @@ struct SettingsView: View {
             }
         }
         .padding(8)
+        }
         }
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: navigation.settingsSection)
     }

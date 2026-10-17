@@ -98,18 +98,21 @@ struct CloudConflictView: View {
     var body: some View {
         ZStack {
             // The design's own screen, not a scrim: the page and its footer do not show through.
-            ZStack { PP.background; Color(hex: 0x1E2A3F).opacity(0.35) }.ignoresSafeArea()
+            Color.black.opacity(0.38).ignoresSafeArea()
             VStack(alignment: .leading, spacing: 14) {
-                Text("Which \(session.name) save do you want?").font(PP.display(24)).lineLimit(2)
-                Text("This phone and Steam Cloud both changed since the last sync. The one you don't pick is kept as a backup for 30 days.")
+                Text("選擇 \(session.name) 的存檔版本").font(PP.display(24)).lineLimit(2)
+                Text("兩邊的存檔版本不同。選 Steam Cloud 會恢復整組雲端檔案；被取代的內容會保留備份 30 天。")
                     .font(.system(size: 13)).foregroundStyle(PP.muted).lineSpacing(2).padding(.top, -6)
                     .fixedSize(horizontal: false, vertical: true)
-                if session.conflicts.contains(where: { $0.localCopiesDiffer == true }) {
-                    Text("手機的本機與 Steam 儲存區也有不同內容。「This phone」使用遊戲本機資料夾的版本；其他版本會先備份。若要載入電腦上的進度，請選 Steam Cloud。")
+                if recovered {
+                    Text("手機已放入所選備份。選「手機（已恢復備份）」才會將它同步回 Steam；選 Steam Cloud 會再次以現有雲端內容替換它。")
+                        .font(.system(size: 13)).foregroundStyle(PP.accent).fixedSize(horizontal: false, vertical: true)
+                } else if session.conflicts.contains(where: { $0.localCopiesDiffer == true }) {
+                    Text("手機的本機與 Steam 儲存區也有不同內容。「手機」使用遊戲本機資料夾的版本；其他版本會先備份。若要載入電腦上的進度，請選 Steam Cloud。")
                         .font(.system(size: 13)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 14) {
-                    card(.phone, heading: "This phone", time: session.sides.phone.newest, line: phoneLine, button: .a)
+                    card(.phone, heading: recovered ? "手機（已恢復備份）" : "手機", time: session.sides.phone.newest, line: phoneLine, button: .a)
                     card(.steam, heading: "Steam Cloud", time: session.sides.steam.newest, line: steamLine, button: .x)
                 }
                 if let e = session.error {
@@ -118,14 +121,13 @@ struct CloudConflictView: View {
             }
             .padding(.horizontal, 24).padding(.vertical, 22)
             .frame(width: 600)
-            .background(PP.surface, in: RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(PP.line))
+            .ppGlass(cornerRadius: 22, interactive: false)
             .padding(.bottom, 20)
             VStack {
                 Spacer()
                 HStack {
                     Spacer()
-                    PadModalHint(button: .b, label: session.thenPlay ? "Decide later (game won't start)" : "Decide later") {
+                    PadModalHint(button: .b, label: session.thenPlay ? "稍後再選（暫不啟動）" : "稍後再選") {
                         session.press(.b)
                     }
                 }
@@ -137,9 +139,12 @@ struct CloudConflictView: View {
         .accessibilityIdentifier("cloud-conflict")
     }
 
+    private var recovered: Bool { session.conflicts.contains { $0.recoveredBackup == true } }
+
     private var phoneLine: String {
         let s = session.sides.phone
         if s.files == 0 { return "No save on this phone" }
+        if recovered { return files(s) }
         return session.playSeconds.map { "Played \(PlayTime.format($0)) here" } ?? files(s)
     }
 
@@ -171,14 +176,14 @@ struct CloudConflictView: View {
                 Text(line).font(.system(size: 13)).foregroundStyle(PP.soft)
                 HStack(spacing: 6) {
                     PadGlyph(button: button)
-                    Text(busy ? "Settling with Steam…" : "Keep this one").font(.system(size: 13))
+                    Text(busy ? "正在同步…" : "使用這個版本").font(.system(size: 13))
                     if busy { ProgressView().scaleEffect(0.6).tint(PP.text) }
                 }
                 .padding(.top, 6)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .background(PP.raised, in: RoundedRectangle(cornerRadius: 14))
+            .ppGlass(cornerRadius: 14, tint: side == .phone ? PP.accent.opacity(0.12) : nil)
             .overlay {
                 if side == .phone {
                     RoundedRectangle(cornerRadius: 17).stroke(PP.accent, lineWidth: 3).padding(-3)

@@ -87,7 +87,7 @@ final class TitleLaunch: ObservableObject {
         // An Epic game's sign-in arguments stay out of the log (decision 0059).
         TitleMode.log("in-app start \(exe) \(EpicInstaller.redacted(args).joined(separator: " "))")
         let request = LaunchCoordinator.Request(exe: exe, args: args, config: config,
-                                                steamAppID: steamAppID, graphics: graphics,
+                                                steamAppID: steamAppID, graphics: graphics, frameLimit: TitleScreen.frameLimit,
                                                 graphicsEnvironment: graphicsEnvironment, fex: fex, jitWait: 180, steamAPI: steamAPI,
                                                 memory: memory, epic: epic, title: title, galaxy: galaxy)
         Thread.detachNewThread {

@@ -99,15 +99,15 @@ enum LaunchSettingsText {
     /// A backend's line in a picker.
     static func graphicsDetail(_ g: GraphicsBackend) -> String {
         switch g {
-        case .dxmt: "Direct3D 10 and 11 on Metal"
-        case .vulkan: "Direct3D 8 to 12, experimental"
+        case .dxmt: "Direct3D 10／11 直接轉譯至 Metal"
+        case .vulkan: "DXVK／64 位元 DX12 → Vulkan → Metal（實驗性）"
         }
     }
 
     static func graphics(_ g: GraphicsBackend) -> String {
         switch g {
-        case .dxmt: "DXMT"
-        case .vulkan: "Vulkan"
+        case .dxmt: "DXMT · Metal"
+        case .vulkan: "Vulkan · Metal"
         }
     }
 
@@ -129,9 +129,7 @@ enum LaunchSettingsText {
         return "Found references to \(detection.summary). This does not identify a dual-renderer game's active API."
     }
 
-    static let graphicsFooter = "DXMT runs Direct3D 10 and 11 on Metal. The default is Vulkan for 32-bit games and detected Direct3D 12 games, DXMT otherwise. "
-        + "Vulkan runs Direct3D 8 to 11 through DXVK and Direct3D 12 through vkd3d-proton, on Mesa's "
-        + "KosmicKrisp driver; it is experimental."
+    static let graphicsFooter = "所有繪圖路徑最後都使用 Metal。DXMT 支援 Direct3D 10／11；Vulkan 路徑以 DXVK 處理 Direct3D 8–11，64 位元 Direct3D 12 由 vkd3d-proton 經 Mesa 的 Vulkan 驅動轉成 Metal。32 位元遊戲預設使用 Vulkan；目前 32 位元原生 DXVK 元件為 Direct3D 9。DX12 與 Vulkan 路徑仍有遊戲相容性限制。"
 
     static func ordering(_ s: MemoryOrdering.Setting) -> String {
         switch s {

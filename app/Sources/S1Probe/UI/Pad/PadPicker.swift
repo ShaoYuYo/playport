@@ -71,23 +71,24 @@ struct PadPickerPanel: View {
     @ObservedObject var session: PadPickerSession
 
     var body: some View {
-        ZStack {
-            // The design's scrim; a tap on it goes back.
-            Color(hex: 0x05070A).opacity(0.72).ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture { session.press(.b) }
-            HStack(spacing: 0) {
-                VStack {
-                    Spacer()
-                    HStack(spacing: 18) {
-                        PadModalHint(button: .a, label: "Choose") { session.press(.a) }
-                        PadModalHint(button: .b, label: "Back") { session.press(.b) }
-                        Spacer(minLength: 0)
+        GeometryReader { geometry in
+            ZStack {
+                Color.black.opacity(0.38).ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { session.press(.b) }
+                HStack(spacing: 12) {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 12) {
+                            PadModalHint(button: .a, label: "Choose") { session.press(.a) }
+                            PadModalHint(button: .b, label: "Back") { session.press(.b) }
+                        }
+                        .padding(.bottom, 12)
                     }
-                    .padding(.leading, 36)
-                    .frame(height: 36)
+                    .frame(maxWidth: .infinity)
+                    panel.frame(width: min(430, max(0, geometry.size.width - 144)))
                 }
-                panel.frame(width: 410)
+                .padding(12)
             }
         }
         .accessibilityIdentifier("pad-picker")
@@ -126,29 +127,31 @@ struct PadPickerPanel: View {
         }
         .padding(.top, 18).padding(.leading, 20).padding(.trailing, 28)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(PP.surface.ignoresSafeArea())
-        .overlay(alignment: .leading) { Rectangle().fill(PP.line).frame(width: 1).ignoresSafeArea() }
+        .ppGlass(cornerRadius: 22, interactive: false)
     }
 
-    /// One choice: the cursor's row is filled light, the current value has its radio on.
+    /// Detail stays below its label so long save/graphics descriptions fit.
     private func row(_ o: PadOption, on: Bool) -> some View {
         let current = session.selected.contains(o.id)
         return HStack(spacing: 12) {
-            Circle()
-                .strokeBorder(on ? (current ? PP.background : Color(hex: 0x3A4452)) : (current ? PP.accent : Color(hex: 0x4A5667)),
-                              lineWidth: current ? 5 : 2)
+            Circle().strokeBorder(current ? PP.accent : PP.muted, lineWidth: current ? 5 : 2)
                 .frame(width: 16, height: 16)
-            Text(LocalizedStringKey(o.label)).font(.system(size: 15, weight: .medium))
-            Spacer(minLength: 8)
-            if let d = o.detail {
-                Text(LocalizedStringKey(d)).font(.system(size: 12)).foregroundStyle(on ? Color(hex: 0x3A4452) : PP.muted).lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(LocalizedStringKey(o.label)).font(.system(size: 15, weight: .semibold)).lineLimit(2)
+                if let detail = o.detail {
+                    Text(LocalizedStringKey(detail)).font(.system(size: 12)).foregroundStyle(PP.soft).lineLimit(3)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .foregroundStyle(on ? PP.background : PP.text)
-        .padding(.horizontal, 14)
-        .frame(height: 42)
-        .background(on ? PP.text : .clear, in: RoundedRectangle(cornerRadius: 10))
-        .contentShape(Rectangle())
+        .foregroundStyle(PP.text)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .frame(minHeight: 48)
+        .background(on ? PP.accent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(current ? .isSelected : [])
         .accessibilityIdentifier("option-\(o.id)")
     }
 }

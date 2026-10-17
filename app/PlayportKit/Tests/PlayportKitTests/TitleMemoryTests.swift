@@ -62,4 +62,19 @@ final class TitleMemoryTests: XCTestCase {
         XCTAssertEqual(profile.arguments(over: ["-memusage", "normal"]),
                        ["-memusage", "normal", "-gclim=64", "-drawthread=2"])
     }
+    func testEngineCadenceFollowsTheLaunchLimitWithoutOverridingExplicitArguments() {
+        let p = TitleMemory(steamAppID: 1144400, i386: true, enabled: true)
+        for fps in [0, 30, 60, 120] {
+            XCTAssertTrue(p.arguments(over: [], frameLimit: fps).contains("-contfreq=\(fps)"))
+        }
+        XCTAssertFalse(p.arguments(over: [], frameLimit: -1).contains { $0.hasPrefix("-contfreq") })
+        for explicit in [["-CONTFREQ=30"], ["-contfreq", "0"]] {
+            let args = p.arguments(over: explicit, frameLimit: 60)
+            XCTAssertEqual(Array(args.prefix(explicit.count)), explicit)
+            XCTAssertEqual(args.filter { $0.lowercased().hasPrefix("-contfreq") }.count, 1)
+        }
+        let other = TitleMemory(steamAppID: 1, i386: true, enabled: true)
+        XCTAssertEqual(other.arguments(over: [], frameLimit: 60), [])
+    }
+
 }

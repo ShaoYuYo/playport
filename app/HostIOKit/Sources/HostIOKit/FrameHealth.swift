@@ -16,6 +16,7 @@ public struct FrameHealth: Sendable {
         public let averagePresentationGapMS: Double
         public let presentationJitterMS: Double
         public let maximumRequestGapMS: Double
+        public let averageRequestGapMS: Double
     }
     private var start: Double?
     private var previous: Double?
@@ -23,6 +24,7 @@ public struct FrameHealth: Sendable {
     private var maxGap = 0.0, totalWait = 0.0, maxWait = 0.0
     private var totalPacerWait = 0.0, maxPacerWait = 0.0
     private var lastRequest: Double?, requestGap = 0.0
+    private var requestGaps = 0, requestTotal = 0.0
     private var gapCount = 0, gapMean = 0.0, gapM2 = 0.0
     public init() {}
 
@@ -30,7 +32,10 @@ public struct FrameHealth: Sendable {
     /// from time spent waiting for the frame limiter or the GPU surface.
     public mutating func requested(at time: Double) {
         if start == nil { start = time }
-        if let lastRequest, time >= lastRequest { requestGap = max(requestGap, time - lastRequest) }
+        if let lastRequest, time >= lastRequest {
+            let gap = time - lastRequest
+            requestGap = max(requestGap, gap); requestTotal += gap; requestGaps += 1
+        }
         lastRequest = max(time, lastRequest ?? time)
     }
 
@@ -68,12 +73,14 @@ public struct FrameHealth: Sendable {
             maximumPacerWaitMS: maxPacerWait * 1000,
             averagePresentationGapMS: gapMean * 1000,
             presentationJitterMS: gapCount > 0 ? (max(0, gapM2) / Double(gapCount)).squareRoot() * 1000 : 0,
-            maximumRequestGapMS: requestGap * 1000)
+            maximumRequestGapMS: requestGap * 1000,
+            averageRequestGapMS: requestGaps > 0 ? requestTotal * 1000 / Double(requestGaps) : 0)
         self.start = time
         frames = 0; gaps = 0; calls = 0; failures = 0
         maxGap = 0; totalWait = 0; maxWait = 0
         totalPacerWait = 0; maxPacerWait = 0
         gapCount = 0; gapMean = 0; gapM2 = 0; requestGap = 0
+        requestGaps = 0; requestTotal = 0
         return result
     }
 }

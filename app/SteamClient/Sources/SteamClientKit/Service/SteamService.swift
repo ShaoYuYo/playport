@@ -768,15 +768,17 @@ public actor SteamService {
         public var steamSize: UInt32?
         public var steamTime: Date?
         public var localCopiesDiffer: Bool?
+        public var recoveredBackup: Bool?
 
         public init(name: String, phoneSize: Int? = nil, phoneTime: Date? = nil, steamSize: UInt32? = nil, steamTime: Date? = nil,
-                    localCopiesDiffer: Bool? = nil) {
+                    localCopiesDiffer: Bool? = nil, recoveredBackup: Bool? = nil) {
             self.name = name
             self.phoneSize = phoneSize
             self.phoneTime = phoneTime
             self.steamSize = steamSize
             self.steamTime = steamTime
             self.localCopiesDiffer = localCopiesDiffer
+            self.recoveredBackup = recoveredBackup
         }
     }
 
@@ -798,6 +800,7 @@ public actor SteamService {
         /// Files this sync could not move (by name, why).
         public var failed: [String: String]
         public var at: Date
+        public var inventory: Cloud.SaveInventory? = nil
     }
 
     struct CloudRecord: Codable {
@@ -811,6 +814,8 @@ public actor SteamService {
         /// Steam's list before this sync transferred anything, distinct from
         /// the agreement baseline. Optional for records from older builds.
         var remoteSnapshot: [String: Cloud.Remote]?
+        /// A Steam choice survives failure/cancellation until its snapshot is verified.
+        var restoreSteamPending: Bool? = nil
     }
 
     /// Brings the game's cloud files on Steam and on the phone together
@@ -819,15 +824,28 @@ public actor SteamService {
     public func syncCloud(appID: UInt32, roots: Cloud.Roots, backups: URL, resolve: [String: CloudChoice] = [:],
                           restoreSteam: Bool = false) async throws -> CloudSync {
         try checkNotSuspended()
+        guard cloudInFlight.insert(appID).inserted else { throw SteamError.transport("save operation already in progress") }
+        defer { cloudInFlight.remove(appID) }
         if case .signedIn = state {} else { await restoreIfPossible() }
         guard case .signedIn = state, let stored = try await backend.storedSession() else { throw SteamError.notLoggedOn }
         let account = Account(stored: stored).accountTag
+        let kept = loadCloud(appID).flatMap { $0.accountTag == account ? $0 : nil }
+        let baseline = kept?.baseline
+        let mirrorEstablished = kept?.nativeMirrorVersion == 1
+        let phoneChoice = resolve.values.contains(.phone)
+        let steamChoice = !resolve.isEmpty && resolve.values.allSatisfy { $0 == .steam }
+        let steamSnapshot = restoreSteam || (!phoneChoice && (kept?.restoreSteamPending == true || steamChoice))
+        // Persist the direction before any remote request or file replacement.
+        // A failed download must never become an ordinary upload on retry.
+        if steamSnapshot || (phoneChoice && kept?.restoreSteamPending == true) {
+            var intent = kept ?? CloudRecord(accountTag: account,
+                baseline: Cloud.Baseline(changeNumber: 0, files: [:]), conflicts: [], at: now())
+            intent.restoreSteamPending = steamSnapshot ? true : nil
+            guard saveCloud(appID, intent) else { throw SteamError.transport("cannot keep Steam restore direction") }
+        }
         let rules = (try await backend.appRecords([appID])[appID]).map(Cloud.rules) ?? []
         let changes = try await backend.cloudChangelist(appID: appID)
         let remote = changes.remote
-        let kept = loadCloud(appID)
-        let baseline = kept?.accountTag == account ? kept?.baseline : nil
-        let mirrorEstablished = kept?.accountTag == account && kept?.nativeMirrorVersion == 1
         // Each local file under the name Steam has for it, else the last sync's (Cloud.named).
         var files = Cloud.named(Cloud.localFiles(rules: rules, roots: roots, steamID: stored.steamID),
                                 like: remote.keys.sorted() + (baseline?.files.keys.sorted() ?? []))
@@ -864,13 +882,19 @@ public actor SteamService {
             if choice == .steam, remote[name] == nil { plan[name] = nil; settled[name] = local[name]; continue }
             plan[name] = choice == .phone ? .upload : .download
         }
-        // Explicit repair ignores a stale agreement and re-fetches Steam's bytes.
-        // Local-only progress stays on the phone; this operation never uploads.
-        if restoreSteam {
+        // The conflict screen chooses one side for the game. A Steam choice
+        // must not upload other locally changed system files from that same
+        // save set: doing so mixes old slots with fresh progress on the cloud.
+        if steamSnapshot {
             plan = remote.mapValues { _ in .download }
-            guard !remote.isEmpty else { throw SteamError.notFound("Steam Cloud has no saves to restore") }
+            // An explicit choice of an empty Steam side keeps phone-only files
+            // local. A repair/retry with no snapshot must remain unsuccessful.
+            if remote.isEmpty && (restoreSteam || !steamChoice) {
+                throw SteamError.notFound("Steam Cloud has no saves to restore")
+            }
+            for (name, sha) in local where remote[name] == nil { settled[name] = sha }
         }
-        let backupDir = backups.appendingPathComponent("\(appID)/\(Cloud.Backups.folderName(for: now()))", isDirectory: true)
+        let backupDir = Cloud.Backups.snapshotFolder(in: backups, appID: appID, at: now())
         func backup(_ name: String, _ data: Data) throws {
             let url = backupDir.appendingPathComponent(name.replacingOccurrences(of: "%", with: "").replacingOccurrences(of: "/", with: "_"))
             try FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
@@ -923,7 +947,7 @@ public actor SteamService {
         // local copy with a distinct suffix; one backend cannot erase the other
         // merely because Steam's bytes already matched one of them.
         var mirrored = 0
-        for name in local.keys.sorted() where (!restoreSteam || downloaded.contains(name))
+        for name in local.keys.sorted() where (!steamSnapshot || downloaded.contains(name))
             && roots.gameSaveMirror != nil && Cloud.isMirroredSave(name)
             && !name.contains("/") && !name.contains("\\") && plan[name] != .conflict && failed[name] == nil {
             do {
@@ -972,19 +996,26 @@ public actor SteamService {
         for (name, sha) in settled { next[name] = sha }
         let conflicts = plan.filter { $0.value == .conflict }.keys.sorted().map { name -> CloudConflict in
             let attrs = files[name].flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path) }
-            return CloudConflict(name: name, phoneSize: (attrs?[.size] as? NSNumber)?.intValue, phoneTime: attrs?[.modificationDate] as? Date,
+            let recovered = kept?.conflicts.first { $0.name == name && $0.recoveredBackup == true }
+            return CloudConflict(name: name, phoneSize: (attrs?[.size] as? NSNumber)?.intValue,
+                                 phoneTime: recovered?.phoneTime ?? attrs?[.modificationDate] as? Date,
                                  steamSize: remote[name]?.size,
                                  steamTime: remote[name].map { Date(timeIntervalSince1970: TimeInterval($0.time)) },
-                                 localCopiesDiffer: localDivergence.contains(name) ? true : nil)
+                                 localCopiesDiffer: localDivergence.contains(name) ? true : nil,
+                                 recoveredBackup: recovered?.recoveredBackup)
         }
         let at = now()
         let mirrorVersion = roots.gameSaveMirror != nil && failed.isEmpty && conflicts.isEmpty ? 1
             : (mirrorEstablished ? 1 : nil)
-        saveCloud(appID, CloudRecord(accountTag: account, baseline: Cloud.Baseline(changeNumber: changes.currentChangeNumber, files: next),
-                                     conflicts: conflicts, at: at, nativeMirrorVersion: mirrorVersion, remoteSnapshot: remote))
+        if !saveCloud(appID, CloudRecord(accountTag: account, baseline: Cloud.Baseline(changeNumber: changes.currentChangeNumber, files: next),
+                                         conflicts: conflicts, at: at, nativeMirrorVersion: mirrorVersion, remoteSnapshot: remote,
+                                         restoreSteamPending: steamSnapshot && !failed.isEmpty ? true : nil)) {
+            failed["<sync-state>"] = "cannot keep verified save state; retry sync"
+        }
         log.info("cloud", "app \(appID): \(remote.count) on Steam, \(local.count) on the phone; \(downloaded.count) down, "
                  + "\(uploaded.count) up, \(conflicts.count) conflict(s), \(mirrored) local save placement(s)" + (failed.isEmpty ? "" : ", \(failed.count) failed"))
-        return CloudSync(downloaded: downloaded, uploaded: uploaded, conflicts: conflicts, failed: failed, at: at)
+        return CloudSync(downloaded: downloaded, uploaded: uploaded, conflicts: conflicts, failed: failed, at: at,
+                         inventory: appID == 1144400 ? Cloud.SaveInventory(names: local.keys.filter { failed[$0] == nil && plan[$0] != .conflict }) : nil)
     }
 
     /// Fixed Senren save metadata for an exported report. No network request,
@@ -1020,6 +1051,56 @@ public actor SteamService {
         return result
     }
 
+    /// Restores only the selected partial backup's listed files. Steam is
+    /// untouched; a persisted conflict requires an explicit side choice before
+    /// these bytes can be uploaded. Every current local version is kept first.
+    public func restoreCloudBackup(appID: UInt32, roots: Cloud.Roots, backups: URL, id: String) async throws -> CloudSync {
+        try checkNotSuspended()
+        guard cloudInFlight.insert(appID).inserted else { throw SteamError.transport("save operation already in progress") }
+        defer { cloudInFlight.remove(appID) }
+        guard let stored = try await backend.storedSession() else { throw SteamError.notLoggedOn }
+        let account = Account(stored: stored).accountTag
+        guard var record = loadCloud(appID), record.accountTag == account else { throw SteamError.notLoggedOn }
+        let recoveryTime = Cloud.Backups.recoveryPoints(in: backups, appID: appID).first { $0.id == id }?.at ?? now()
+        let recovered = try Cloud.Backups.recoveryFiles(in: backups, appID: appID, id: id)
+        var contents: [String: Data] = [:]
+        let spelling = (record.remoteSnapshot?.keys.sorted() ?? []) + record.baseline.files.keys.sorted()
+        for (name, data) in recovered {
+            let canonical = spelling.first { $0.lowercased() == name.lowercased() } ?? name.lowercased()
+            if let other = contents[canonical], other != data { throw SteamError.unsupported("backup has ambiguous save names") }
+            contents[canonical] = data
+        }
+        guard !contents.isEmpty else { throw SteamError.notFound("no recoverable save files") }
+        let kept = Cloud.Backups.snapshotFolder(in: backups, appID: appID, at: now())
+        var targets: [(String, URL, Data)] = []
+        for (name, bytes) in contents.sorted(by: { $0.key < $1.key }) {
+            guard let remote = roots.file(name), let native = roots.mirrorFile(name) else { throw SteamError.unsupported("unsafe save placement") }
+            for (tag, url) in [("remote", remote), ("game", native)] {
+                if let previous = try? Data(contentsOf: url) {
+                    try FileManager.default.createDirectory(at: kept, withIntermediateDirectories: true)
+                    try previous.write(to: kept.appendingPathComponent(name + "." + tag), options: .atomic)
+                }
+                targets.append((name, url, bytes))
+            }
+        }
+        // Record conflicts before changing any save: even a kill partway must
+        // never turn the restored progress into an automatic cloud upload.
+        let names = Set(contents.keys)
+        record.conflicts.removeAll { names.contains($0.name) }
+        record.conflicts += contents.keys.sorted().map { CloudConflict(name: $0, phoneSize: contents[$0]?.count,
+            phoneTime: recoveryTime, steamSize: record.remoteSnapshot?[$0]?.size,
+            steamTime: record.remoteSnapshot?[$0].map { Date(timeIntervalSince1970: Double($0.time)) }, recoveredBackup: true) }
+        record.at = now()
+        record.restoreSteamPending = nil
+        guard saveCloud(appID, record) else { throw SteamError.transport("cannot keep backup recovery state") }
+        for (_, url, bytes) in targets {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try bytes.write(to: url, options: .atomic)
+            guard try Data(contentsOf: url) == bytes else { throw SteamError.verificationFailed("restored save readback failed") }
+        }
+        return CloudSync(downloaded: [], uploaded: [], conflicts: record.conflicts, failed: [:], at: record.at)
+    }
+
     /// The conflicts and time of the last sync, for the paired account.
     public func keptCloud(appID: UInt32) async -> (conflicts: [CloudConflict], at: Date)? {
         guard let stored = try? await backend.storedSession(), let r = loadCloud(appID),
@@ -1038,6 +1119,7 @@ public actor SteamService {
 
     private var cloudURL: URL? { stateDirectory?.appendingPathComponent(Self.cloudDirectory, isDirectory: true) }
     private var memoryCloud: [UInt32: CloudRecord] = [:]
+    private var cloudInFlight = Set<UInt32>()
 
     private func loadCloud(_ appID: UInt32) -> CloudRecord? {
         guard let dir = cloudURL else { return memoryCloud[appID] }
@@ -1045,13 +1127,16 @@ public actor SteamService {
         return try? JSONDecoder().decode(CloudRecord.self, from: data)
     }
 
-    private func saveCloud(_ appID: UInt32, _ r: CloudRecord) {
-        guard let dir = cloudURL else { memoryCloud[appID] = r; return }
+    @discardableResult
+    private func saveCloud(_ appID: UInt32, _ r: CloudRecord) -> Bool {
+        guard let dir = cloudURL else { memoryCloud[appID] = r; return true }
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try JSONEncoder().encode(r).write(to: dir.appendingPathComponent("\(appID).json"), options: .atomic)
+            return true
         } catch {
             log.warn("cloud", "cannot keep app \(appID)'s cloud state: \(error)")
+            return false
         }
     }
 

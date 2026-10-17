@@ -128,11 +128,10 @@ enum Manifest {
 
     /// Whether this build carries a graphics backend: DXMT always, another
     /// only when its builtins were staged under the runtime (GraphicsBackend.runtimeOverlay).
+    private static let backends = GraphicsBackend.allCases.map { graphics in
+        (graphics, graphics.runtimeOverlay == nil || runtime.map { graphics.missingRuntimeComponents(in: $0).isEmpty } == true)
+    }
     static func has(_ graphics: GraphicsBackend) -> Bool {
-        guard let overlay = graphics.runtimeOverlay else { return true }
-        guard let runtime else { return false }
-        var dir: ObjCBool = false
-        return FileManager.default.fileExists(atPath: runtime.appendingPathComponent(overlay).path, isDirectory: &dir)
-            && dir.boolValue
+        backends.first { $0.0 == graphics }?.1 ?? false
     }
 }
