@@ -66,6 +66,9 @@ public enum SteamAPISwap {
         public init(appID: UInt32, personaName: String? = nil, steamID: UInt64? = nil, language: String = "english",
                     dlc: [SteamGameProfile.DLC] = [], files: [String: Data] = [:]) {
             self.appID = appID
+            // Also applies to the app-ID-only fallback when profile loading
+            // times out. Cloud and the game must use the same storage root.
+            self.saveRoot = appID == 1144400 ? #"C:\users\playport\AppData\Roaming\GSE Saves"# : nil
             self.personaName = personaName
             self.steamID = steamID
             self.language = language
@@ -75,6 +78,12 @@ public enum SteamAPISwap {
 
         public init(_ p: SteamGameProfile) {
             self.init(appID: p.appID, personaName: p.personaName, steamID: p.steamID, language: p.language, dlc: p.dlc)
+        }
+
+        /// The emulator gives this existing variable precedence over persisted
+        /// INIs. Pass it in the guest launch block as well as writing the INI.
+        public var launchEnvironment: [String: String] {
+            saveRoot.map { ["GseSavePath": $0] } ?? [:]
         }
     }
 

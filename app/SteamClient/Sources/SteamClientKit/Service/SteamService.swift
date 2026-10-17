@@ -879,7 +879,7 @@ public actor SteamService {
         var downloaded: [String] = [], uploaded: [String] = [], failed: [String: String] = [:]
         for name in plan.filter({ $0.value == .download }).keys.sorted() {
             do {
-                guard let url = files[name] ?? roots.file(name) else { throw SteamError.unsupported("no local root for \(name)") }
+                guard let url = roots.file(name) else { throw SteamError.unsupported("no local root for \(name)") }
                 let data = try await backend.cloudDownload(appID: appID, name: name)
                 guard SHA1.hash(data).hex == remote[name]?.sha else {
                     throw SteamError.transport("Steam Cloud changed during download; retry sync")
@@ -891,6 +891,7 @@ public actor SteamService {
                     try? FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: TimeInterval(t))], ofItemAtPath: url.path)
                 }
                 local[name] = SHA1.hash(data).hex
+                files[name] = url
                 downloaded.append(name)
             } catch {
                 failed[name] = "\(error)"
@@ -941,6 +942,27 @@ public actor SteamService {
                 }
             } catch { failed[name] = "local save placement failed: \(error)" }
         }
+        // A completed write is not sufficient evidence that the game-facing
+        // paths still contain those bytes. Read back every settled placement
+        // before recording agreement or allowing the launch to proceed.
+        let transferred = Set(downloaded + uploaded)
+        for name in local.keys.sorted() where plan[name] != .conflict && failed[name] == nil {
+            var targets: [URL] = []
+            if transferred.contains(name), let source = files[name] { targets.append(source) }
+            if roots.gameSaveMirror != nil && Cloud.isMirroredSave(name)
+                && !name.contains("/") && !name.contains("\\") {
+                guard let canonical = roots.file(name), let mirror = roots.mirrorFile(name) else {
+                    failed[name] = "save placement could not be verified"; continue
+                }
+                targets += [canonical, mirror]
+            }
+            for target in Set(targets) {
+                guard let bytes = try? Data(contentsOf: target), SHA1.hash(Array(bytes)).hex == local[name] else {
+                    failed[name] = "save changed after transfer; retry sync before launching"
+                    break
+                }
+            }
+        }
         // The new baseline: every file both sides now agree on.
         var next = baseline?.files ?? [:]
         for name in Set(remote.keys).union(local.keys) {
@@ -983,7 +1005,7 @@ public actor SteamService {
             guard let attr = try? FileManager.default.attributesOfItem(atPath: url.path) else { return "missing" }
             guard attr[.type] as? FileAttributeType == .typeRegular,
                   let size = (attr[.size] as? NSNumber)?.intValue, size <= 2 << 20,
-                  bytes + size <= 8 << 20, let data = try? Data(contentsOf: url) else { return "omitted" }
+                  bytes + size <= 32 << 20, let data = try? Data(contentsOf: url) else { return "omitted" }
             bytes += data.count
             return SHA1.hash(Array(data)).hex == expected ? "matches" : "differs"
         }

@@ -162,6 +162,8 @@ actor FakeBackend: SteamBackend {
     var cloud: [String: (data: [UInt8], time: UInt64)] = [:]
     var cloudChange: UInt64 = 1
     var cloudDownloadReplacement: [UInt8]?
+    var cloudDownloadAction: (@Sendable (String) -> Void)?
+    func onCloudDownload(_ action: (@Sendable (String) -> Void)?) { cloudDownloadAction = action }
     func replaceCloudDownload(_ value: [UInt8]?) { cloudDownloadReplacement = value }
     func cloudFile(_ name: String) -> [UInt8]? { cloud[name]?.data }
     func set(cloud c: [String: [UInt8]]) { cloud = c.mapValues { ($0, 1_700_000_000) }; cloudChange += 1 }
@@ -178,6 +180,7 @@ actor FakeBackend: SteamBackend {
     }
     func cloudDownload(appID: UInt32, name: String) async throws -> [UInt8] {
         calls.append("download \(name)")
+        cloudDownloadAction?(name)
         guard let f = cloud[name] else { throw SteamError.notFound(name) }
         return cloudDownloadReplacement ?? f.data
     }

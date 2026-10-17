@@ -27,7 +27,7 @@ public enum LaunchDiagnostics {
                 guard let attr = try? fm.attributesOfItem(atPath: url.path),
                       attr[.type] as? FileAttributeType == .typeRegular,
                       let size = (attr[.size] as? NSNumber)?.intValue, size <= 2 << 20,
-                      total + size <= 8 << 20, count < 64, let data = try? Data(contentsOf: url) else { continue }
+                      total + size <= 32 << 20, count < 64, let data = try? Data(contentsOf: url) else { continue }
                 let safe = n.replacingOccurrences(of: "\n", with: "_").replacingOccurrences(of: "\t", with: "_")
                 report += "\(tag)/\(safe)\t\(data.count)\t\(SHA256Stream.hash(Array(data)).hex)\n"
                 count += 1; total += data.count
@@ -47,7 +47,44 @@ public enum LaunchDiagnostics {
             }
             report += "emulator-site-\(index): save-root=\(state)\n"
         }
+        report += engineTimingOptions(gameRoot: gameRoot, native: locations[1].1)
         return report
+    }
+
+    /// Only bounded scalar engine options, including KiriKiri's escaped ASCII
+    /// strings. Never include arbitrary config lines, paths or account values.
+    private static func engineTimingOptions(gameRoot: URL, native: URL) -> String {
+        var result = "Engine options (stored configuration; runtime scripts may override):\n"
+        let keys = ["contfreq", "vsync", "waitvsync", "timerprec", "drawthread", "memusage", "gclim"]
+        let fm = FileManager.default
+        for (tag, base, name) in [("game", gameRoot.resolvingSymlinksInPath(), "senrenbanka.cf"),
+                                   ("native", native, "senrenbanka.cfu")] {
+            let names = (try? fm.contentsOfDirectory(atPath: base.path)) ?? []
+            guard let spelling = names.first(where: { $0.lowercased() == name }) else { continue }
+            let url = base.appendingPathComponent(spelling)
+            guard url.resolvingSymlinksInPath().standardizedFileURL == url.standardizedFileURL,
+                  let attr = try? fm.attributesOfItem(atPath: url.path), attr[.type] as? FileAttributeType == .typeRegular,
+                  (attr[.size] as? NSNumber)?.intValue ?? Int.max <= 16 << 10,
+                  let data = try? Data(contentsOf: url),
+                  let text = String(data: data, encoding: data.starts(with: [0xff, 0xfe]) || data.starts(with: [0xfe, 0xff]) ? .utf16 : .utf8) else { continue }
+            for line in text.split(whereSeparator: \.isNewline) {
+                let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                guard parts.count == 2, keys.contains(parts[0].lowercased()) else { continue }
+                var value = parts[1].trimmingCharacters(in: CharacterSet(charactersIn: "\"; "))
+                guard value.count <= 64 else { continue }
+                let escapes = try! NSRegularExpression(pattern: #"\\x([0-9a-fA-F]{2,4})"#)
+                for match in escapes.matches(in: value, range: NSRange(value.startIndex..., in: value)).reversed() {
+                    let raw = (value as NSString).substring(with: match.range(at: 1))
+                    guard let code = UInt32(raw, radix: 16), code < 128, let scalar = UnicodeScalar(code),
+                          let range = Range(match.range, in: value) else { continue }
+                    value.replaceSubrange(range, with: String(scalar))
+                }
+                guard !value.isEmpty, value.count <= 16,
+                      value.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) }) else { continue }
+                result += "\(tag)/\(parts[0].lowercased())=\(value)\n"
+            }
+        }
+        return result
     }
 
     /// Fixed, public file names only. Hashes let a report establish the exact

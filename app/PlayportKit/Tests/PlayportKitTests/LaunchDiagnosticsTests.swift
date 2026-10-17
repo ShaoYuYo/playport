@@ -4,6 +4,31 @@ import XCTest
 @testable import PlayportKit
 
 final class LaunchDiagnosticsTests: XCTestCase {
+    func testSaveAuditCoversBothBackendsWhenSlotsExceedTheOldEightMiBBudget() throws {
+        let fm = FileManager.default, root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        let roaming = root.appendingPathComponent("drive_c/users/playport/AppData/Roaming")
+        let dirs = [roaming.appendingPathComponent("GSE Saves/1144400/remote"), roaming.appendingPathComponent("YuzuSoft/SenrenBanka")]
+        let slot = Data(repeating: 0x71, count: 210_000)
+        for dir in dirs {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            for n in 0..<22 { try slot.write(to: dir.appendingPathComponent(String(format: "data_%04d.bmp", n))) }
+        }
+        let report = LaunchDiagnostics.senrenSaveState(prefix: root, gameRoot: root)
+        XCTAssertTrue(report.contains("native/data_0021.bmp\t210000\t"))
+        XCTAssertTrue(report.contains("steam: 22 file(s) audited")); XCTAssertTrue(report.contains("native: 22 file(s) audited"))
+    }
+    func testEngineTimingAuditDecodesOnlyAllowedScalarOptions() throws {
+        let fm = FileManager.default, root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        let native = root.appendingPathComponent("drive_c/users/playport/AppData/Roaming/YuzuSoft/SenrenBanka")
+        try fm.createDirectory(at: native, withIntermediateDirectories: true)
+        let config = #"contfreq="\x33\x30""# + "\n" + #"timerprec="high""# + "\n" + #"account="private secret""# + "\n" + #"vsync="C:\private""#
+        try config.data(using: .utf16)!.write(to: native.appendingPathComponent("SenrenBanka.cfu"))
+        let report = LaunchDiagnostics.senrenSaveState(prefix: root, gameRoot: root)
+        XCTAssertTrue(report.contains("native/contfreq=30\n")); XCTAssertTrue(report.contains("native/timerprec=high\n"))
+        XCTAssertFalse(report.contains("private")); XCTAssertFalse(report.contains("account=")); XCTAssertFalse(report.contains(root.path))
+    }
     func testSaveAuditShowsBackendMismatchWithoutContentsOrCredentials() throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)

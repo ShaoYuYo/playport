@@ -263,7 +263,6 @@ final class LibraryModel: ObservableObject {
                                            // display alias, never the signed-in Steam account.
                                            value.personaName = WindowsLocale.compatiblePersona(
                                                steamAppID: app, original: value.personaName)
-                                           if app == 1144400 { value.saveRoot = #"C:\users\playport\AppData\Roaming\GSE Saves"# }
                                            return value
                                        },
                                        ticket: ticket, tickets: tickets)

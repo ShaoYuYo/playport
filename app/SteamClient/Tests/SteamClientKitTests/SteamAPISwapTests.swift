@@ -78,6 +78,15 @@ final class SteamAPISwapTests: XCTestCase {
         XCTAssertFalse(user.contains("ticket="))
     }
 
+    func testTitleSaveRootAppliesToFallbackAndAuthoritativeGuestEnvironment() {
+        let fallback = SteamAPISwap.Settings(appID: 1144400)
+        let root = #"C:\users\playport\AppData\Roaming\GSE Saves"#
+        XCTAssertEqual(fallback.saveRoot, root)
+        XCTAssertEqual(fallback.launchEnvironment, ["GseSavePath": root])
+        XCTAssertTrue(SteamAPISwap.settingsFiles(fallback)["configs.user.ini"]!.contains("local_save_path=" + root))
+        XCTAssertTrue(SteamAPISwap.Settings(appID: 9).launchEnvironment.isEmpty)
+    }
+
     func testApplyIsIdempotentAndRefreshesSettings() throws {
         try SteamAPISwap.apply(in: root, emulator: emulator, settings: settings)
         var other = settings

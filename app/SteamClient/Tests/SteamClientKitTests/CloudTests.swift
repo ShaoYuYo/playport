@@ -530,4 +530,46 @@ final class CloudServiceTests: XCTestCase {
         let report = await s.cloudSaveEvidence(appID: 367520, roots: roots)
         XCTAssertTrue(report.contains("snapshot: unavailable"))
     }
+
+    func testForcedRestoreReplacesExistingSystemAndSlotFilesInBothBackends() async throws {
+        let b = FakeBackend()
+        let saved = ["datasu.ksd": "Steam system", "data_0010_01.bmp": "Steam slot", "savecheck": "Steam check"]
+        await b.set(cloud: saved.mapValues { Array($0.utf8) })
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        try FileManager.default.createDirectory(at: roots.remote, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: roots.gameSaveMirror!, withIntermediateDirectories: true)
+        for name in saved.keys {
+            try Data("old remote".utf8).write(to: roots.file(name)!)
+            try Data("old native".utf8).write(to: roots.mirrorFile(name)!)
+        }
+        let s = try await service(b)
+        let r = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, restoreSteam: true)
+        XCTAssertTrue(r.failed.isEmpty); XCTAssertTrue(r.uploaded.isEmpty)
+        for (name, expected) in saved {
+            XCTAssertEqual(text(roots.file(name)!), expected)
+            XCTAssertEqual(text(roots.mirrorFile(name)!), expected)
+        }
+        let kept = TitleInstaller.regularFiles(under: backups).compactMap { text(backups.appendingPathComponent($0)) }
+        XCTAssertTrue(kept.contains("old remote")); XCTAssertTrue(kept.contains("old native"))
+    }
+
+    func testRestoreRefusesAgreementWhenAnotherWriterChangesDownloadedBytes() async throws {
+        let b = FakeBackend(), name = "datasu.ksd"
+        await b.set(cloud: [name: Array("Steam progress".utf8), "savecheck": Array("check".utf8)])
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        let source = roots.file(name)!
+        await b.onCloudDownload { file in
+            if file == "savecheck" { try? Data("interference".utf8).write(to: source) }
+        }
+        let s = try await service(b)
+        let broken = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, restoreSteam: true)
+        XCTAssertNotNil(broken.failed[name], "a successful write must not establish a false agreement")
+        let audit = await s.cloudSaveEvidence(appID: 367520, roots: roots)
+        XCTAssertTrue(audit.contains("agreed-sha1=absent"))
+        await b.onCloudDownload(nil)
+        let retry = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, restoreSteam: true)
+        XCTAssertTrue(retry.failed.isEmpty)
+        XCTAssertEqual(text(source), "Steam progress")
+        XCTAssertEqual(text(roots.mirrorFile(name)!), "Steam progress")
+    }
 }

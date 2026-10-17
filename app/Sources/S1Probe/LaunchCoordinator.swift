@@ -136,7 +136,7 @@ enum LaunchCoordinator {
     /// Puts the game's steam_api in the launch's mode: the emulator with its
     /// settings written and SteamStub taken off the executables Playport can
     /// unwrap, or the game's own of both. Preparation must finish before starting Wine.
-    private static func prepareSteamAPI(_ s: SteamAPI, selectedExecutable: String) throws {
+    private static func prepareSteamAPI(_ s: SteamAPI, selectedExecutable: String) throws -> [String: String] {
         final class Box: @unchecked Sendable { var settings: SteamAPISwap.Settings? }
         let box = Box(), done = DispatchSemaphore(value: 0)
         Task.detached { box.settings = await s.settings(); done.signal() }
@@ -193,6 +193,9 @@ enum LaunchCoordinator {
             #endif
             throw error
         }
+        let env = s.mode == .emulated ? (settings ?? .init(appID: s.appID)).launchEnvironment : [:]
+        if !env.isEmpty { log("steam-save-root-v2: authoritative launch root enabled") }
+        return env
     }
 
     /// Takes the encrypted app ticket out of the game's emulator settings
@@ -374,10 +377,11 @@ enum LaunchCoordinator {
             if let s = r.steamAPI { removeTicket(s, when: "at exit") }
             SteamTicketHost.arm(nil)
         }
+        var steamEnvironment: [String: String] = [:]
         if let s = r.steamAPI {
             do {
                 let selected = withUnsafeBytes(of: tp.unix_path) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
-                try prepareSteamAPI(s, selectedExecutable: selected)
+                steamEnvironment = try prepareSteamAPI(s, selectedExecutable: selected)
             } catch {
                 return Outcome(kind: .failed, line: "launch=failed steamapi=preparation", detail: error.localizedDescription)
             }
@@ -473,7 +477,8 @@ enum LaunchCoordinator {
         }
         backend.merge(Diagnostics.launchEnvironment(exe: r.exe, dir: dir, graphics: r.graphics, log: log)) { own, _ in own }
         #endif
-        let environment = applyEnvironment(backend: backend, steamAppID: r.steamAppID, fex: r.fex)
+        let environment = applyEnvironment(backend: backend.merging(steamEnvironment) { _, save in save },
+                                           steamAppID: r.steamAppID, fex: r.fex)
         step(.startingGame)
         let frame = FirstDrawable()
         defer { PacedMetalLayer.onFirstFrame { } }
