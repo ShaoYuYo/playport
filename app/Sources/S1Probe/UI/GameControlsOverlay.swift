@@ -43,58 +43,108 @@ final class TouchControlsStore: ObservableObject {
     }
 }
 
-/// Only the controls receive touches; the rest of the canvas remains the game's.
-struct GameControlsOverlay: View {
-    @ObservedObject private var controls = TouchControlsStore.shared
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            if controls.layout.enabled {
-                GeometryReader { g in
-                    ForEach(controls.layout.normalized.buttons) { binding in
-                        HeldTouchButton(binding: binding)
-                            .frame(width: buttonWidth(binding.label), height: 46)
-                            .opacity(controls.layout.opacity)
-                            .position(x: 54 + CGFloat(binding.x) * max(0, g.size.width - 108),
-                                      y: 28 + CGFloat(binding.y) * max(0, g.size.height - 56))
-                    }
-                }
-                .padding(.top, 50)
-                .transition(.opacity)
-            }
-            HStack(spacing: 10) {
-                Button { controls.layout.enabled.toggle() } label: {
-                    Image(systemName: controls.layout.enabled ? "keyboard.fill" : "keyboard")
-                        .frame(width: 44, height: 40)
-                }
-                .accessibilityLabel("顯示或隱藏按鍵")
-                Button { InGameMenu.shared.open() } label: {
-                    Image(systemName: "slider.horizontal.3").frame(width: 44, height: 40)
-                }
-                .accessibilityLabel("遊戲選單與按鍵映射")
-            }
-            .foregroundStyle(.white).ppGlass(cornerRadius: 22, interactive: true)
-            .buttonStyle(.plain).padding(12)
-        }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: controls.layout.enabled)
-    }
-}
-
 private func buttonWidth(_ text: String) -> CGFloat { min(108, max(48, CGFloat(text.count) * 10 + 24)) }
 
-/// UIControl cancellation (including a system gesture) always sends the up edge.
-private struct HeldTouchButton: UIViewRepresentable {
-    let binding: TouchBinding
-    func makeUIView(context: Context) -> MappedTouchControl { MappedTouchControl() }
-    func updateUIView(_ view: MappedTouchControl, context: Context) { view.configure(binding) }
-    static func dismantleUIView(_ view: MappedTouchControl, coordinator: ()) { view.releaseInput() }
+/// UIKit owns the surface and the actual hit targets together. No full-screen
+/// SwiftUI control overlay can intercept the uncovered game area.
+final class GameSurfaceContainer: UIView {
+    let surface = GameSurfaceView()
+    private let menuButton = UIButton(type: .system)
+    private let toggleButton = UIButton(type: .system)
+    private let pageButton = UIButton(type: .system)
+    private var buttons: [UUID: MappedTouchControl] = [:]
+    private var layout = TouchLayout()
+    private var visible = false
+    private var page = 0
+    private var lastGeometry = ""
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        isMultipleTouchEnabled = true
+        addSubview(surface)
+        for button in [menuButton, toggleButton, pageButton] {
+            button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+            button.setTitleColor(.white, for: .normal)
+            button.backgroundColor = UIColor(white: 0.14, alpha: 0.85)
+            button.layer.cornerRadius = 14
+            addSubview(button)
+        }
+        menuButton.setTitle("選單", for: .normal)
+        menuButton.accessibilityLabel = "遊戲選單、按鍵映射與畫面設定"
+        toggleButton.setTitle("按鍵", for: .normal)
+        toggleButton.accessibilityLabel = "顯示或隱藏觸控按鍵"
+        menuButton.addTarget(self, action: #selector(openMenu), for: .touchUpInside)
+        toggleButton.addTarget(self, action: #selector(toggleControls), for: .touchUpInside)
+        pageButton.addTarget(self, action: #selector(nextPage), for: .touchUpInside)
+    }
+    required init?(coder: NSCoder) { fatalError("created in code") }
+    @objc private func openMenu() { InGameMenu.shared.open() }
+    @objc private func toggleControls() { TouchControlsStore.shared.layout.enabled.toggle() }
+    @objc private func nextPage() { page += 1; setNeedsLayout() }
+
+    func update(layout: TouchLayout, visible: Bool) {
+        self.layout = layout.normalized
+        self.visible = visible
+        for id in Array(buttons.keys) where !self.layout.buttons.contains(where: { $0.id == id }) {
+            buttons.removeValue(forKey: id)?.removeFromSuperview()
+        }
+        for binding in self.layout.buttons {
+            let button: MappedTouchControl
+            if let existing = buttons[binding.id] { button = existing }
+            else { button = MappedTouchControl(); buttons[binding.id] = button; insertSubview(button, belowSubview: menuButton) }
+            button.configure(binding)
+        }
+        surface.isUserInteractionEnabled = visible
+        if visible { surface.becomeFirstResponder() }
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let insets = window?.safeAreaInsets ?? safeAreaInsets
+        let pixels = TitleScreen.pixelSize
+        let geometry = GameViewport(width: bounds.width, height: bounds.height,
+            top: insets.top + 4, left: insets.left + 4, bottom: insets.bottom + 4, right: insets.right + 4,
+            contentWidth: pixels.width, contentHeight: pixels.height, docked: layout.docked)
+        surface.frame = geometry.game
+        surface.configureRenderSize(pixels)
+        let pages = max(1, (layout.buttons.count + geometry.pageSize - 1) / geometry.pageSize)
+        page %= pages
+        menuButton.frame = CGRect(x: geometry.safe.maxX - 50, y: geometry.safe.minY + 2, width: 48, height: 44)
+        toggleButton.frame = CGRect(x: geometry.safe.minX + 2, y: geometry.safe.minY + 2, width: 48, height: 44)
+        pageButton.frame = CGRect(x: geometry.safe.minX + 2, y: geometry.safe.maxY - 46, width: 48, height: 44)
+        pageButton.setTitle("\(page + 1)/\(pages)", for: .normal)
+        menuButton.isHidden = !visible
+        toggleButton.isHidden = !visible
+        toggleButton.isSelected = layout.enabled
+        pageButton.isHidden = !visible || !layout.enabled || !layout.docked || pages == 1
+        for (index, binding) in layout.buttons.enumerated() {
+            guard let button = buttons[binding.id] else { continue }
+            let shown = visible && layout.enabled && (!layout.docked || index / geometry.pageSize == page)
+            button.setVisible(shown, opacity: layout.opacity)
+            button.frame = layout.docked ? geometry.controlFrame(index: index % geometry.pageSize)
+                : geometry.customFrame(x: binding.x, y: binding.y, width: buttonWidth(binding.label))
+        }
+        // Sparse layout evidence, without per-frame UI publishing or device IDs.
+        let summary = "game=\(Int(surface.bounds.width))x\(Int(surface.bounds.height)) safe=\(Int(insets.left)),\(Int(insets.right)),\(Int(insets.bottom)) docked=\(layout.docked)"
+        if summary != lastGeometry { lastGeometry = summary; HostIO.log("touch-ui: " + summary) }
+    }
+
+    override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); setNeedsLayout() }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        return hit === self ? nil : hit
+    }
 }
 
 private final class MappedTouchControl: UIControl {
     private let label = UILabel()
     private var binding: TouchBinding?
     private var held = false
+    private var wantsVisible = false
     override init(frame: CGRect) {
         super.init(frame: frame)
         layer.cornerRadius = 18
@@ -109,6 +159,7 @@ private final class MappedTouchControl: UIControl {
         addSubview(label)
         isAccessibilityElement = true
         accessibilityTraits = .button
+        isHidden = true
         restyle()
     }
     required init?(coder: NSCoder) { fatalError("created in code") }
@@ -119,6 +170,18 @@ private final class MappedTouchControl: UIControl {
         binding = value
         label.text = value.label
         accessibilityLabel = value.label + " · " + value.action.title
+    }
+    func setVisible(_ visible: Bool, opacity: Double) {
+        guard visible != wantsVisible else { if visible { alpha = opacity }; return }
+        wantsVisible = visible
+        isUserInteractionEnabled = visible
+        if visible { isHidden = false; alpha = 0 } else { releaseInput() }
+        UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0.1 : 0.18,
+                       delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            self.alpha = visible ? opacity : 0
+        } completion: { _ in
+            if !self.wantsVisible { self.isHidden = true }
+        }
     }
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         guard !held, let binding else { return false }
@@ -153,7 +216,8 @@ struct TouchMappingEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("顯示觸控按鍵", isOn: $controls.layout.enabled)
-                    Text("拖曳按鈕調整位置，點選後修改按鍵或名稱。按住即長按，放開即停止。每款遊戲分別保存；畫面其他位置仍可直接點擊。")
+                    Toggle("使用黑色邊欄（避開鏡頭）", isOn: $controls.layout.docked)
+                    Text("邊欄模式會把按鍵排列到遊戲畫面外側；按鍵過多可切換分頁。關閉邊欄模式後使用下方拖曳位置。點選預覽按鈕可修改按鍵或名稱。按住即長按，放開即停止。每款遊戲分別保存。")
                         .font(.footnote).foregroundStyle(.secondary)
                     GeometryReader { g in
                         ZStack {

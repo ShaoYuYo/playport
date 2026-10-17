@@ -74,11 +74,7 @@ struct RootView: View {
                             }
                         }
                         .animation(LaunchMotion.sheetOut, value: launch.showsSheet)
-                    }
-                    .overlay {
-                        if launch.acceptsMenu && !launch.showsSheet && !menu.isOpen && !web.isUp {
-                            GameControlsOverlay().transition(.opacity)
-                        }
+                        .allowsHitTesting(launch.showsSheet)
                     }
                     // Playport's menu over the paused game, on a long press of Home (UI/InGameMenuView.swift).
                     .overlay { if menu.isOpen || menu.quitting { InGameMenuView() } }

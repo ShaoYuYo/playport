@@ -23,11 +23,21 @@ final class LaunchSettingsStore: ObservableObject {
     private init() {
         global = Self.load(LaunchSettings.self, Self.globalKey) ?? LaunchSettings()
         games = Self.load([String: LaunchSettings].self, Self.gamesKey) ?? [:]
+        // One upgrade adjustment for the title whose owner reports severe lag.
+        // Keep deliberately lower render sizes/rates. All choices remain editable.
+        if !UserDefaults.standard.bool(forKey: "display.balance.r14") {
+            var value = games["app-1144400"] ?? LaunchSettings()
+            if value.screen == nil || value.screen == "native" { value.screen = "1280x720" }
+            if value.frameLimit == nil || value.frameLimit == 0 || (value.frameLimit ?? 0) > 60 { value.frameLimit = 60 }
+            games["app-1144400"] = value
+            save(games, Self.gamesKey)
+            UserDefaults.standard.set(true, forKey: "display.balance.r14")
+        }
     }
 
     func settings(for id: String) -> LaunchSettings { games[id] ?? LaunchSettings() }
 
-    var displayDefaults: LaunchSettings { global.followingPanel(maxRate: UIScreen.main.maximumFramesPerSecond) }
+    var displayDefaults: LaunchSettings { global.balancedDisplay(maxRate: UIScreen.main.maximumFramesPerSecond) }
 
     func setDisplay(for id: String, screen: String? = nil, fps: Int? = nil) {
         var value = settings(for: id)
@@ -63,7 +73,7 @@ final class LaunchSettingsStore: ObservableObject {
 /// How the pickers name a screen spec and a limit on this phone.
 enum LaunchSettingsText {
     /// The presets this panel can show, largest first.
-    static var screens: [String] { LaunchSettings.screenPresets.filter { size($0) != nil } }
+    static var screens: [String] { ["native", "1080", "900", "720", "1280x720", "540"].filter { size($0) != nil } }
 
     static var frameLimits: [Int] { LaunchSettings.frameLimits(maxRate: UIScreen.main.maximumFramesPerSecond) }
 

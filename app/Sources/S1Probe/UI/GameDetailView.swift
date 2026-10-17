@@ -498,8 +498,8 @@ private struct GameDetailPage: View {
     @ViewBuilder
     private var controllerLine: some View {
         if controllers == 0 {
-            Text("No controller is connected. Connect it now: a game may not notice one connected later.")
-                .foregroundStyle(.orange)
+            Text("可直接觸控遊戲，或使用遊戲畫面兩側的按鍵；選單可新增映射。不需要連接控制器。")
+                .foregroundStyle(PP.muted)
         }
     }
 
@@ -668,6 +668,11 @@ private struct GameDetailPage: View {
         let inheritedGraphics = launchSettings.effective(for: t, inheritingGraphics: true).graphics
         let d3d = OptionValue.of(own: own.graphics, inherited: inheritedGraphics, name: LaunchSettingsText.graphics)
         PadSectionHeader(text: "Graphics").id("graphics")
+        PadRow(id: "opt:balanced-display", title: "套用順暢畫面", value: "720p · 60 FPS",
+               accessory: .chevron, style: .plain) {
+            settings.wrappedValue.screen = t.appID == 1144400 ? "1280x720" : "720"
+            settings.wrappedValue.frameLimit = min(60, UIScreen.main.maximumFramesPerSecond)
+        }
         PadRow(id: "opt:device-display", title: "套用此裝置畫面", value: "原生解析度 · \(UIScreen.main.maximumFramesPerSecond) FPS",
                accessory: .chevron, style: .plain) {
             settings.wrappedValue.screen = "native"

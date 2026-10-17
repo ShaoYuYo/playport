@@ -18,6 +18,8 @@ struct GameDisplayView: View {
         NavigationStack {
             Form {
                 Section("顯示") {
+                    Button("順暢模式 · 720p / 60 FPS") { setPreset(fps: 60) }
+                    Button("低負載模式 · 720p / 30 FPS") { setPreset(fps: 30) }
                     LabeledContent("裝置原生", value: LaunchSettingsText.screen("native"))
                     LabeledContent("本次遊戲螢幕", value: TitleScreen.configuredSize)
                     LabeledContent("遊戲呈現影像", value: PacedMetalLayer.lastPresented.map { "\($0.width)×\($0.height)" } ?? "尚無影像")
@@ -58,5 +60,13 @@ struct GameDisplayView: View {
     private static var audioDescription: String {
         let s = AVAudioSession.sharedInstance()
         return "\(Int(s.sampleRate)) Hz · \(s.outputNumberOfChannels) 聲道"
+    }
+
+    private func setPreset(fps: Int) {
+        if let id = launch.titleID {
+            settings.setDisplay(for: id, screen: launch.appID == 1144400 ? "1280x720" : "720", fps: fps)
+        }
+        TitleScreen.setFrameLimit(fps)
+        self.fps = fps
     }
 }

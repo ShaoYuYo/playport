@@ -208,7 +208,7 @@ public enum SetupChecklist {
     }
 
     /// The launch screen drops it once a controller connects.
-    public static let noController = "No controller connected. Connect one now to play with it."
+    public static let noController = "Touch controls are available. Use the in-game menu to edit key mappings."
 
     /// What does not stop a launch but is worth saying on its launch screen.
     public static func notes(_ f: SetupFacts, steamGame: Bool) -> [String] {

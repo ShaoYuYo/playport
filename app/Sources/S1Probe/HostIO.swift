@@ -201,6 +201,9 @@ final class HostIO {
     private func handle(_ event: LifecycleEvent) {
         let actions = lifecycle.handle(event)
         if event == .resignActive || event == .menuOpened { inputOwners.clear() }
+        if event == .resignActive || event == .menuOpened || event == .menuClosed || event == .becomeActive {
+            PacedMetalLayer.resetHealth()
+        }
         if event == .resignActive { motion.reset() }
         for a in actions {
             switch a {
@@ -258,11 +261,14 @@ final class HostIO {
         }
     }
 
-    /// A direct touch as the left button, at the same point of the client area.
-    func touch(at p: CGPoint, in size: CGSize, phase: UITouch.Phase) {
-        let x = min(max(p.x, 0), size.width - 0.001), y = min(max(p.y, 0), size.height - 0.001)
-        guard let f = Pointer.clientFraction(x: x, y: y, width: size.width, height: size.height) else { return }
+    private var touchEdges = 0
+    /// Fractions of the actual presented image, independent of UIKit pixel scale.
+    func touch(fraction f: (Int32, Int32), phase: UITouch.Phase) {
         if menuUp && phase != .ended && phase != .cancelled { return }
+        if phase != .moved && touchEdges < 12 {
+            touchEdges += 1
+            Self.log("touch-input: edge=\(phase.rawValue) client=\(f.0),\(f.1) active=\(lifecycle.active) menu=\(menuUp)")
+        }
         switch phase {
         case .began:
             guard lifecycle.active, !lifecycle.background else { return }
@@ -547,6 +553,15 @@ enum MetalHUD {
 final class PacedMetalLayer: CAMetalLayer {
     private static let pacer = OSAllocatedUnfairLock(initialState: FramePacer(fps: 0))
     private static let shown = OSAllocatedUnfairLock<(any MTLTexture)?>(uncheckedState: nil)
+    private static let health = OSAllocatedUnfairLock(initialState: FrameHealth())
+    static func resetHealth() { health.withLock { $0 = FrameHealth() } }
+    static func healthReport() -> String? {
+        guard let s = health.withLock({ $0.sample(at: CACurrentMediaTime()) }) else { return nil }
+        let size = lastPresented.map { "\($0.width)x\($0.height)" } ?? "none"
+        return String(format: "render-health: fps=%.1f frames=%d gaps_over50ms=%d max_gap_ms=%.1f drawable_wait_avg_ms=%.1f drawable_wait_max_ms=%.1f failed=%d pixels=%@",
+            s.fps, s.frames, s.longGaps, s.maximumGapMS, s.averageDrawableWaitMS,
+            s.maximumDrawableWaitMS, s.failedDrawables, size)
+    }
 
     /// The frame on screen, nil before the first.
     static var lastPresented: (any MTLTexture)? { shown.withLockUnchecked { $0 } }
@@ -581,13 +596,18 @@ final class PacedMetalLayer: CAMetalLayer {
     override func nextDrawable() -> (any CAMetalDrawable)? {
         let wait = Self.pacer.withLock { $0.delay(now: CACurrentMediaTime()) }
         if wait > 0 { Thread.sleep(forTimeInterval: wait) }
+        let t0 = CACurrentMediaTime()
         let drawable = super.nextDrawable()
+        let t1 = CACurrentMediaTime()
+        let succeeded = drawable != nil
+        Self.health.withLock { $0.drawable(at: t0, wait: t1 - t0, succeeded: succeeded) }
         #if !PLAYPORT_RELEASE
         if drawable != nil { Self.countDrawable() }
         #endif
         drawable?.addPresentedHandler { d in
             guard let t = (d as? CAMetalDrawable)?.texture else { return }
             Self.shown.withLockUnchecked { $0 = t }
+            Self.health.withLock { $0.presented(at: d.presentedTime > 0 ? d.presentedTime : CACurrentMediaTime()) }
         }
         if let then = Self.firstFrame.withLockUnchecked({ h in defer { h = nil }; return h }) { then() }
         return drawable
@@ -602,6 +622,24 @@ final class GameSurfaceView: UIView {
     override class var layerClass: AnyClass { PacedMetalLayer.self }
     override var canBecomeFirstResponder: Bool { true }
     private var registered = false
+    private var pointerTouch: ObjectIdentifier?
+    private var pointerPosition: (Int32, Int32) = (32768, 32768)
+    private var renderBounds = CGSize.zero
+    private var renderTarget = CGSize.zero
+
+    /// Match the requested render budget rather than allocating native-size
+    /// drawables for every lower-resolution game. Never supersample the panel.
+    func configureRenderSize(_ target: CGSize) {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let scale = max(0.25, min(window?.screen.nativeScale ?? 3,
+                                 min(target.width / bounds.width, target.height / bounds.height)))
+        guard renderBounds != bounds.size || renderTarget != target || abs(contentScaleFactor - scale) > 0.001 else { return }
+        renderBounds = bounds.size
+        renderTarget = target
+        if abs(contentScaleFactor - scale) > 0.001 { contentScaleFactor = scale }
+        let size = CGSize(width: (bounds.width * scale).rounded(), height: (bounds.height * scale).rounded())
+        if let metal = layer as? CAMetalLayer, metal.drawableSize != size { metal.drawableSize = size }
+    }
 
     init() {
         super.init(frame: .zero)
@@ -650,15 +688,25 @@ final class GameSurfaceView: UIView {
     private func forward(_ touches: Set<UITouch>) {
         let indirect = touches.filter { $0.type != .direct }.count
         HostIO.trace.update { $0.touches += touches.count - indirect; $0.pointerTouches += indirect }
-        var origin = CGPoint.zero, size = bounds.size
-        if let d = (layer as? CAMetalLayer)?.drawableSize {
-            let r = Display.aspectFit(contentWidth: d.width, contentHeight: d.height, width: size.width, height: size.height)
-            origin = CGPoint(x: r.0, y: r.1)
-            size = CGSize(width: r.2, height: r.3)
-        }
+        let texture = PacedMetalLayer.lastPresented
+        let content = texture.map { CGSize(width: $0.width, height: $0.height) }
+            ?? (layer as? CAMetalLayer)?.drawableSize ?? bounds.size
         for t in touches where t.type == .direct {
+            let id = ObjectIdentifier(t)
             let p = t.location(in: self)
-            HostIO.shared.touch(at: CGPoint(x: p.x - origin.x, y: p.y - origin.y), in: size, phase: t.phase)
+            if t.phase == .began {
+                guard pointerTouch == nil,
+                      let f = SurfacePointer.fraction(x: p.x, y: p.y, width: bounds.width, height: bounds.height,
+                          contentWidth: content.width, contentHeight: content.height, clamp: false) else { continue }
+                pointerTouch = id
+                pointerPosition = f
+            } else {
+                guard pointerTouch == id else { continue }
+                if let f = SurfacePointer.fraction(x: p.x, y: p.y, width: bounds.width, height: bounds.height,
+                    contentWidth: content.width, contentHeight: content.height, clamp: true) { pointerPosition = f }
+            }
+            HostIO.shared.touch(fraction: pointerPosition, phase: t.phase)
+            if t.phase == .ended || t.phase == .cancelled { pointerTouch = nil }
         }
     }
 
@@ -678,7 +726,13 @@ final class GameSurfaceView: UIView {
 }
 
 struct GameSurface: UIViewRepresentable {
-    func makeUIView(context: Context) -> GameSurfaceView { GameSurfaceView() }
-    func updateUIView(_ view: GameSurfaceView, context: Context) {}
+    @ObservedObject private var controls = TouchControlsStore.shared
+    @ObservedObject private var launch = TitleLaunch.shared
+    @ObservedObject private var menu = InGameMenu.shared
+    @ObservedObject private var web = GameWebSheet.shared
+    func makeUIView(context: Context) -> GameSurfaceContainer { GameSurfaceContainer() }
+    func updateUIView(_ view: GameSurfaceContainer, context: Context) {
+        view.update(layout: controls.layout, visible: launch.acceptsMenu && !launch.showsSheet && !menu.isOpen && !web.isUp)
+    }
 }
 #endif

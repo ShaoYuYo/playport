@@ -26,6 +26,7 @@ enum TitleScreen {
     @MainActor private static var link: CADisplayLink?
     @MainActor private(set) static var frameLimit = 0
     @MainActor private(set) static var configuredSize = "—"
+    @MainActor private(set) static var pixelSize = CGSize(width: 1280, height: 720)
 
     /// On the main thread, before the runtime reads its environment; again
     /// for each title a process starts, since the environment it sets is only
@@ -41,9 +42,11 @@ enum TitleScreen {
             setenv("MADEIRA_SCREEN_H", String(h), 1)
             screen = "\(w)x\(h)" + (title.map { " (the title's screen \($0))" } ?? "")
             configuredSize = "\(w)×\(h)"
+            pixelSize = CGSize(width: w, height: h)
         } else {
             screen = "\(title ?? "") not understood; the runtime's 1024x768"
             configuredSize = "1024×768"
+            pixelSize = CGSize(width: 1024, height: 768)
         }
         madeira_set_vsync_locked(0)
         setFrameLimit(frameLimit)

@@ -43,6 +43,9 @@ final class MemorySafetyWatch: ObservableObject {
                     AppLog.append("memory-safety: used_mb=\(reading.footprintMB) compressed_original_mb=\(reading.compressedMB) target_mb=\(target) headroom_mb=\(reserve) available_mb=\(available.map(String.init) ?? "unknown") denied=\(denials)")
                 }
                 self.lastDenials = denials
+                if ticks % 5 == 0, !InGameMenu.shared.isOpen, let report = PacedMetalLayer.healthReport() {
+                    AppLog.append(report)
+                }
                 ticks += 1
                 do { try await Task.sleep(for: .seconds(1)) } catch { break }
             }

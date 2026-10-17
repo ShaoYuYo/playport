@@ -50,7 +50,7 @@ final class TouchMappingTests: XCTestCase {
         let saved = try JSONEncoder().encode(layout.normalized)
         let restored = try JSONDecoder().decode(TouchLayout.self, from: saved)
         XCTAssertTrue(restored.enabled)
-        XCTAssertEqual(restored.buttons.count, 4)
+        XCTAssertEqual(restored.buttons.count, 6)
         XCTAssertEqual(restored.buttons[0].x, 0)
         XCTAssertEqual(restored.buttons[1].y, 1)
         XCTAssertEqual(restored.buttons[0].label, "快轉")
@@ -58,5 +58,14 @@ final class TouchMappingTests: XCTestCase {
         layout.buttons[0].x = .infinity
         XCTAssertEqual(layout.normalized.opacity, 0.72)
         XCTAssertEqual(layout.normalized.buttons[0].x, 0.5)
+    }
+
+    func testOldLayoutsGainDockingWithoutLosingThePlayersKeys() throws {
+        let json = #"{"enabled":true,"opacity":0.5,"buttons":[]}"#
+        let layout = try JSONDecoder().decode(TouchLayout.self, from: Data(json.utf8))
+        XCTAssertTrue(layout.docked)
+        XCTAssertTrue(layout.enabled)
+        XCTAssertEqual(layout.buttons, [])
+        XCTAssertTrue(TouchLayout().enabled)
     }
 }

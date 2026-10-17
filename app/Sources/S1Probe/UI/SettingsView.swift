@@ -270,10 +270,10 @@ private struct GraphicsSettings: View {
         SettingsNote(text: "What every game uses unless you change it on the game's page.")
         let global = $launchSettings.global
         // Left is lower, right higher: 540p … Native; 30 fps … Off.
-        let screens = SettingSteps(values: LaunchSettingsText.screens.reversed(), defaultValue: "native")
+        let screens = SettingSteps(values: LaunchSettingsText.screens.reversed(), defaultValue: "720")
         valueRow("screen", "Resolution", "Higher is sharper, lower saves battery", screens,
                  name: { LaunchSettingsText.screen($0, pixels: false) }, value: global.screen)
-        let limits = SettingSteps(values: LaunchSettingsText.frameLimits + [0], defaultValue: UIScreen.main.maximumFramesPerSecond)
+        let limits = SettingSteps(values: LaunchSettingsText.frameLimits + [0], defaultValue: min(60, UIScreen.main.maximumFramesPerSecond))
         valueRow("frameLimit", "Frame rate limit", "Lower saves battery and heat", limits,
                  name: LaunchSettingsText.frameLimit, value: global.frameLimit)
         let backends = SettingSteps(values: GraphicsBackend.allCases.filter { Manifest.has($0) || $0 == launchSettings.global.graphics },
@@ -292,7 +292,7 @@ private struct GraphicsSettings: View {
                           on: $memoryEconomy)
         SettingsSwitchRow(id: "metalHUD", title: "Metal HUD", subtitle: "Frame rate, frame time and memory over a game",
                           on: $metalHUD)
-        SettingsNote(text: "未自訂時跟隨此裝置的原生解析度與最高更新率。原生解析度較清晰，也會增加 GPU 與記憶體用量；若掉幀可改成 900p 或 720p。"
+        SettingsNote(text: "預設 720p／60 FPS 上限，先控制繪圖負載。原生解析度與更高 FPS 仍可手動選擇；若卡頓可試 30 FPS 或更低解析度。"
                      + "FPS 是上限，不會加速遊戲邏輯或產生額外影格。解析度從下次啟動生效，FPS 可在遊戲選單即時調整。 " + LaunchSettingsText.graphicsFooter)
     }
 

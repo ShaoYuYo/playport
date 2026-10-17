@@ -207,12 +207,12 @@ public struct LaunchSettings: Codable, Equatable, Sendable {
     public static let defaultScreen = "720"
     public static let defaultFrameLimit = 60
 
-    /// The app's display defaults follow its current panel. Explicit settings
-    /// survive device changes; clearing an override follows the panel again.
-    public func followingPanel(maxRate: Int) -> LaunchSettings {
+    /// Start with a bounded render budget. Native pixels and faster refresh
+    /// remain explicit choices; a panel's maximum is not a performance target.
+    public func balancedDisplay(maxRate: Int) -> LaunchSettings {
         var value = self
-        if value.screen == nil { value.screen = "native" }
-        if value.frameLimit == nil { value.frameLimit = max(1, maxRate) }
+        if value.screen == nil { value.screen = "720" }
+        if value.frameLimit == nil { value.frameLimit = min(60, max(1, maxRate)) }
         return value
     }
 

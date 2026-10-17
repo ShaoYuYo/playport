@@ -1908,18 +1908,19 @@ final class JitMethodTests: XCTestCase {
 }
 
 final class PanelDefaultsTests: XCTestCase {
-    func testUnsetFollowsPanelWhileExplicitGameAndGlobalChoicesSurvive() {
-        let panel = LaunchSettings().followingPanel(maxRate: 120)
-        XCTAssertEqual(panel.screen, "native")
-        XCTAssertEqual(panel.frameLimit, 120)
-        let global = LaunchSettings(screen: "900", frameLimit: 60).followingPanel(maxRate: 120)
+    func testBalancedDefaultsDoNotForceNativePixelsOrMaximumPanelRate() {
+        let panel = LaunchSettings().balancedDisplay(maxRate: 120)
+        XCTAssertEqual(panel.screen, "720")
+        XCTAssertEqual(panel.frameLimit, 60)
+        let global = LaunchSettings(screen: "900", frameLimit: 60).balancedDisplay(maxRate: 120)
         XCTAssertEqual(global.screen, "900")
         XCTAssertEqual(global.frameLimit, 60)
         let game = LaunchSettings(screen: "720", frameLimit: 30)
         let effective = LaunchSettings.resolve(game: game, global: panel)
         XCTAssertEqual(effective.screen, "720")
         XCTAssertEqual(effective.frameLimit, 30)
-        XCTAssertEqual(LaunchSettings.resolve(game: nil, global: panel).frameLimit, 120)
+        XCTAssertEqual(LaunchSettings.resolve(game: nil, global: panel).frameLimit, 60)
+        XCTAssertEqual(LaunchSettings(screen: "native", frameLimit: 120).balancedDisplay(maxRate: 120).screen, "native")
     }
 }
 

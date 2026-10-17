@@ -71,15 +71,27 @@ public struct TouchBinding: Identifiable, Codable, Equatable, Sendable {
 }
 
 public struct TouchLayout: Codable, Equatable, Sendable {
-    public var enabled = false
+    public var enabled = true
+    public var docked = true
     public var opacity = 0.72
     public var buttons: [TouchBinding] = [
         .init(action: .control, x: 0.1, y: 0.82),
         .init(action: .escape, x: 0.25, y: 0.82),
         .init(action: .space, x: 0.75, y: 0.82),
         .init(action: .enter, x: 0.9, y: 0.82),
+        .init(action: .mouseLeft, x: 0.1, y: 0.6),
+        .init(action: .mouseRight, x: 0.9, y: 0.6),
     ]
     public init() {}
+
+    private enum CodingKeys: String, CodingKey { case enabled, docked, opacity, buttons }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        docked = try values.decodeIfPresent(Bool.self, forKey: .docked) ?? true
+        opacity = try values.decodeIfPresent(Double.self, forKey: .opacity) ?? 0.72
+        buttons = try values.decodeIfPresent([TouchBinding].self, forKey: .buttons) ?? buttons
+    }
 
     /// Bound persistent/user-edited data before it reaches SwiftUI positions.
     public var normalized: TouchLayout {
