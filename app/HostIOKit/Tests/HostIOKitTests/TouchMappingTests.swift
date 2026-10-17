@@ -42,6 +42,7 @@ final class TouchMappingTests: XCTestCase {
 
     func testPersistentLayoutRoundTripAndInvalidCoordinates() throws {
         var layout = TouchLayout()
+        layout.buttons = [.init(action: .control, x: 0.2, y: 0.5), .init(action: .enter, x: 0.8, y: 0.5)]
         layout.enabled = true
         layout.buttons[0].label = "快轉"
         layout.buttons[0].x = -8
@@ -50,7 +51,7 @@ final class TouchMappingTests: XCTestCase {
         let saved = try JSONEncoder().encode(layout.normalized)
         let restored = try JSONDecoder().decode(TouchLayout.self, from: saved)
         XCTAssertTrue(restored.enabled)
-        XCTAssertEqual(restored.buttons.count, 6)
+        XCTAssertEqual(restored.buttons.count, 2)
         XCTAssertEqual(restored.buttons[0].x, 0)
         XCTAssertEqual(restored.buttons[1].y, 1)
         XCTAssertEqual(restored.buttons[0].label, "快轉")
@@ -67,5 +68,7 @@ final class TouchMappingTests: XCTestCase {
         XCTAssertTrue(layout.enabled)
         XCTAssertEqual(layout.buttons, [])
         XCTAssertTrue(TouchLayout().enabled)
+        XCTAssertFalse(TouchLayout().docked)
+        XCTAssertTrue(TouchLayout().buttons.isEmpty)
     }
 }

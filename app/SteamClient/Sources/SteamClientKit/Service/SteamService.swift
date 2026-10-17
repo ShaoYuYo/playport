@@ -767,13 +767,16 @@ public actor SteamService {
         /// Bytes on Steam; nil when Steam has none.
         public var steamSize: UInt32?
         public var steamTime: Date?
+        public var localCopiesDiffer: Bool?
 
-        public init(name: String, phoneSize: Int? = nil, phoneTime: Date? = nil, steamSize: UInt32? = nil, steamTime: Date? = nil) {
+        public init(name: String, phoneSize: Int? = nil, phoneTime: Date? = nil, steamSize: UInt32? = nil, steamTime: Date? = nil,
+                    localCopiesDiffer: Bool? = nil) {
             self.name = name
             self.phoneSize = phoneSize
             self.phoneTime = phoneTime
             self.steamSize = steamSize
             self.steamTime = steamTime
+            self.localCopiesDiffer = localCopiesDiffer
         }
     }
 
@@ -802,6 +805,9 @@ public actor SteamService {
         var baseline: Cloud.Baseline
         var conflicts: [CloudConflict]
         var at: Date
+        /// Old records only tracked the remote backend. Their baseline must
+        /// not authorize uploading a native backend's previously unseen save.
+        var nativeMirrorVersion: Int?
     }
 
     /// Brings the game's cloud files on Steam and on the phone together
@@ -817,6 +823,7 @@ public actor SteamService {
         let remote = changes.remote
         let kept = loadCloud(appID)
         let baseline = kept?.accountTag == account ? kept?.baseline : nil
+        let mirrorEstablished = kept?.accountTag == account && kept?.nativeMirrorVersion == 1
         // Each local file under the name Steam has for it, else the last sync's (Cloud.named).
         var files = Cloud.named(Cloud.localFiles(rules: rules, roots: roots, steamID: stored.steamID),
                                 like: remote.keys.sorted() + (baseline?.files.keys.sorted() ?? []))
@@ -825,7 +832,24 @@ public actor SteamService {
         }
         var local: [String: String] = [:]
         for (name, url) in files { if let d = try? Data(contentsOf: url) { local[name] = SHA1.hash([UInt8](d)).hex } }
+        let mirrors = Cloud.named(Cloud.mirroredFiles(roots), like: remote.keys.sorted() + local.keys.sorted())
+        var localDivergence = Set<String>()
+        for (name, url) in mirrors {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let sha = SHA1.hash([UInt8](data)).hex
+            if let other = local[name], other != sha {
+                // Reuse the last agreed hash, not timestamps, to decide which
+                // local backend the game wrote. If both changed, ask the player.
+                if mirrorEstablished && sha == baseline?.files[name] { continue }
+                if !mirrorEstablished || other != baseline?.files[name] { localDivergence.insert(name) }
+            } else if !mirrorEstablished, let previous = remote[name]?.sha ?? baseline?.files[name], previous != sha {
+                localDivergence.insert(name)
+            }
+            files[name] = url
+            local[name] = sha
+        }
         var plan = Cloud.plan(remote: remote, local: local, baseline: baseline)
+        for name in localDivergence { plan[name] = .conflict }
         // A game's first sync does not upload a file Steam lacks: the player says.
         if baseline == nil { for name in local.keys where remote[name] == nil { plan[name] = .conflict } }
         // A conflict stays one until the player settles it, even once a baseline exists.
@@ -874,24 +898,49 @@ public actor SteamService {
             let committed = Set(try await backend.cloudUpload(appID: appID, files: uploads))
             for u in uploads { if committed.contains(u.name) { uploaded.append(u.name) } else { failed[u.name] = "not committed" } }
         }
+        // Only a settled file reaches both backends. Back up every replaced
+        // local copy with a distinct suffix; one backend cannot erase the other
+        // merely because Steam's bytes already matched one of them.
+        var mirrored = 0
+        for name in local.keys.sorted() where roots.gameSaveMirror != nil && Cloud.isMirroredSave(name)
+            && !name.contains("/") && !name.contains("\\") && plan[name] != .conflict && failed[name] == nil {
+            do {
+                guard let source = files[name] ?? roots.file(name),
+                      let canonical = roots.file(name), let mirror = roots.mirrorFile(name) else {
+                    throw SteamError.unsupported("unsafe local save placement")
+                }
+                let data = try Data(contentsOf: source)
+                for (tag, target) in [("remote", canonical), ("game", mirror)] {
+                    let old = FileManager.default.fileExists(atPath: target.path) ? try Data(contentsOf: target) : nil
+                    if old == data { continue }
+                    if let old { try backup(name + "." + tag, old) }
+                    try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try data.write(to: target, options: .atomic)
+                    mirrored += 1
+                }
+            } catch { failed[name] = "local save placement failed: \(error)" }
+        }
         // The new baseline: every file both sides now agree on.
         var next = baseline?.files ?? [:]
         for name in Set(remote.keys).union(local.keys) {
             let r = remote[name]?.sha, l = local[name]
-            if uploaded.contains(name) || downloaded.contains(name) || (r != nil && r == l) { next[name] = l }
+            if failed[name] == nil && (uploaded.contains(name) || downloaded.contains(name) || (r != nil && r == l)) { next[name] = l }
         }
         for (name, sha) in settled { next[name] = sha }
         let conflicts = plan.filter { $0.value == .conflict }.keys.sorted().map { name -> CloudConflict in
             let attrs = files[name].flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path) }
             return CloudConflict(name: name, phoneSize: (attrs?[.size] as? NSNumber)?.intValue, phoneTime: attrs?[.modificationDate] as? Date,
                                  steamSize: remote[name]?.size,
-                                 steamTime: remote[name].map { Date(timeIntervalSince1970: TimeInterval($0.time)) })
+                                 steamTime: remote[name].map { Date(timeIntervalSince1970: TimeInterval($0.time)) },
+                                 localCopiesDiffer: localDivergence.contains(name) ? true : nil)
         }
         let at = now()
+        let mirrorVersion = roots.gameSaveMirror != nil && failed.isEmpty && conflicts.isEmpty ? 1
+            : (mirrorEstablished ? 1 : nil)
         saveCloud(appID, CloudRecord(accountTag: account, baseline: Cloud.Baseline(changeNumber: changes.currentChangeNumber, files: next),
-                                     conflicts: conflicts, at: at))
+                                     conflicts: conflicts, at: at, nativeMirrorVersion: mirrorVersion))
         log.info("cloud", "app \(appID): \(remote.count) on Steam, \(local.count) on the phone; \(downloaded.count) down, "
-                 + "\(uploaded.count) up, \(conflicts.count) conflict(s)" + (failed.isEmpty ? "" : ", \(failed.count) failed"))
+                 + "\(uploaded.count) up, \(conflicts.count) conflict(s), \(mirrored) local save placement(s)" + (failed.isEmpty ? "" : ", \(failed.count) failed"))
         return CloudSync(downloaded: downloaded, uploaded: uploaded, conflicts: conflicts, failed: failed, at: at)
     }
 

@@ -39,6 +39,14 @@ public struct GameViewport: Sendable {
         return CGRect(x: safe.minX + min(1, max(0, x)) * max(0, safe.width - w),
                       y: safe.minY + min(1, max(0, y)) * max(0, safe.height - h), width: w, height: h)
     }
+
+    /// Inverse of customFrame: dragging uses the same actual safe canvas and
+    /// button width as gameplay, so saving/reopening does not move a button.
+    public func customPosition(origin: CGPoint, width: Double) -> CGPoint {
+        let w = min(width, safe.width)
+        return CGPoint(x: min(1, max(0, (origin.x - safe.minX) / max(1, safe.width - w))),
+                       y: min(1, max(0, (origin.y - safe.minY) / max(1, safe.height - 44))))
+    }
 }
 
 /// The displayed content's coordinates, independently of monitor mode/pixel scale.

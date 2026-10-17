@@ -1946,7 +1946,7 @@ final class QuickMenuTests: XCTestCase {
         XCTAssertEqual(QuickMenu.controller(name: "DualSense", battery: nil), "DualSense")
         XCTAssertEqual(QuickMenu.controller(name: nil, battery: nil), "None")
         XCTAssertEqual(QuickMenuItem.allCases.map(\.title),
-                       ["Resume", "Screenshot", "Performance overlay", "按鍵映射", "畫面與聲音", "Controller", "Quit game"])
+                       ["Resume", "Screenshot", "Performance overlay", "自訂螢幕按鈕", "畫面與聲音", "Controller", "Quit game"])
     }
 }
 

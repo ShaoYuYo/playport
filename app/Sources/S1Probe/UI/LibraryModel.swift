@@ -29,7 +29,9 @@ final class LibraryModel: ObservableObject {
     nonisolated static func cloudRoots(appID: UInt32, installDir: String) -> Cloud.Roots {
         Cloud.Roots(user: WineHostRuntime.documents.appendingPathComponent("prefix/drive_c/users/playport", isDirectory: true),
                     gameInstall: paths.games.appendingPathComponent(installDir, isDirectory: true),
-                    remote: EmulatorStats.folder(emulatorSaves, appID: appID).appendingPathComponent("remote", isDirectory: true))
+                    remote: EmulatorStats.folder(emulatorSaves, appID: appID).appendingPathComponent("remote", isDirectory: true),
+                    gameSaveMirror: appID == 1144400 ? WineHostRuntime.documents.appendingPathComponent(
+                        "prefix/drive_c/users/playport/AppData/Roaming/YuzuSoft/SenrenBanka", isDirectory: true) : nil)
     }
     /// The copies a cloud sync replaced, one folder per game and sync (in Files).
     nonisolated static let cloudBackups = WineHostRuntime.documents.appendingPathComponent("Cloud Backups", isDirectory: true)
@@ -259,6 +261,7 @@ final class LibraryModel: ObservableObject {
                                            // display alias, never the signed-in Steam account.
                                            value.personaName = WindowsLocale.compatiblePersona(
                                                steamAppID: app, original: value.personaName)
+                                           if app == 1144400 { value.saveRoot = #"C:\users\playport\AppData\Roaming\GSE Saves"# }
                                            return value
                                        },
                                        ticket: ticket, tickets: tickets)

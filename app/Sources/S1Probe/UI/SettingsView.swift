@@ -288,7 +288,7 @@ private struct GraphicsSettings: View {
         }
         SettingsNote(text: "預設安全餘裕 100 MB，這是配置前的安全檢查，不會預先占用這些 RAM。JIT 程式碼池在啟動時固定大小。")
         SettingsSwitchRow(id: "memory-economy", title: "遊戲省記憶體模式",
-                          subtitle: "目前適用於千戀＊萬花：256 MB JIT、較少工作執行緒、降低引擎快取。可能增加圖片重載時間；下次啟動套用。",
+                          subtitle: "目前適用於千戀＊萬花：256 MB JIT、較少工作執行緒、64 MB 圖片快取，兼顧重用圖片與 RAM。下次啟動套用。",
                           on: $memoryEconomy)
         SettingsSwitchRow(id: "metalHUD", title: "Metal HUD", subtitle: "Frame rate, frame time and memory over a game",
                           on: $metalHUD)

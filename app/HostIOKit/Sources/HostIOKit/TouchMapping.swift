@@ -72,16 +72,9 @@ public struct TouchBinding: Identifiable, Codable, Equatable, Sendable {
 
 public struct TouchLayout: Codable, Equatable, Sendable {
     public var enabled = true
-    public var docked = true
+    public var docked = false
     public var opacity = 0.72
-    public var buttons: [TouchBinding] = [
-        .init(action: .control, x: 0.1, y: 0.82),
-        .init(action: .escape, x: 0.25, y: 0.82),
-        .init(action: .space, x: 0.75, y: 0.82),
-        .init(action: .enter, x: 0.9, y: 0.82),
-        .init(action: .mouseLeft, x: 0.1, y: 0.6),
-        .init(action: .mouseRight, x: 0.9, y: 0.6),
-    ]
+    public var buttons: [TouchBinding] = []
     public init() {}
 
     private enum CodingKeys: String, CodingKey { case enabled, docked, opacity, buttons }

@@ -67,6 +67,17 @@ final class SteamAPISwapTests: XCTestCase {
         XCTAssertFalse(exists("steam_settings"), "settings go beside each DLL, not at the root")
     }
 
+    func testExplicitSaveRootSurvivesTicketWriteAndRemoval() throws {
+        var value = settings
+        value.saveRoot = #"C:\users\playport\AppData\Roaming\GSE Saves"#
+        try SteamAPISwap.apply(in: root, emulator: emulator, settings: value)
+        try SteamAPISwap.writeTicket(Secret([9, 9, 9]), in: root)
+        _ = try SteamAPISwap.removeTickets(in: root)
+        let user = String(decoding: read("tools/steam_settings/configs.user.ini") ?? [], as: UTF8.self)
+        XCTAssertTrue(user.contains("[user::saves]\nlocal_save_path=" + value.saveRoot!))
+        XCTAssertFalse(user.contains("ticket="))
+    }
+
     func testApplyIsIdempotentAndRefreshesSettings() throws {
         try SteamAPISwap.apply(in: root, emulator: emulator, settings: settings)
         var other = settings

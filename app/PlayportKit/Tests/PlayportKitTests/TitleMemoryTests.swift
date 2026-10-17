@@ -24,10 +24,10 @@ final class TitleMemoryTests: XCTestCase {
         XCTAssertEqual(profile.config(over: [:]), ["cpu-count": "2"])
         XCTAssertEqual(profile.config(over: ["cpu-count": "4", "inproc-sync": "1"]),
                        ["cpu-count": "4", "inproc-sync": "1"])
-        XCTAssertEqual(profile.arguments(over: ["-custom"]), ["-custom", "-memusage=low", "-drawthread=2"])
-        let explicit = ["-MEMUSAGE=normal", "-drawthread=4", "-custom"]
+        XCTAssertEqual(profile.arguments(over: ["-custom"]), ["-custom", "-memusage=normal", "-gclim=64", "-drawthread=2"])
+        let explicit = ["-MEMUSAGE=low", "-gclim=16", "-drawthread=4", "-custom"]
         XCTAssertEqual(profile.arguments(over: explicit), explicit)
         XCTAssertEqual(profile.arguments(over: ["-memusage", "normal"]),
-                       ["-memusage", "normal", "-drawthread=2"])
+                       ["-memusage", "normal", "-gclim=64", "-drawthread=2"])
     }
 }

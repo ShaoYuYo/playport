@@ -14,7 +14,7 @@ public enum QuickMenuItem: String, CaseIterable, Sendable {
         case .resume: "Resume"
         case .screenshot: "Screenshot"
         case .overlay: "Performance overlay"
-        case .controls: "按鍵映射"
+        case .controls: "自訂螢幕按鈕"
         case .display: "畫面與聲音"
         case .controller: "Controller"
         case .quit: "Quit game"

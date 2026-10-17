@@ -19,11 +19,23 @@ public enum Cloud {
         public var gameInstall: URL
         /// The emulator's remote storage for the game: `GSE Saves/<appid>/remote`.
         public var remote: URL
+        /// A verified title's native save directory, for games that can switch
+        /// between Steam RemoteStorage and direct file storage. Only recognised
+        /// save names are reconciled; settings, anchors and logs stay local.
+        public var gameSaveMirror: URL?
 
-        public init(user: URL, gameInstall: URL, remote: URL) {
+        public init(user: URL, gameInstall: URL, remote: URL, gameSaveMirror: URL? = nil) {
             self.user = user
             self.gameInstall = gameInstall
             self.remote = remote
+            self.gameSaveMirror = gameSaveMirror
+        }
+
+        public func mirrorFile(_ name: String) -> URL? {
+            guard let gameSaveMirror, !name.contains("/"), !name.contains("\\"), !name.contains("%"),
+                  Cloud.isMirroredSave(name) else { return nil }
+            let spelling = Cloud.resolve([name], in: gameSaveMirror).lastPathComponent
+            return try? InstallFS.resolveInside(gameSaveMirror, spelling, createParents: false)
         }
 
         /// A root token's folder; nil for a root Playport does not map.
@@ -49,6 +61,21 @@ public enum Cloud {
             guard !parts.isEmpty, !parts.contains(".."), !parts.contains(".") else { return nil }
             return Cloud.resolve(parts, in: base)
         }
+    }
+
+    static func isMirroredSave(_ name: String) -> Bool {
+        let n = name.lowercased()
+        return n == "savecheck" || (n.hasPrefix("data") && n != "data_anchor.ksd"
+            && (n.hasSuffix(".ksd") || n.hasSuffix(".bmp")))
+    }
+
+    static func mirroredFiles(_ roots: Roots) -> [String: URL] {
+        guard let dir = roots.gameSaveMirror else { return [:] }
+        var result: [String: URL] = [:]
+        for name in TitleInstaller.regularFiles(under: dir) where isMirroredSave(name) {
+            if let url = roots.mirrorFile(name) { result[name] = url }
+        }
+        return result
     }
 
     /// Steam's spelling of a root token, as its file list names a file a
@@ -181,8 +208,8 @@ public enum Cloud {
     /// - changed on one side since the last sync: that side wins;
     /// - changed on both, or different with no last sync to tell: a conflict,
     ///   which the player settles;
-    /// - on Steam only: downloaded, unless it was synced before (the phone
-    ///   deleted it: deletions are not carried);
+    /// - on Steam only: downloaded/restored; local deletions never delete
+    ///   Steam's remaining copy;
     /// - on the phone only: uploaded when it is new or changed since the last
     ///   sync; a game's first sync uploads nothing.
     public static func plan(remote: [String: Remote], local: [String: String], baseline: Baseline?) -> [String: Action] {
@@ -197,7 +224,8 @@ public enum Cloud {
                 else if r == b { out[name] = .upload }
                 else { out[name] = .conflict }
             case (_?, nil):
-                if b == nil { out[name] = .download }
+                // Never propagate deletion: a missing local copy is restored.
+                out[name] = .download
             case (nil, let l?):
                 if baseline != nil, b != l { out[name] = .upload }
             case (nil, nil):

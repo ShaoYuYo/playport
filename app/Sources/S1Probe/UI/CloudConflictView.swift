@@ -104,6 +104,10 @@ struct CloudConflictView: View {
                 Text("This phone and Steam Cloud both changed since the last sync. The one you don't pick is kept as a backup for 30 days.")
                     .font(.system(size: 13)).foregroundStyle(PP.muted).lineSpacing(2).padding(.top, -6)
                     .fixedSize(horizontal: false, vertical: true)
+                if session.conflicts.contains(where: { $0.localCopiesDiffer == true }) {
+                    Text("手機的本機與 Steam 儲存區也有不同內容。「This phone」使用遊戲本機資料夾的版本；其他版本會先備份。若要載入電腦上的進度，請選 Steam Cloud。")
+                        .font(.system(size: 13)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                }
                 HStack(spacing: 14) {
                     card(.phone, heading: "This phone", time: session.sides.phone.newest, line: phoneLine, button: .a)
                     card(.steam, heading: "Steam Cloud", time: session.sides.steam.newest, line: steamLine, button: .x)

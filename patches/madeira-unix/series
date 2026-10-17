@@ -105,3 +105,4 @@
 0104-ntdll-gate-iOS-self-suspend-before-returning-to-guest.patch
 0105-ntdll-report-compact-FEX-span-and-callret-geometry.patch
 0106-win32u-poll-host-input-during-game-message-waits.patch
+0107-audio-preserve-stream-phase-and-bound-starvation-recov.patch

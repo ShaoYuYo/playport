@@ -57,6 +57,8 @@ public enum SteamAPISwap {
         public var steamID: UInt64?
         /// A Steam API language code; the depots installed are English (DepotSelection).
         public var language: String
+        /// Internal guest path shared with the UI's cloud storage mapping.
+        public var saveRoot: String?
         public var dlc: [SteamGameProfile.DLC]
         /// More steam_settings files by name: the game's achievements and stats schema (EmulatorStats).
         public var files: [String: Data] = [:]
@@ -210,6 +212,7 @@ public enum SteamAPISwap {
         if let n = s.personaName.map(iniValue), !n.isEmpty { user += "account_name=\(n)\n" }
         if let id = s.steamID { user += "account_steamid=\(id)\n" }
         user += "language=\(iniValue(s.language))\n"
+        if let root = s.saveRoot { user += "\n[user::saves]\nlocal_save_path=\(iniValue(root))\n" }
         var app = "[app::dlcs]\nunlock_all=0\n"
         for d in s.dlc.sorted(by: { $0.appID < $1.appID }) { app += "\(d.appID)=\(iniValue(d.name))\n" }
         // No LAN: the emulator would broadcast and listen for peers, which asks

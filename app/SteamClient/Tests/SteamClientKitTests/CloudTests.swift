@@ -112,8 +112,8 @@ final class CloudTests: XCTestCase {
         let base = Cloud.Baseline(changeNumber: 1, files: ["same": "a", "phone": "a", "steam": "a", "both": "a", "gone": "a"])
         let plan = Cloud.plan(remote: ["same": r("a"), "phone": r("a"), "steam": r("b"), "both": r("b"), "gone": r("a"), "newsteam": r("c")],
                               local: ["same": "a", "phone": "b", "steam": "a", "both": "c", "newphone": "d"], baseline: base)
-        XCTAssertEqual(plan, ["phone": .upload, "steam": .download, "both": .conflict, "newsteam": .download, "newphone": .upload],
-                       "a file the phone deleted is not fetched again")
+        XCTAssertEqual(plan, ["phone": .upload, "steam": .download, "both": .conflict, "gone": .download, "newsteam": .download, "newphone": .upload],
+                       "a missing local copy is restored without deleting Steam's save")
         let first = Cloud.plan(remote: ["x": r("a"), "y": r("b")], local: ["x": "a", "y": "c", "z": "d"], baseline: nil)
         XCTAssertEqual(first, ["y": .conflict], "no baseline: a difference is the player's to settle, a phone-only file waits")
     }
@@ -358,6 +358,85 @@ final class CloudServiceTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: lone.deletingLastPathComponent().path), "a game's folder left empty goes too")
         XCTAssertEqual(Cloud.Backups.prune(backups, now: now), [])
         XCTAssertEqual(Cloud.Backups.prune(backups.appendingPathComponent("none"), now: now), [])
+    }
+
+    func testCloudSavesReachBothNativeAndRemoteStorageAndUploadEitherBackendsProgress() async throws {
+        let b = FakeBackend(), name = "datasu.ksd"
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        await b.set(cloud: [name: Array("PC progress".utf8)])
+        let s = try await service(b)
+        let r = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        XCTAssertEqual(r.downloaded, [name])
+        XCTAssertEqual(text(roots.mirrorFile(name)!), "PC progress")
+        XCTAssertEqual(text(roots.file(name)!), "PC progress")
+
+        try Data("native play".utf8).write(to: roots.mirrorFile(name)!)
+        let native = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        XCTAssertEqual(native.uploaded, [name])
+        XCTAssertEqual(text(roots.file(name)!), "native play")
+        try Data("remote play".utf8).write(to: roots.file(name)!)
+        let api = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        XCTAssertEqual(api.uploaded, [name])
+        XCTAssertEqual(text(roots.mirrorFile(name)!), "remote play")
+        let upper = roots.gameSaveMirror!.appendingPathComponent("DATASU.KSD")
+        try FileManager.default.moveItem(at: roots.mirrorFile(name)!, to: upper)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        XCTAssertEqual(roots.mirrorFile(name), upper)
+        XCTAssertNil(roots.mirrorFile("data_anchor.ksd"))
+        XCTAssertNil(roots.mirrorFile("krkr.console.log"))
+        XCTAssertNil(roots.mirrorFile("../datasu.ksd"))
+    }
+
+    func testDivergentLocalBackendsAskAndKeepAllLosingCopies() async throws {
+        let b = FakeBackend(), name = "datasu.ksd"
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        await b.set(cloud: [name: Array("PC original".utf8)])
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        try Data("native new".utf8).write(to: roots.mirrorFile(name)!)
+        try Data("remote new".utf8).write(to: roots.file(name)!)
+        let conflict = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        XCTAssertEqual(conflict.conflicts.map(\.name), [name])
+        XCTAssertEqual(conflict.conflicts.first?.localCopiesDiffer, true)
+        XCTAssertEqual(text(roots.mirrorFile(name)!), "native new")
+        XCTAssertEqual(text(roots.file(name)!), "remote new")
+        let settled = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, resolve: [name: .steam])
+        XCTAssertTrue(settled.failed.isEmpty)
+        XCTAssertEqual(text(roots.mirrorFile(name)!), "PC original")
+        XCTAssertEqual(text(roots.file(name)!), "PC original")
+        let kept = TitleInstaller.regularFiles(under: backups).compactMap { text(backups.appendingPathComponent($0)) }
+        XCTAssertTrue(kept.contains("native new"))
+        XCTAssertTrue(kept.contains("remote new"))
+    }
+
+    func testMissingDownloadedSaveIsRestoredDespiteExistingBaseline() async throws {
+        let b = FakeBackend()
+        await b.set(cloud: [saveName: Array("PC".utf8)])
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        try FileManager.default.removeItem(at: save)
+        let restored = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        XCTAssertEqual(restored.downloaded, [saveName])
+        XCTAssertEqual(text(save), "PC")
+    }
+
+    func testAddingNativeBackendToAnOldBaselineCannotUploadFreshProgressOverPC() async throws {
+        let b = FakeBackend(), name = "datasu.ksd"
+        await b.set(cloud: [name: Array("existing PC progress".utf8)])
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        // Upgrade from the old remote-only mapping: this backend was never
+        // part of its baseline, even though the canonical copy matched Steam.
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        try FileManager.default.createDirectory(at: roots.gameSaveMirror!, withIntermediateDirectories: true)
+        try Data("fresh game progress".utf8).write(to: roots.mirrorFile(name)!)
+        let r = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        XCTAssertEqual(r.conflicts.map(\.name), [name])
+        XCTAssertTrue(r.uploaded.isEmpty)
+        let pc = await b.cloudFile(name)
+        XCTAssertEqual(pc, Array("existing PC progress".utf8))
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, resolve: [name: .steam])
+        XCTAssertEqual(text(roots.mirrorFile(name)!), "existing PC progress")
     }
 
     func testSignOutForgetsTheBaseline() async throws {

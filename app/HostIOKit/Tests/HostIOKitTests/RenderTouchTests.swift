@@ -39,6 +39,15 @@ final class RenderTouchTests: XCTestCase {
         let v = GameViewport(width: 844, height: 390, top: 4, left: 51, bottom: 25, right: 4,
             contentWidth: 1280, contentHeight: 720, docked: false)
         XCTAssertTrue(v.safe.contains(v.customFrame(x: -1, y: 2, width: 100)))
+        for width in [48.0, 73, 108] {
+            for x in [0.0, 0.3, 1] { for y in [0.0, 0.7, 1] {
+                let f = v.customFrame(x: x, y: y, width: width)
+                let p = v.customPosition(origin: f.origin, width: width)
+                XCTAssertEqual(p.x, x, accuracy: 0.0001)
+                XCTAssertEqual(p.y, y, accuracy: 0.0001)
+                XCTAssertTrue(v.safe.contains(f))
+            } }
+        }
     }
 
     func testMeasuredFramesAndDrawableWaitDoNotClaimRequestedFPS() {

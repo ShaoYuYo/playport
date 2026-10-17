@@ -9,15 +9,17 @@ final class TouchControlsStore: ObservableObject {
     @Published var layout = TouchLayout() {
         didSet {
             guard let titleID else { return }
-            UserDefaults.standard.set(try? JSONEncoder().encode(layout.normalized), forKey: "touch.layout." + titleID)
+            UserDefaults.standard.set(try? JSONEncoder().encode(layout.normalized), forKey: "touch.freeform." + titleID)
         }
     }
     private var titleID: String?
+    @Published var selected: UUID?
 
     func load(titleID: String?) {
         self.titleID = nil
-        let data = titleID.flatMap { UserDefaults.standard.data(forKey: "touch.layout." + $0) }
+        let data = titleID.flatMap { UserDefaults.standard.data(forKey: "touch.freeform." + $0) }
         layout = (data.flatMap { try? JSONDecoder().decode(TouchLayout.self, from: $0) } ?? TouchLayout()).normalized
+        selected = nil
         self.titleID = titleID
     }
 
@@ -50,12 +52,12 @@ private func buttonWidth(_ text: String) -> CGFloat { min(108, max(48, CGFloat(t
 final class GameSurfaceContainer: UIView {
     let surface = GameSurfaceView()
     private let menuButton = UIButton(type: .system)
-    private let toggleButton = UIButton(type: .system)
-    private let pageButton = UIButton(type: .system)
+    private let addButton = UIButton(type: .system)
     private var buttons: [UUID: MappedTouchControl] = [:]
     private var layout = TouchLayout()
     private var visible = false
-    private var page = 0
+    private var editing = false
+    private var geometry: GameViewport?
     private var lastGeometry = ""
 
     override init(frame: CGRect) {
@@ -63,7 +65,7 @@ final class GameSurfaceContainer: UIView {
         backgroundColor = .black
         isMultipleTouchEnabled = true
         addSubview(surface)
-        for button in [menuButton, toggleButton, pageButton] {
+        for button in [menuButton, addButton] {
             var appearance = UIButton.Configuration.glass()
             appearance.baseForegroundColor = .white
             appearance.cornerStyle = .capsule
@@ -73,22 +75,27 @@ final class GameSurfaceContainer: UIView {
             button.setTitleColor(.white, for: .normal)
             addSubview(button)
         }
-        menuButton.setTitle("選單", for: .normal)
-        menuButton.accessibilityLabel = "遊戲選單、按鍵映射與畫面設定"
-        toggleButton.setTitle("按鍵", for: .normal)
-        toggleButton.accessibilityLabel = "顯示或隱藏觸控按鍵"
+        menuButton.accessibilityLabel = "遊戲設定"
+        addButton.setTitle("新增", for: .normal)
         menuButton.addTarget(self, action: #selector(openMenu), for: .touchUpInside)
-        toggleButton.addTarget(self, action: #selector(toggleControls), for: .touchUpInside)
-        pageButton.addTarget(self, action: #selector(nextPage), for: .touchUpInside)
+        addButton.addTarget(self, action: #selector(addControl), for: .touchUpInside)
     }
     required init?(coder: NSCoder) { fatalError("created in code") }
-    @objc private func openMenu() { InGameMenu.shared.open() }
-    @objc private func toggleControls() { TouchControlsStore.shared.layout.enabled.toggle() }
-    @objc private func nextPage() { page += 1; setNeedsLayout() }
+    @objc private func openMenu() {
+        if editing { InGameMenu.shared.resume() } else { InGameMenu.shared.open() }
+    }
+    @objc private func addControl() {
+        let b = TouchBinding(action: .enter, x: 0.5, y: 0.5)
+        TouchControlsStore.shared.layout.buttons.append(b)
+        TouchControlsStore.shared.selected = b.id
+        InGameMenu.shared.editingControls = false
+        InGameMenu.shared.panel = .controls
+    }
 
-    func update(layout: TouchLayout, visible: Bool) {
+    func update(layout: TouchLayout, visible: Bool, editing: Bool) {
         self.layout = layout.normalized
         self.visible = visible
+        self.editing = editing
         for id in Array(buttons.keys) where !self.layout.buttons.contains(where: { $0.id == id }) {
             buttons.removeValue(forKey: id)?.removeFromSuperview()
         }
@@ -97,9 +104,20 @@ final class GameSurfaceContainer: UIView {
             if let existing = buttons[binding.id] { button = existing }
             else { button = MappedTouchControl(); buttons[binding.id] = button; insertSubview(button, belowSubview: menuButton) }
             button.configure(binding)
+            button.editing = editing
+            button.onSelect = {
+                TouchControlsStore.shared.selected = binding.id
+                InGameMenu.shared.editingControls = false
+                InGameMenu.shared.panel = .controls
+            }
+            button.onMove = { [weak self] origin in
+                guard let self, let geometry = self.geometry else { return }
+                let p = geometry.customPosition(origin: origin, width: buttonWidth(binding.label))
+                TouchControlsStore.shared.move(binding.id, x: p.x, y: p.y)
+            }
         }
-        surface.isUserInteractionEnabled = visible
-        if visible { surface.becomeFirstResponder() }
+        surface.isUserInteractionEnabled = visible && !editing
+        if visible && !editing { surface.becomeFirstResponder() }
         setNeedsLayout()
     }
 
@@ -110,26 +128,26 @@ final class GameSurfaceContainer: UIView {
         let pixels = TitleScreen.pixelSize
         let geometry = GameViewport(width: bounds.width, height: bounds.height,
             top: insets.top + 4, left: insets.left + 4, bottom: insets.bottom + 4, right: insets.right + 4,
-            contentWidth: pixels.width, contentHeight: pixels.height, docked: layout.docked)
+            contentWidth: pixels.width, contentHeight: pixels.height, docked: false)
+        self.geometry = geometry
         surface.frame = geometry.game
         surface.configureRenderSize(pixels)
-        let pages = max(1, (layout.buttons.count + geometry.pageSize - 1) / geometry.pageSize)
-        page %= pages
         menuButton.frame = CGRect(x: geometry.safe.maxX - 50, y: geometry.safe.minY + 2, width: 48, height: 44)
-        toggleButton.frame = CGRect(x: geometry.safe.minX + 2, y: geometry.safe.minY + 2, width: 48, height: 44)
-        pageButton.frame = CGRect(x: geometry.safe.minX + 2, y: geometry.safe.maxY - 46, width: 48, height: 44)
-        pageButton.setTitle("\(page + 1)/\(pages)", for: .normal)
+        menuButton.setTitle(editing ? "完成" : nil, for: .normal)
+        menuButton.setImage(editing ? nil : UIImage(systemName: "gearshape.fill"), for: .normal)
+        menuButton.accessibilityLabel = editing ? "完成配置並返回遊戲" : "遊戲設定"
+        addButton.frame = CGRect(x: geometry.safe.minX + 2, y: geometry.safe.minY + 2, width: 58, height: 44)
         menuButton.isHidden = !visible
-        toggleButton.isHidden = !visible
-        toggleButton.isSelected = layout.enabled
-        pageButton.isHidden = !visible || !layout.enabled || !layout.docked || pages == 1
-        for (index, binding) in layout.buttons.enumerated() {
+        addButton.isHidden = !visible || !editing
+        addButton.isEnabled = layout.buttons.count < 20
+        for binding in layout.buttons {
             guard let button = buttons[binding.id] else { continue }
-            let shown = visible && layout.enabled && (!layout.docked || index / geometry.pageSize == page)
+            let shown = visible && (layout.enabled || editing)
             button.setVisible(shown, opacity: layout.opacity)
-            button.frame = layout.docked ? geometry.controlFrame(index: index % geometry.pageSize)
-                : geometry.customFrame(x: binding.x, y: binding.y, width: buttonWidth(binding.label))
+            button.frame = geometry.customFrame(x: binding.x, y: binding.y, width: buttonWidth(binding.label))
         }
+        bringSubviewToFront(menuButton)
+        bringSubviewToFront(addButton)
         // Sparse layout evidence, without per-frame UI publishing or device IDs.
         let summary = "game=\(Int(surface.bounds.width))x\(Int(surface.bounds.height)) safe=\(Int(insets.left)),\(Int(insets.right)),\(Int(insets.bottom)) docked=\(layout.docked)"
         if summary != lastGeometry { lastGeometry = summary; HostIO.log("touch-ui: " + summary) }
@@ -144,6 +162,11 @@ final class GameSurfaceContainer: UIView {
 }
 
 private final class MappedTouchControl: UIButton {
+    var editing = false { didSet { if oldValue != editing { pan.isEnabled = editing; if editing { releaseInput() } } } }
+    var onSelect: (() -> Void)?
+    var onMove: ((CGPoint) -> Void)?
+    private var dragOrigin: CGPoint?
+    private lazy var pan = UIPanGestureRecognizer(target: self, action: #selector(dragged))
     private var binding: TouchBinding?
     private var inputHeld = false
     private var wantsVisible = false
@@ -160,9 +183,22 @@ private final class MappedTouchControl: UIButton {
         isAccessibilityElement = true
         accessibilityTraits = .button
         isHidden = true
+        pan.isEnabled = false
+        addGestureRecognizer(pan)
+        addTarget(self, action: #selector(selectedForEdit), for: .touchUpInside)
         restyle()
     }
     required init?(coder: NSCoder) { fatalError("created in code") }
+    @objc private func selectedForEdit() { if editing { onSelect?() } }
+    @objc private func dragged(_ gesture: UIPanGestureRecognizer) {
+        guard editing, let parent = superview else { return }
+        if gesture.state == .began { dragOrigin = frame.origin }
+        if let dragOrigin, gesture.state == .began || gesture.state == .changed {
+            let offset = gesture.translation(in: parent)
+            onMove?(CGPoint(x: dragOrigin.x + offset.x, y: dragOrigin.y + offset.y))
+        }
+        if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed { dragOrigin = nil }
+    }
     override func didMoveToWindow() { super.didMoveToWindow(); if window == nil { releaseInput() } }
     func configure(_ value: TouchBinding) {
         if binding?.id != value.id || binding?.action != value.action { releaseInput() }
@@ -186,6 +222,7 @@ private final class MappedTouchControl: UIButton {
         }
     }
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
+        if editing { return super.beginTracking(touch, with: event) }
         guard !inputHeld, let binding else { return false }
         _ = super.beginTracking(touch, with: event)
         inputHeld = true
@@ -212,24 +249,22 @@ private final class MappedTouchControl: UIButton {
 struct TouchMappingEditor: View {
     @ObservedObject private var controls = TouchControlsStore.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var selected: UUID?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("顯示觸控按鍵", isOn: $controls.layout.enabled)
-                    Toggle("使用黑色邊欄（避開鏡頭）", isOn: $controls.layout.docked)
-                    Text("邊欄模式會把按鍵排列到遊戲畫面外側；按鍵過多可切換分頁。關閉邊欄模式後使用下方拖曳位置。點選預覽按鈕可修改按鍵或名稱。按住即長按，放開即停止。每款遊戲分別保存。")
+                    Text("新增按鈕、選擇對應按鍵，再到遊戲畫面拖曳位置。位置會避開鏡頭與手勢區，可覆蓋遊戲畫面或放到黑邊。配置時遊戲暫停，按完成後繼續。每款遊戲分別保存。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    GeometryReader { g in
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 18).fill(.black.opacity(0.35))
-                            ForEach(controls.layout.normalized.buttons) { b in
-                                MappingPreviewButton(binding: b, size: g.size, selected: selected == b.id) { selected = b.id }
-                            }
-                        }
-                    }.frame(height: 210)
+                    Button("在遊戲畫面拖曳位置", systemImage: "hand.draw") {
+                        InGameMenu.shared.placeControls()
+                    }.buttonStyle(.glass)
+                    ForEach(controls.layout.normalized.buttons) { b in
+                        Button { controls.selected = b.id } label: {
+                            HStack { Text(b.label); Spacer(); Text(b.action.title); if controls.selected == b.id { Image(systemName: "checkmark") } }
+                        }.buttonStyle(.glass)
+                    }
                     HStack {
                         Menu {
                             ForEach(TouchAction.allCases, id: \.self) { action in
@@ -237,7 +272,7 @@ struct TouchMappingEditor: View {
                                     let b = TouchBinding(action: action, x: 0.5, y: 0.5)
                                     controls.layout.buttons.append(b)
                                     controls.layout.enabled = true
-                                    selected = b.id
+                                    controls.selected = b.id
                                 }
                             }
                         } label: { Label("新增按鍵", systemImage: "plus") }
@@ -245,51 +280,28 @@ struct TouchMappingEditor: View {
                         Spacer()
                         Text("\(controls.layout.buttons.count)/20").foregroundStyle(.secondary)
                     }
-                    if let button = controls.layout.buttons.first(where: { $0.id == selected }) {
+                    if let button = controls.layout.buttons.first(where: { $0.id == controls.selected }) {
                         Picker("映射按鍵", selection: controls.actionBinding(button)) {
                             ForEach(TouchAction.allCases, id: \.self) { Text($0.title).tag($0) }
                         }
                         TextField("按鈕名稱", text: controls.labelBinding(button))
                             .textFieldStyle(.roundedBorder)
                         Button("刪除此按鍵", role: .destructive) {
-                            controls.layout.buttons.removeAll { $0.id == button.id }; selected = nil
+                            controls.layout.buttons.removeAll { $0.id == button.id }; controls.selected = nil
                         }
                     }
                     HStack {
                         Text("按鍵亮度")
                         Slider(value: $controls.layout.opacity, in: 0.2...1)
                     }
-                    Button("恢復預設配置") {
-                        controls.layout = TouchLayout(); controls.layout.enabled = true; selected = nil
+                    Button("移除全部按鈕", role: .destructive) {
+                        controls.layout = TouchLayout(); controls.selected = nil
                     }
                 }.padding(20)
             }
-            .navigationTitle("按鍵映射")
+            .navigationTitle("自訂螢幕按鈕")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }
         .preferredColorScheme(.dark)
-    }
-}
-
-private struct MappingPreviewButton: View {
-    let binding: TouchBinding
-    let size: CGSize
-    let selected: Bool
-    let select: () -> Void
-    @State private var origin: CGPoint?
-    var body: some View {
-        let w = max(1, size.width - 108), h = max(1, size.height - 56)
-        Text(binding.label).font(.system(size: 14, weight: .semibold))
-            .frame(width: buttonWidth(binding.label), height: 46)
-            .background(selected ? Color.blue.opacity(0.7) : Color.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 16))
-            .position(x: 54 + CGFloat(binding.x) * w, y: 28 + CGFloat(binding.y) * h)
-            .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { v in
-                    if origin == nil { origin = CGPoint(x: binding.x, y: binding.y); select() }
-                    guard let origin else { return }
-                    TouchControlsStore.shared.move(binding.id, x: origin.x + v.translation.width / w,
-                                                   y: origin.y + v.translation.height / h)
-                }
-                .onEnded { _ in origin = nil })
     }
 }

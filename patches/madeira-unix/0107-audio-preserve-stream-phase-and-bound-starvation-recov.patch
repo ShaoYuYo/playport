@@ -1,0 +1,180 @@
+From 2e3e07ba669bc79e20d7b68fa20fcb01c76008aa Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 17:42:08 +0800
+Subject: [PATCH] audio: preserve stream phase and bound starvation recovery
+
+Carry fractional sample positions across callbacks instead of rounding every
+hardware buffer up and skipping frames. After starvation, accumulate a short
+refill with a 40 ms timeout; a short final clip must still drain. Keep the
+real-time callback limited to ring reads and atomics. Replace source-sample
+scans/dumps with passive underrun/refill counters on the existing timer.
+
+Class: host-app
+Evidence: docs/evidence/2026-10-17-save-placement-audio-controls.md
+Offered-upstream: no (iOS host mixer)
+---
+ build/ntdll-unix/audio_null_ios.c | 99 +++++++++++++++++--------------
+ 1 file changed, 56 insertions(+), 43 deletions(-)
+
+diff --git a/build/ntdll-unix/audio_null_ios.c b/build/ntdll-unix/audio_null_ios.c
+index b085eaa..a7b1e86 100644
+--- a/build/ntdll-unix/audio_null_ios.c
++++ b/build/ntdll-unix/audio_null_ios.c
+@@ -304,6 +304,13 @@ struct ios_stream {
+     int mixable;                 /* format understood by the mixer */
+     BYTE *ring;
+     _Atomic uint64_t write_pos;  /* frames produced by the game (monotonic) */
++    /* RT-owned recovery/phase state; diagnostics are read by the timer only. */
++    uint64_t resample_phase;
++    UINT32 refill_wait_frames;
++    int refilling;
++    _Atomic uint64_t underrun_callbacks;
++    _Atomic uint64_t refill_callbacks;
++    _Atomic uint64_t missing_device_frames;
+     _Atomic uint64_t play_pos;   /* frames consumed by the RT callback */
+ };
+ 
+@@ -492,6 +499,7 @@ static void ios_mix_stream(struct ios_stream *s, float *out, UInt32 nframes,
+     UINT32 cap = s->buffer_frames, sch = s->channels, fb = s->frame_bytes;
+     uint64_t play, wr, avail, need;
+     UInt32 f;
++    uint64_t phase;
+ 
+     if (!s->started || !s->mixable || !s->ring || !cap || !sch || !fb) return;
+ 
+@@ -499,16 +507,29 @@ static void ios_mix_stream(struct ios_stream *s, float *out, UInt32 nframes,
+     wr    = atomic_load_explicit(&s->write_pos, memory_order_acquire);
+     avail = wr - play;
+ 
+-    /* frames of THIS stream that cover nframes of device time */
+-    if (s->sample_rate == dev_rate) need = nframes;
+-    else need = ((uint64_t)nframes * s->sample_rate + dev_rate - 1) / dev_rate;
+-    if (avail < need) need = avail;
++    /* Refill after a starvation instead of playing each tiny producer burst
++     * immediately and alternating it with silence. Bounded to 40 ms of device
++     * time, so a short final clip cannot wait forever for a full target. No
++     * allocation, lock, sleep or guest calls on this real-time path. */
++    if (s->refilling) {
++        uint64_t target = s->sample_rate / 25;
++        UINT32 maximum_wait = dev_rate / 25;
++        if (target > cap / 2) target = cap / 2;
++        if (avail < target && s->refill_wait_frames < maximum_wait) {
++            s->refill_wait_frames += nframes;
++            atomic_fetch_add_explicit(&s->refill_callbacks, 1, memory_order_relaxed);
++            return;
++        }
++        s->refilling = 0;
++        s->refill_wait_frames = 0;
++    }
++    phase = s->resample_phase;
++    need = avail;
+ 
+     for (f = 0; f < nframes; f++)
+     {
+-        uint64_t sidx = (s->sample_rate == dev_rate)
+-                        ? (uint64_t)f
+-                        : ((uint64_t)f * s->sample_rate) / dev_rate;
++        uint64_t sidx = (s->sample_rate == dev_rate) ? (uint64_t)f
++                        : (phase + (uint64_t)f * s->sample_rate) / dev_rate;
+         const BYTE *fr;
+         float l, r;
+ 
+@@ -532,7 +553,20 @@ static void ios_mix_stream(struct ios_stream *s, float *out, UInt32 nframes,
+         if (dev_ch > 1) out[(size_t)f * dev_ch + 1] += r;
+     }
+ 
+-    atomic_store_explicit(&s->play_pos, play + need, memory_order_release);
++    /* Carry the fractional source position across hardware callbacks. Taking
++     * ceil() independently on each callback used to skip source frames. */
++    {
++        uint64_t advance = phase + (uint64_t)f * s->sample_rate;
++        uint64_t consumed = advance / dev_rate;
++        s->resample_phase = advance % dev_rate;
++        if (consumed > avail) { consumed = avail; s->resample_phase = 0; }
++        atomic_store_explicit(&s->play_pos, play + consumed, memory_order_release);
++    }
++    if (f < nframes) {
++        s->refilling = 1;
++        atomic_fetch_add_explicit(&s->underrun_callbacks, 1, memory_order_relaxed);
++        atomic_fetch_add_explicit(&s->missing_device_frames, nframes - f, memory_order_relaxed);
++    }
+ }
+ 
+ /* Core Audio real-time thread. See ios_mix_stream for the constraints. */
+@@ -983,10 +1017,21 @@ static void ios_timer_loop(void *arg) {
+      * when release_stream marks the stream dead (it then joins us). */
+     struct ios_stream *s = arg;
+     LOG_FN_CALL(9, "timer_loop");
++    unsigned ticks = 0;
+     while (s->valid) {
+         usleep(10000); /* device period, 10 ms */
+         if (s->event && s->started)
+             NtSetEvent(s->event, NULL);
++        if (++ticks % 500 == 0 && s->started) {
++            uint64_t write = atomic_load_explicit(&s->write_pos, memory_order_acquire);
++            uint64_t play = atomic_load_explicit(&s->play_pos, memory_order_acquire);
++            fprintf(stderr, "[audio-health-v1] rate=%u buffer_ms=%u queued_frames=%llu underrun_callbacks=%llu missing_device_frames=%llu refill_callbacks=%llu\n",
++                s->sample_rate, s->buffer_frames * 1000 / s->sample_rate,
++                (unsigned long long)(write >= play ? write - play : 0),
++                (unsigned long long)atomic_load_explicit(&s->underrun_callbacks, memory_order_relaxed),
++                (unsigned long long)atomic_load_explicit(&s->missing_device_frames, memory_order_relaxed),
++                (unsigned long long)atomic_load_explicit(&s->refill_callbacks, memory_order_relaxed));
++        }
+     }
+ }
+ 
+@@ -1048,6 +1093,9 @@ static NTSTATUS ios_reset(void *args) {
+     atomic_store(&s->write_pos, 0);
+     atomic_store(&s->play_pos, 0);
+     s->pending_frames = 0;
++    s->resample_phase = 0;
++    s->refilling = 0;
++    s->refill_wait_frames = 0;
+     p->result = S_OK;
+     return STATUS_SUCCESS;
+ }
+@@ -1101,41 +1149,6 @@ static NTSTATUS ios_release_render_buffer(void *args) {
+                    s->render_scratch + (size_t)i * fb, (size_t)chunk * fb);
+             i += chunk;
+         }
+-        /* ml1065: what is the game actually handing us? A run has had constant
+-         * white noise since audio first worked; this says whether the noise is in
+-         * the source data (mean level high and flat, peaks saturating) or made
+-         * later (clean source, noisy output). One line per stream per ~10 s. */
+-        {
+-            static struct { uint64_t frames, clip; double sum_abs; float peak; time_t last; } st[IOS_MAX_STREAMS];
+-            int slot = -1, si;
+-            for (si = 0; si < IOS_MAX_STREAMS; si++) if (atomic_load_explicit(&g_mix[si], memory_order_relaxed) == s) { slot = si; break; }
+-            if (slot >= 0 && slot < IOS_MAX_STREAMS && s->channels) {
+-                UINT32 f2, c2, step = n > 4096 ? n / 4096 : 1;
+-                for (f2 = 0; f2 < n; f2 += step) {
+-                    const BYTE *fr = s->render_scratch + (size_t)f2 * fb;
+-                    for (c2 = 0; c2 < s->channels && c2 < 2; c2++) {
+-                        float v = s->is_float ? ((const float *)fr)[c2]
+-                                : s->sample_bits == 16 ? ((const int16_t *)fr)[c2] * (1.0f / 32768.0f)
+-                                : ((const int32_t *)fr)[c2] * (1.0f / 2147483648.0f);
+-                        float a = v < 0 ? -v : v;
+-                        st[slot].sum_abs += a; if (a > st[slot].peak) st[slot].peak = a; if (a >= 0.99f) st[slot].clip++;
+-                        st[slot].frames++;
+-                    }
+-                }
+-                if (time(NULL) - st[slot].last >= 10 && st[slot].frames && !s->is_float) {   /* ml1067: what do the bytes look like */
+-                    const uint16_t *w = (const uint16_t *)s->render_scratch;
+-                    fprintf(stderr, "[ios_audio] ml1067 slot=%d first 12 words of the last buffer (%u frames asked): "
+-                            "%04x %04x %04x %04x %04x %04x %04x %04x %04x %04x %04x %04x\n", slot, n,
+-                            w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11]);
+-                }
+-                if (time(NULL) - st[slot].last >= 10 && st[slot].frames) {
+-                    fprintf(stderr, "[ios_audio] ml1065 slot=%d source: %llu samples, mean|x|=%.4f peak=%.3f clipped=%llu (rate %u ch %u float=%d bits=%d)\n",
+-                            slot, (unsigned long long)st[slot].frames, st[slot].sum_abs / (double)st[slot].frames, st[slot].peak,
+-                            (unsigned long long)st[slot].clip, s->sample_rate, s->channels, s->is_float, s->sample_bits);
+-                    st[slot].frames = 0; st[slot].sum_abs = 0; st[slot].peak = 0; st[slot].clip = 0; st[slot].last = time(NULL);
+-                }
+-            }
+-        }
+         /* release-store AFTER the copy so the RT callback never reads
+          * frames that aren't fully written */
+         atomic_store_explicit(&s->write_pos, wr + n, memory_order_release);
+-- 
+2.43.0
+

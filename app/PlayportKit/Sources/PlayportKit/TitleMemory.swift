@@ -27,8 +27,10 @@ public struct TitleMemory: Equatable, Sendable {
     public func arguments(over base: [String]) -> [String] {
         guard active else { return base }
         var result = base
-        // KiriKiri's own cache policy; no game archives/config/save files change.
-        for (key, value) in [("memusage", "low"), ("drawthread", "2")] {
+        // The old low mode tells KiriKiri it has zero physical memory and
+        // disables its segment/layer caches. Keep the bounded worker fleet,
+        // but allow the engine's normal cache policy to reuse decoded scenes.
+        for (key, value) in [("memusage", "normal"), ("gclim", "64"), ("drawthread", "2")] {
             let option = "-" + key
             if !base.contains(where: { $0.lowercased() == option || $0.lowercased().hasPrefix(option + "=") }) {
                 result.append(option + "=" + value)

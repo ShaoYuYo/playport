@@ -330,7 +330,7 @@ enum LaunchCoordinator {
         let config = titleMemory.config(over: r.config)
         args = titleMemory.arguments(over: args)
         if titleMemory.active {
-            log("memory-economy: profile=senren-v1 default_pool_mb=256 cpu_count=\(config["cpu-count"] ?? "default") engine_cache_default=low explicit_arguments=preserved")
+            log("memory-economy: profile=senren-v2 default_pool_mb=256 cpu_count=\(config["cpu-count"] ?? "default") engine_cache_default=normal graphics_cache_default_mb=64 explicit_arguments=preserved")
         }
 
         // The backend's builtins go before the runtime's own (wine_host_init,

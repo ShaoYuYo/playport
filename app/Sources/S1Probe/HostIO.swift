@@ -732,7 +732,9 @@ struct GameSurface: UIViewRepresentable {
     @ObservedObject private var web = GameWebSheet.shared
     func makeUIView(context: Context) -> GameSurfaceContainer { GameSurfaceContainer() }
     func updateUIView(_ view: GameSurfaceContainer, context: Context) {
-        view.update(layout: controls.layout, visible: launch.acceptsMenu && !launch.showsSheet && !menu.isOpen && !web.isUp)
+        view.update(layout: controls.layout,
+                    visible: launch.acceptsMenu && !launch.showsSheet && (!menu.isOpen || menu.editingControls) && !web.isUp,
+                    editing: menu.editingControls)
     }
 }
 #endif
