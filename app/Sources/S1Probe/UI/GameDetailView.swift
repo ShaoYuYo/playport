@@ -750,6 +750,14 @@ private struct GameDetailPage: View {
                     library.askCloud(t, app, c.conflicts, thenPlay: false)
                 }
             }
+            if cloudOn, SteamAccountModel.cloudOn {
+                PadRow(id: "opt:cloud-sync-now", title: "立即同步 Steam 雲端", subtitle: cloudDetail(app),
+                       value: model.cloudSyncing.contains(app) ? "同步中…" : "同步／重試", accessory: .chevron,
+                       style: .plain) {
+                    guard !launch.running else { return }
+                    Task { await model.syncCloud(app) }
+                }
+            }
         }
         if t.store != .steam, t.source != .cohort { localRows(t) }
         filesRows(t)
@@ -879,7 +887,7 @@ private struct GameDetailPage: View {
         if model.cloudSyncing.contains(app) { return "Syncing saves…" }
         if let e = model.cloudErrors[app] { return "Not synced: " + e }
         guard let c = model.cloud[app] else { return nil }
-        var s = "Synced " + c.at.formatted(date: .omitted, time: .shortened)
+        var s = (c.failed.isEmpty ? "Synced " : "Incomplete sync ") + c.at.formatted(date: .omitted, time: .shortened)
         if !c.downloaded.isEmpty || !c.uploaded.isEmpty { s += " · \(c.downloaded.count) from Steam, \(c.uploaded.count) to Steam" }
         if !c.failed.isEmpty { s += " · \(c.failed.count) failed" }
         return s

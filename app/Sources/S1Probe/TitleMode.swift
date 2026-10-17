@@ -68,6 +68,7 @@ final class TitleLaunch: ObservableObject {
         self.titleID = titleID
         TouchControlsStore.shared.load(titleID: titleID)
         appID = steamAppID
+        if let app = steamAppID { SteamAccountModel.notePendingCloud(app) }
         startedAt = Date()
         quitting = false
         message = nil

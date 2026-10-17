@@ -203,7 +203,7 @@ final class LibraryModel: ObservableObject {
         // A game whose saves changed on the phone and on Steam asks which to keep first; the
         // choice starts it, Decide later does not (UI/CloudConflictView.swift).
         if let t = catalog.title(id: id), let app = t.appID, let steam = SteamAccountModel.current {
-            let conflicts = await steam.openCloudConflicts(app, titleID: id)
+            let conflicts = try await steam.openCloudConflicts(app, titleID: id)
             if !conflicts.isEmpty {
                 Self.log("play \(t.name) (\(id)): \(conflicts.count) cloud save conflict(s); asking which saves to keep")
                 askCloud(t, app, conflicts, thenPlay: true)

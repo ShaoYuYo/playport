@@ -64,10 +64,13 @@ final class GameSurfaceContainer: UIView {
         isMultipleTouchEnabled = true
         addSubview(surface)
         for button in [menuButton, toggleButton, pageButton] {
+            var appearance = UIButton.Configuration.glass()
+            appearance.baseForegroundColor = .white
+            appearance.cornerStyle = .capsule
+            appearance.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 5, bottom: 4, trailing: 5)
+            button.configuration = appearance
             button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
             button.setTitleColor(.white, for: .normal)
-            button.backgroundColor = UIColor(white: 0.14, alpha: 0.85)
-            button.layer.cornerRadius = 14
             addSubview(button)
         }
         menuButton.setTitle("選單", for: .normal)
@@ -140,23 +143,20 @@ final class GameSurfaceContainer: UIView {
     }
 }
 
-private final class MappedTouchControl: UIControl {
-    private let label = UILabel()
+private final class MappedTouchControl: UIButton {
     private var binding: TouchBinding?
-    private var held = false
+    private var inputHeld = false
     private var wantsVisible = false
     override init(frame: CGRect) {
         super.init(frame: frame)
-        layer.cornerRadius = 18
-        layer.borderWidth = 1
-        layer.borderColor = UIColor.white.withAlphaComponent(0.3).cgColor
-        label.textAlignment = .center
-        label.font = .systemFont(ofSize: 15, weight: .semibold)
-        label.textColor = .white
-        label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.5
-        label.isUserInteractionEnabled = false
-        addSubview(label)
+        var appearance = UIButton.Configuration.glass()
+        appearance.baseForegroundColor = .white
+        appearance.cornerStyle = .capsule
+        appearance.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 5, bottom: 4, trailing: 5)
+        configuration = appearance
+        titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel?.adjustsFontSizeToFitWidth = true
+        titleLabel?.minimumScaleFactor = 0.5
         isAccessibilityElement = true
         accessibilityTraits = .button
         isHidden = true
@@ -164,44 +164,47 @@ private final class MappedTouchControl: UIControl {
     }
     required init?(coder: NSCoder) { fatalError("created in code") }
     override func didMoveToWindow() { super.didMoveToWindow(); if window == nil { releaseInput() } }
-    override func layoutSubviews() { super.layoutSubviews(); label.frame = bounds.insetBy(dx: 8, dy: 2) }
     func configure(_ value: TouchBinding) {
         if binding?.id != value.id || binding?.action != value.action { releaseInput() }
         binding = value
-        label.text = value.label
+        setTitle(value.label, for: .normal)
         accessibilityLabel = value.label + " · " + value.action.title
     }
     func setVisible(_ visible: Bool, opacity: Double) {
-        guard visible != wantsVisible else { if visible { alpha = opacity }; return }
+        // Keep native glass at full view alpha; dim its text/tint instead of
+        // flattening a partially transparent effect view every frame.
+        configuration?.baseForegroundColor = UIColor.white.withAlphaComponent(max(0.45, opacity))
+        guard visible != wantsVisible else { return }
         wantsVisible = visible
         isUserInteractionEnabled = visible
         if visible { isHidden = false; alpha = 0 } else { releaseInput() }
         UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0.1 : 0.18,
                        delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-            self.alpha = visible ? opacity : 0
+            self.alpha = visible ? 1 : 0
         } completion: { _ in
             if !self.wantsVisible { self.isHidden = true }
         }
     }
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-        guard !held, let binding else { return false }
-        held = true
+        guard !inputHeld, let binding else { return false }
+        _ = super.beginTracking(touch, with: event)
+        inputHeld = true
         HostIO.shared.mappedInput(binding.action, source: binding.id.uuidString, down: true)
         restyle()
         return true
     }
-    override func endTracking(_ touch: UITouch?, with event: UIEvent?) { releaseInput() }
-    override func cancelTracking(with event: UIEvent?) { releaseInput() }
+    override func endTracking(_ touch: UITouch?, with event: UIEvent?) { releaseInput(); super.endTracking(touch, with: event) }
+    override func cancelTracking(with event: UIEvent?) { releaseInput(); super.cancelTracking(with: event) }
     func releaseInput() {
-        guard held, let binding else { return }
-        held = false
+        guard inputHeld, let binding else { return }
+        inputHeld = false
         HostIO.shared.mappedInput(binding.action, source: binding.id.uuidString, down: false)
         restyle()
     }
     private func restyle() {
+        isHighlighted = inputHeld
         UIView.animate(withDuration: 0.12) {
-            self.backgroundColor = self.held ? UIColor.systemBlue.withAlphaComponent(0.75) : UIColor(white: 0.12, alpha: 0.6)
-            self.transform = self.held ? CGAffineTransform(scaleX: 0.95, y: 0.95) : .identity
+            self.transform = self.inputHeld ? CGAffineTransform(scaleX: 0.95, y: 0.95) : .identity
         }
     }
 }
@@ -253,7 +256,7 @@ struct TouchMappingEditor: View {
                         }
                     }
                     HStack {
-                        Text("透明度")
+                        Text("按鍵亮度")
                         Slider(value: $controls.layout.opacity, in: 0.2...1)
                     }
                     Button("恢復預設配置") {

@@ -1,0 +1,71 @@
+From dceac94022d5b65c81a39416bb3751128250b4d0 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 14:41:47 +0800
+Subject: [PATCH] win32u: poll host input during game message waits
+
+The Swift input ring has no server fd. Only desktop mode previously polled
+it during a blocking message wait; games could wait for an unrelated timer
+before seeing a tap. Apply the existing 16 ms deadline-bounded poll to games
+and preserve WaitAll semantics when only the queue has become ready.
+
+Class: host-app
+Evidence: docs/evidence/2026-10-17-input-wait-cloud-glass.md
+Offered-upstream: no (iOS host input ring)
+---
+ build/win32u-unix/message_ios.c | 33 ++++++++++++---------------------
+ 1 file changed, 12 insertions(+), 21 deletions(-)
+
+diff --git a/build/win32u-unix/message_ios.c b/build/win32u-unix/message_ios.c
+index c1a8c64..5f8837d 100644
+--- a/build/win32u-unix/message_ios.c
++++ b/build/win32u-unix/message_ios.c
+@@ -3509,25 +3509,12 @@ static DWORD wait_message( DWORD count, const HANDLE *handles, DWORD timeout, DW
+     process_driver_events( QS_ALLINPUT, wake_mask, changed_mask );
+     if (!(changed_mask & QS_SMRESULT) && (event = get_user_thread_info()->idle_event)) NtSetEvent( event, NULL );
+ 
+-    /* iOS desktop mode: trackpad events sit in the app-side ring until a
+-     * wine thread runs pProcessEvents — a thread sleeping here (e.g. the
+-     * SC_MOVE / menu modal loops via NtUserGetMessage) never drains it,
+-     * so drags advanced only when winemine's 1Hz timer woke the queue.
+-     * Wake every 16ms to poll driver events; only surface WAIT_TIMEOUT
+-     * when the CALLER's own deadline expires. Games path unchanged. */
+-    {
+-        static int ios_slice = -1;
+-        if (ios_slice < 0)
+-        {
+-            const char *d = getenv( "MADEIRA_DESKTOP" );
+-            ios_slice = (d && *d == '1');
+-        }
+-        if (!ios_slice)
+-        {
+-            do ret = NtWaitForMultipleObjects( count, handles, type, !!(flags & MWMO_ALERTABLE), abs );
+-            while (ret == count - 1 && !process_driver_events( QS_ALLINPUT, wake_mask, changed_mask ));
+-        }
+-        else for (;;)
++    /* [input-wait-v1] Host input is queued without a wineserver fd. Poll
++     * during game message waits too, otherwise an idle game sees a tap only
++     * when an unrelated timer/handle wakes it. Preserve the caller's absolute
++     * deadline, alertability and wait mode; a slice timeout is internal. */
++    {
++        for (;;)
+         {
+             LARGE_INTEGER slice_time, snow, *slice;
+ 
+@@ -3542,8 +3529,12 @@ static DWORD wait_message( DWORD count, const HANDLE *handles, DWORD timeout, DW
+             if (ret != WAIT_TIMEOUT) break;
+             if (process_driver_events( QS_ALLINPUT, wake_mask, changed_mask ))
+             {
+-                ret = count - 1;                                    /* treat as queue signaled */
+-                break;
++                /* A queue alone cannot satisfy MWMO_WAITALL's other handles. */
++                if (type == WaitAny)
++                {
++                    ret = count - 1;
++                    break;
++                }
+             }
+             if (slice == abs) break;                                /* caller deadline reached */
+         }
+-- 
+2.43.0
+

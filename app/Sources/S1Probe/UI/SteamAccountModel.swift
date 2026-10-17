@@ -55,6 +55,15 @@ final class SteamAccountModel: ObservableObject {
     /// Settings' switch for every game's Steam Cloud sync.
     static let cloudKey = "steamCloud"
     static var cloudOn: Bool { UserDefaults.standard.object(forKey: cloudKey) as? Bool ?? true }
+    private static let pendingCloudKey = "steamCloud.pendingPlays"
+    static var pendingCloud: Set<UInt32> {
+        Set((UserDefaults.standard.stringArray(forKey: pendingCloudKey) ?? []).compactMap(UInt32.init))
+    }
+    static func notePendingCloud(_ appID: UInt32) {
+        var pending = pendingCloud
+        pending.insert(appID)
+        UserDefaults.standard.set(pending.sorted().map(String.init), forKey: pendingCloudKey)
+    }
 
     private var pairTask: Task<Void, Never>?
     private var credentialTask: Task<Void, Never>?
@@ -145,30 +154,45 @@ final class SteamAccountModel: ObservableObject {
 
     /// Every game the emulator has saved progress for, and every played game's cloud saves.
     func syncPlayedStats() async {
+        var pending = Self.pendingCloud
+        for t in LibraryModel.shared.catalog.titles where t.lastPlayed != nil {
+            if let app = t.appID { pending.insert(app) }
+        }
+        // Saves first: achievements for many titles must not delay the last play's backup.
+        for app in pending.sorted() { await syncCloud(app) }
         let saves = LibraryModel.emulatorSaves
         let played = ((try? FileManager.default.contentsOfDirectory(atPath: saves.path)) ?? []).compactMap(UInt32.init)
         for app in played.sorted() { await syncStats(app) }
-        for t in LibraryModel.shared.catalog.titles where t.lastPlayed != nil {
-            if let app = t.appID { await syncCloud(app) }
-        }
     }
 
     /// Brings the game's Steam Cloud saves and the phone's together
     /// (SteamService.syncCloud), with the player's choices for conflicts.
     /// Nothing when Steam Cloud is off in Settings or on the game's page.
-    func syncCloud(_ appID: UInt32, resolve: [String: SteamService.CloudChoice] = [:]) async {
-        guard Self.cloudOn, case .signedIn = state, !suspendedForLaunch, !cloudSyncing.contains(appID),
+    @discardableResult
+    func syncCloud(_ appID: UInt32, resolve: [String: SteamService.CloudChoice] = [:]) async -> Bool {
+        guard Self.cloudOn, !suspendedForLaunch, !cloudSyncing.contains(appID),
               let t = LibraryModel.shared.catalog.titles.first(where: { $0.appID == appID }),
-              LaunchSettingsStore.shared.binding(for: t.id).wrappedValue.cloudSync ?? true else { return }
+              LaunchSettingsStore.shared.binding(for: t.id).wrappedValue.cloudSync ?? true else { return false }
         cloudSyncing.insert(appID)
         defer { cloudSyncing.remove(appID) }
+        if case .signedIn = state {} else { state = await service.restoreIfPossible() }
+        guard case .signedIn = state else {
+            cloudErrors[appID] = "尚未登入 Steam 或目前無法連線，請登入後重試。"
+            return false
+        }
         do {
-            cloud[appID] = try await service.syncCloud(appID: appID, roots: LibraryModel.cloudRoots(appID: appID, installDir: t.installDir),
+            let result = try await service.syncCloud(appID: appID, roots: LibraryModel.cloudRoots(appID: appID, installDir: t.installDir),
                                                        backups: LibraryModel.cloudBackups, resolve: resolve)
-            cloudErrors[appID] = nil
+            cloud[appID] = result
+            cloudErrors[appID] = result.failed.isEmpty ? nil : "\(result.failed.count) 個檔案未同步：\(result.failed.sorted(by: { $0.key < $1.key }).first?.value ?? "請重試")"
+            if result.failed.isEmpty && result.conflicts.isEmpty {
+                UserDefaults.standard.set(Self.pendingCloud.subtracting([appID]).sorted().map(String.init), forKey: Self.pendingCloudKey)
+            }
+            return result.failed.isEmpty
         } catch {
             cloudErrors[appID] = InstallCopy.reason(error)
             SteamUILog.logger.warn("cloud", "app \(appID): not synced: \(error)")
+            return false
         }
     }
 
@@ -188,12 +212,14 @@ final class SteamAccountModel: ObservableObject {
     /// Steam is signed in, so Steam's newer saves come down before it starts;
     /// else the service's kept state. None when Steam Cloud is off in Settings
     /// or for the game.
-    func openCloudConflicts(_ appID: UInt32, titleID: String) async -> [SteamService.CloudConflict] {
+    func openCloudConflicts(_ appID: UInt32, titleID: String) async throws -> [SteamService.CloudConflict] {
         guard Self.cloudOn, LaunchSettingsStore.shared.settings(for: titleID).cloudSync ?? true else { return [] }
         for _ in 0..<120 where cloudSyncing.contains(appID) { try? await Task.sleep(for: .milliseconds(250)) }
-        if cloud[appID] == nil, case .signedIn = state { await syncCloud(appID) }
-        if let c = cloud[appID] { return c.conflicts }
-        return await service.keptCloud(appID: appID)?.conflicts ?? []
+        guard !cloudSyncing.contains(appID), await syncCloud(appID) else {
+            throw NSError(domain: "Playport.SteamCloud", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                "Steam 雲端存檔尚未同步完成。\(cloudErrors[appID] ?? "同步仍在進行中，請稍後重試。") 如需離線遊玩，可先在此遊戲的選項停用雲端同步。"])
+        }
+        return cloud[appID]?.conflicts ?? []
     }
 
     /// Follows the service's state for the model's lifetime. Called once.
