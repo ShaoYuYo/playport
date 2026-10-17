@@ -1,0 +1,153 @@
+From 385f845158766a8196d6c0225708b7c25c93c788 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 18:11:50 +0800
+Subject: [PATCH] ntdll: inherit process ownership in native system workers
+
+The audio timer was created in a game process but has no TEB. Its descriptor
+handoff fell back to the session socket and wineserver correctly rejected it.
+Capture creator PEB/PID before pthread_create and publish native-only TLS
+before server initialization. A real TEB retains precedence. Preserve all
+server ownership checks, and snapshot tid before a short worker can exit.
+
+Class: host-app
+Evidence: docs/evidence/2026-10-17-worker-ownership-save-audit.md
+Offered-upstream: no (single-Mach-task pseudo-process ownership)
+---
+ build/ntdll-unix/env_ios.c     |  3 ++
+ build/ntdll-unix/thread_ios.c  | 50 ++++++++++++++++++++++++++++++++--
+ build/ntdll-unix/virtual_ios.c |  6 +++-
+ 3 files changed, 56 insertions(+), 3 deletions(-)
+
+diff --git a/build/ntdll-unix/env_ios.c b/build/ntdll-unix/env_ios.c
+index 7f44359..463936a 100644
+--- a/build/ntdll-unix/env_ios.c
++++ b/build/ntdll-unix/env_ios.c
+@@ -2854,7 +2854,10 @@ PEB * WINAPI RtlGetCurrentPeb(void)
+ DWORD ios_current_pid(void)
+ {
+     TEB *teb = NtCurrentTeb();
++    DWORD native_pid;
++    extern DWORD ios_system_thread_pid(void);
+     if (teb && teb->ClientId.UniqueProcess) return HandleToULong( teb->ClientId.UniqueProcess );
++    if ((native_pid = ios_system_thread_pid())) return native_pid;
+     return pid;
+ }
+ #endif
+diff --git a/build/ntdll-unix/thread_ios.c b/build/ntdll-unix/thread_ios.c
+index 16309ab..a6909f0 100644
+--- a/build/ntdll-unix/thread_ios.c
++++ b/build/ntdll-unix/thread_ios.c
+@@ -1508,6 +1508,34 @@ static NTSTATUS create_server_thread( HANDLE *handle, struct thread_data **data_
+ }
+ 
+ 
++#ifdef WINE_IOS
++/* Native Wine workers have thread_data but deliberately no guest TEB. Capture
++ * their creator's process before pthread_create; TLS starts empty in the child.
++ * Never publish a fake TEB (guest trampolines must continue to see NULL). */
++static _Thread_local void *ios_native_owner_peb;
++static _Thread_local DWORD ios_native_owner_pid;
++
++void *ios_system_thread_peb(void) { return ios_native_owner_peb; }
++DWORD ios_system_thread_pid(void) { return ios_native_owner_pid; }
++
++struct ios_thread_start
++{
++    struct thread_data *data;
++    void *peb;
++    DWORD pid;
++};
++
++static void *ios_start_owned_thread(void *arg)
++{
++    struct ios_thread_start context = *(struct ios_thread_start *)arg;
++    free(arg);
++    ios_native_owner_peb = context.peb;
++    ios_native_owner_pid = context.pid;
++    server_init_thread(context.data);
++    return NULL;
++}
++#endif
++
+ /***********************************************************************
+  *           spawn_thread
+  */
+@@ -1517,6 +1545,14 @@ static NTSTATUS spawn_thread( struct thread_data *data )
+     pthread_t pthread_id;
+     pthread_attr_t attr;
+     NTSTATUS status = STATUS_SUCCESS;
++#ifdef WINE_IOS
++    extern void *ios_jit_current_peb(void);
++    struct ios_thread_start *context = malloc(sizeof(*context));
++    if (!context) return STATUS_NO_MEMORY;
++    context->data = data;
++    context->peb = ios_jit_current_peb();
++    context->pid = ios_current_pid();
++#endif
+ 
+     pthread_sigmask( SIG_BLOCK, &server_block_set, &sigset );
+     pthread_attr_init( &attr );
+@@ -1524,8 +1560,15 @@ static NTSTATUS spawn_thread( struct thread_data *data )
+     pthread_attr_setguardsize( &attr, 0 );
+     pthread_attr_setscope( &attr, PTHREAD_SCOPE_SYSTEM ); /* force creating a kernel thread */
+     InterlockedIncrement( &nb_threads );
++#ifdef WINE_IOS
++    if (pthread_create( &pthread_id, &attr, ios_start_owned_thread, context ))
++#else
+     if (pthread_create( &pthread_id, &attr, (void * (*)(void *))server_init_thread, data ))
++#endif
+     {
++#ifdef WINE_IOS
++        free(context);
++#endif
+         InterlockedDecrement( &nb_threads );
+         status = STATUS_NO_MEMORY;
+     }
+@@ -1733,22 +1776,25 @@ NTSTATUS WINAPI PsCreateSystemThread( HANDLE *handle, ACCESS_MASK access, OBJECT
+ {
+     struct thread_data *data;
+     NTSTATUS status;
++    DWORD tid;
+     ULONG flags = THREAD_CREATE_FLAGS_BYPASS_PROCESS_FREEZE;
+ 
+     if ((status = create_server_thread( handle, &data, access, attr, start, param, flags, TRUE )))
+         return status;
+ 
++    tid = data->tid;
+     if ((status = spawn_thread( data )))
+     {
+         NtClose( *handle );
++        close( data->request_fd );
+         virtual_free_thread_data( data );
+         return status;
+     }
+ 
+ #ifdef WINE_IOS
+-    if (id) *id = make_client_id( ios_current_pid(), data->tid );  /* Playport: the creator's pseudo-process */
++    if (id) *id = make_client_id( ios_current_pid(), tid );  /* Playport: the creator's pseudo-process */
+ #else
+-    if (id) *id = make_client_id( pid, data->tid );
++    if (id) *id = make_client_id( pid, tid );
+ #endif
+     return status;
+ }
+diff --git a/build/ntdll-unix/virtual_ios.c b/build/ntdll-unix/virtual_ios.c
+index b4e4127..b175ccc 100644
+--- a/build/ntdll-unix/virtual_ios.c
++++ b/build/ntdll-unix/virtual_ios.c
+@@ -3990,7 +3990,11 @@ void *ios_jit_current_peb(void)
+         cur_teb = *(char **)(tsd_base + ios_teb_tls_slot_offset);
+     }
+     if (!cur_teb && ios_teb_tls_key) cur_teb = pthread_getspecific(ios_teb_tls_key);
+-    if (!cur_teb) return NULL;
++    if (!cur_teb)
++    {
++        extern void *ios_system_thread_peb(void);
++        return ios_system_thread_peb();
++    }
+     return ((TEB *)cur_teb)->Peb;
+ }
+ 
+-- 
+2.43.0
+

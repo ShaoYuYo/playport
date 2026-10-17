@@ -202,6 +202,8 @@ final class LibraryModel: ObservableObject {
     @discardableResult
     func play(_ id: String, epicOffline: Bool = false) async throws -> Bool {
         guard catalog.title(id: id)?.canPlay == true, !TitleLaunch.shared.running, !TitleLaunch.shared.spent else { return false }
+        SteamAccountModel.current?.beginCloudLaunchPreparation()
+        defer { SteamAccountModel.current?.finishCloudLaunchPreparation() }
         // A game whose saves changed on the phone and on Steam asks which to keep first; the
         // choice starts it, Decide later does not (UI/CloudConflictView.swift).
         if let t = catalog.title(id: id), let app = t.appID, let steam = SteamAccountModel.current {

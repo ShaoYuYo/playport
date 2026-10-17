@@ -813,7 +813,8 @@ public actor SteamService {
     /// Brings the game's cloud files on Steam and on the phone together
     /// (Cloud.plan), settling conflicts the player chose in `resolve`. What a
     /// download or a choice replaces goes to `backups/<appid>/<time>/` first.
-    public func syncCloud(appID: UInt32, roots: Cloud.Roots, backups: URL, resolve: [String: CloudChoice] = [:]) async throws -> CloudSync {
+    public func syncCloud(appID: UInt32, roots: Cloud.Roots, backups: URL, resolve: [String: CloudChoice] = [:],
+                          restoreSteam: Bool = false) async throws -> CloudSync {
         try checkNotSuspended()
         if case .signedIn = state {} else { await restoreIfPossible() }
         guard case .signedIn = state, let stored = try await backend.storedSession() else { throw SteamError.notLoggedOn }
@@ -860,6 +861,12 @@ public actor SteamService {
             if choice == .steam, remote[name] == nil { plan[name] = nil; settled[name] = local[name]; continue }
             plan[name] = choice == .phone ? .upload : .download
         }
+        // Explicit repair ignores a stale agreement and re-fetches Steam's bytes.
+        // Local-only progress stays on the phone; this operation never uploads.
+        if restoreSteam {
+            plan = remote.mapValues { _ in .download }
+            guard !remote.isEmpty else { throw SteamError.notFound("Steam Cloud has no saves to restore") }
+        }
         let backupDir = backups.appendingPathComponent("\(appID)/\(Cloud.Backups.folderName(for: now()))", isDirectory: true)
         func backup(_ name: String, _ data: Data) throws {
             let url = backupDir.appendingPathComponent(name.replacingOccurrences(of: "%", with: "").replacingOccurrences(of: "/", with: "_"))
@@ -871,6 +878,9 @@ public actor SteamService {
             do {
                 guard let url = files[name] ?? roots.file(name) else { throw SteamError.unsupported("no local root for \(name)") }
                 let data = try await backend.cloudDownload(appID: appID, name: name)
+                guard SHA1.hash(data).hex == remote[name]?.sha else {
+                    throw SteamError.transport("Steam Cloud changed during download; retry sync")
+                }
                 if let old = try? Data(contentsOf: url) { try backup(name, old) }
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try Data(data).write(to: url, options: .atomic)
@@ -886,9 +896,16 @@ public actor SteamService {
         var uploads: [(name: String, data: [UInt8], time: UInt64)] = []
         for name in plan.filter({ $0.value == .upload }).keys.sorted() {
             guard let url = files[name], let d = try? Data(contentsOf: url) else { failed[name] = "unreadable"; continue }
-            if remote[name] != nil, resolve[name] == .phone {
-                // Steam's copy loses to the phone's: keep it.
-                do { try backup(name, Data(try await backend.cloudDownload(appID: appID, name: name))) }
+            if let previous = remote[name] {
+                // Preserve the actual previous cloud version for ordinary
+                // uploads too: a game can silently write fresh progress.
+                do {
+                    let old = try await backend.cloudDownload(appID: appID, name: name)
+                    guard SHA1.hash(old).hex == previous.sha else {
+                        throw SteamError.transport("Steam Cloud changed before upload; retry sync")
+                    }
+                    try backup(name + ".steam", Data(old))
+                }
                 catch { failed[name] = "Steam's copy could not be backed up: \(error)"; continue }
             }
             let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? now()
@@ -902,7 +919,8 @@ public actor SteamService {
         // local copy with a distinct suffix; one backend cannot erase the other
         // merely because Steam's bytes already matched one of them.
         var mirrored = 0
-        for name in local.keys.sorted() where roots.gameSaveMirror != nil && Cloud.isMirroredSave(name)
+        for name in local.keys.sorted() where (!restoreSteam || downloaded.contains(name))
+            && roots.gameSaveMirror != nil && Cloud.isMirroredSave(name)
             && !name.contains("/") && !name.contains("\\") && plan[name] != .conflict && failed[name] == nil {
             do {
                 guard let source = files[name] ?? roots.file(name),

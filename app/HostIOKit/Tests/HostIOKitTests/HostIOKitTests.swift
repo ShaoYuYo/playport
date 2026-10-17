@@ -320,6 +320,16 @@ final class PadScriptTests: XCTestCase {
 }
 
 final class FramePacerTests: XCTestCase {
+    func testSmallOverrunsDoNotMoveTheCadenceAndLongStallsDoNotBurst() {
+        var p = FramePacer(fps: 60)
+        XCTAssertEqual(p.delay(now: 0), 0)
+        for frame in 1...120 {
+            XCTAssertEqual(p.delay(now: Double(frame) / 60 + 0.0004), 0)
+        }
+        XCTAssertEqual(p.delay(now: 121.0 / 60 - 0.001), 0.001, accuracy: 1e-9)
+        XCTAssertEqual(p.delay(now: 10), 0)
+        XCTAssertEqual(p.delay(now: 10.001), 1.0 / 60 - 0.001, accuracy: 1e-9)
+    }
     func testThePacerHoldsFramesToTheLimitAndResyncsAfterALateOne() {
         var p = FramePacer(fps: 50)
         XCTAssertEqual(p.delay(now: 10), 0)

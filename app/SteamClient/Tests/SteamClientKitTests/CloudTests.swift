@@ -192,8 +192,9 @@ final class CloudServiceTests: XCTestCase {
         XCTAssertEqual(fourth.downloaded, [saveName])
         XCTAssertEqual(text(save), "the PC again")
         let kept = TitleInstaller.regularFiles(under: backups)
-        XCTAssertEqual(kept.count, 1)
-        XCTAssertEqual(text(backups.appendingPathComponent(kept[0])), "played on the phone")
+        XCTAssertEqual(kept.count, 2)
+        XCTAssertEqual(Set(kept.compactMap { text(backups.appendingPathComponent($0)) }),
+                       Set(["from the PC", "played on the phone"]))
     }
 
     /// Portal 2: its rule spells the root `gameinstall`, Steam lists `%GameInstall%`. Each save
@@ -446,5 +447,51 @@ final class CloudServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("state/steam-cloud").path))
         _ = try await s.signOut()
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("state/steam-cloud").path))
+    }
+
+    func testExplicitSteamRepairRefetchesAgreedFilesAndNeverUploadsLocalProgress() async throws {
+        let b = FakeBackend(), name = "datasu.ksd"
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        await b.set(cloud: [name: Array("PC original".utf8)])
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        try Data("phone changed".utf8).write(to: roots.file(name)!)
+        try Data("native changed".utf8).write(to: roots.mirrorFile(name)!)
+        let r = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, restoreSteam: true)
+        XCTAssertEqual(r.downloaded, [name]); XCTAssertTrue(r.uploaded.isEmpty); XCTAssertTrue(r.conflicts.isEmpty)
+        XCTAssertEqual(text(roots.file(name)!), "PC original")
+        XCTAssertEqual(text(roots.mirrorFile(name)!), "PC original")
+        let pc = await b.cloudFile(name); XCTAssertEqual(pc, Array("PC original".utf8))
+        let versions = TitleInstaller.regularFiles(under: backups).compactMap { text(backups.appendingPathComponent($0)) }
+        XCTAssertTrue(versions.contains("phone changed")); XCTAssertTrue(versions.contains("native changed"))
+        let again = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, restoreSteam: true)
+        XCTAssertEqual(again.downloaded, [name], "repair must re-fetch even when baseline already agrees")
+    }
+
+    func testOrdinaryUploadKeepsThePreviousSteamVersion() async throws {
+        let b = FakeBackend()
+        await b.set(cloud: [saveName: Array("PC original".utf8)])
+        let s = try await service(b)
+        _ = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        try Data("phone new".utf8).write(to: save)
+        let r = try await s.syncCloud(appID: 367520, roots: roots, backups: backups)
+        XCTAssertEqual(r.uploaded, [saveName])
+        let kept = TitleInstaller.regularFiles(under: backups).compactMap { text(backups.appendingPathComponent($0)) }
+        XCTAssertTrue(kept.contains("PC original"))
+    }
+
+    func testChangedDownloadDoesNotReplaceLocalSaveOrEstablishAgreement() async throws {
+        let b = FakeBackend()
+        await b.set(cloud: [saveName: Array("Steam original".utf8)])
+        await b.replaceCloudDownload(Array("changed while downloading".utf8))
+        try FileManager.default.createDirectory(at: save.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("phone original".utf8).write(to: save)
+        let s = try await service(b)
+        let r = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, restoreSteam: true)
+        XCTAssertNotNil(r.failed[saveName]); XCTAssertTrue(r.uploaded.isEmpty); XCTAssertTrue(r.downloaded.isEmpty)
+        XCTAssertEqual(text(save), "phone original")
+        await b.replaceCloudDownload(nil)
+        let retry = try await s.syncCloud(appID: 367520, roots: roots, backups: backups, restoreSteam: true)
+        XCTAssertEqual(retry.downloaded, [saveName]); XCTAssertEqual(text(save), "Steam original")
     }
 }

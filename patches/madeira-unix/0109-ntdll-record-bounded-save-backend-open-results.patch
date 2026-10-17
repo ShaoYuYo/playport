@@ -1,0 +1,82 @@
+From 33cf089cee7c6f32cf9117004346fadc4d9f3dab Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sat, 17 Oct 2026 18:23:25 +0800
+Subject: [PATCH] ntdll: record bounded save backend open results
+
+Observe four fixed save filenames at the create_file boundary, including
+successful opens. Classify known native and Steam directories without
+logging paths, credentials, handles or payloads. Limit to 64 events per app
+process and leave request/reply semantics unchanged.
+
+Class: host-app
+Evidence: docs/evidence/2026-10-17-worker-ownership-save-audit.md
+Offered-upstream: no (product diagnostic for the dual storage bridge)
+---
+ build/ntdll-unix/server_ios.c | 37 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
+
+diff --git a/build/ntdll-unix/server_ios.c b/build/ntdll-unix/server_ios.c
+index eaa243d..ebb1ae7 100644
+--- a/build/ntdll-unix/server_ios.c
++++ b/build/ntdll-unix/server_ios.c
+@@ -2133,6 +2133,27 @@ volatile int ios_srv_wait_timeouts = 0;   /* ... of which returned STATUS_TIMEOU
+ volatile int ios_srv_req_count = 0;       /* ALL threads: wineserver requests */
+ uintptr_t ios_srv_game_teb = 0;           /* set once by server_init_process_done */
+ 
++/* Fixed-name save-open evidence, bounded and without paths or save contents. */
++static const char *ios_save_open_probe(const char *path, size_t size, const char **backend)
++{
++    char lower[2048];
++    const char *base;
++    size_t i;
++    if (!path || !size || size >= sizeof(lower) || memchr(path, 0, size)) return NULL;
++    for (i = 0; i < size; ++i)
++        lower[i] = path[i] >= 'A' && path[i] <= 'Z' ? path[i] + ('a' - 'A') : path[i];
++    lower[size] = 0;
++    base = strrchr(lower, '/');
++    base = base ? base + 1 : lower;
++    *backend = strstr(lower, "/gse saves/1144400/remote/") ? "steam"
++             : strstr(lower, "/yuzusoft/senrenbanka/") ? "native" : "other";
++    if (!strcmp(base, "datasu.ksd")) return "datasu.ksd";
++    if (!strcmp(base, "datasc.ksd")) return "datasc.ksd";
++    if (!strcmp(base, "data_anchor.ksd")) return "data_anchor.ksd";
++    if (!strcmp(base, "savecheck")) return "savecheck";
++    return NULL;
++}
++
+ /***********************************************************************
+  *           server_call_unlocked
+  */
+@@ -2146,6 +2167,14 @@ unsigned int server_call_unlocked( void *req_ptr )
+     const int counting = ios_counters_on;
+     unsigned int type = req->u.req.request_header.req;   /* the reply overwrites it */
+     unsigned long long t0 = counting ? mach_absolute_time() : 0;
++    const char *save_name = NULL, *save_backend = NULL;
++    unsigned int save_access = 0, save_create = 0;
++    if (type == REQ_create_file && req->data_count == 2)
++    {
++        save_name = ios_save_open_probe(req->data[1].ptr, req->data[1].size, &save_backend);
++        save_access = req->u.req.create_file_request.access;
++        save_create = req->u.req.create_file_request.create;
++    }
+ 
+     if (counting) ios_srv_req_count++;
+     if (counting && type == REQ_set_cursor)   /* Playport: [srv-cur] census */
+@@ -2159,6 +2188,14 @@ unsigned int server_call_unlocked( void *req_ptr )
+         ios_wineserver_wake();
+     }
+     ret = wait_reply( data->reply_fd, req );
++    if (save_name)
++    {
++        static unsigned int count;
++        unsigned int n = __sync_add_and_fetch(&count, 1);
++        if (n <= 64)
++            dprintf(2, "[save-open-v1] #%u backend=%s file=%s status=%08x access=%08x disposition=%u\n",
++                    n, save_backend, save_name, ret, save_access, save_create);
++    }
+     if (counting) ios_srv_note_call( type, mach_absolute_time() - t0 );   /* Playport: [srv] census */
+     return ret;
+ }
+-- 
+2.43.0
+

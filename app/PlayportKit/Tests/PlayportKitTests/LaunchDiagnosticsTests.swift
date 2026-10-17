@@ -4,6 +4,25 @@ import XCTest
 @testable import PlayportKit
 
 final class LaunchDiagnosticsTests: XCTestCase {
+    func testSaveAuditShowsBackendMismatchWithoutContentsOrCredentials() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        let roaming = root.appendingPathComponent("drive_c/users/playport/AppData/Roaming")
+        let api = roaming.appendingPathComponent("GSE Saves/1144400/remote")
+        let native = roaming.appendingPathComponent("YuzuSoft/SenrenBanka")
+        for dir in [api, native] { try fm.createDirectory(at: dir, withIntermediateDirectories: true) }
+        try Data("Steam save contents".utf8).write(to: api.appendingPathComponent("datasu.ksd"))
+        try Data("Different native contents".utf8).write(to: native.appendingPathComponent("DATASU.KSD"))
+        try Data("account secret".utf8).write(to: api.appendingPathComponent("credentials.ini"))
+        try fm.createSymbolicLink(at: api.appendingPathComponent("datasc.ksd"), withDestinationURL: api.appendingPathComponent("credentials.ini"))
+        let report = LaunchDiagnostics.senrenSaveState(prefix: root, gameRoot: root)
+        XCTAssertTrue(report.contains("steam/datasu.ksd\t19\t"))
+        XCTAssertTrue(report.contains("native/datasu.ksd\t25\t"))
+        for secret in [root.path, "Steam save contents", "Different native contents", "account secret", "credentials.ini", "datasc.ksd"] {
+            XCTAssertFalse(report.contains(secret))
+        }
+    }
     func testCompatibilityHashesExcludeLinksSavesAndAccountFiles() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

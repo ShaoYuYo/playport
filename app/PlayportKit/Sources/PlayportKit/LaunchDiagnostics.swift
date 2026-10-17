@@ -4,6 +4,52 @@ import SteamClientKit
 
 /// Player-visible startup evidence. A short zero-code exit is not proof of a successful play.
 public enum LaunchDiagnostics {
+    /// Actual bytes in the two known save backends, rather than just transfer
+    /// counts. Fixed metadata only: never export save contents or account INIs.
+    public static func senrenSaveState(prefix: URL, gameRoot: URL) -> String {
+        let fm = FileManager.default
+        let roaming = prefix.resolvingSymlinksInPath().appendingPathComponent("drive_c/users/playport/AppData/Roaming")
+        let locations = [("steam", roaming.appendingPathComponent("GSE Saves/1144400/remote")),
+                         ("native", roaming.appendingPathComponent("YuzuSoft/SenrenBanka"))]
+        var report = "Save backend audit v1 (metadata and SHA256; no save contents)\n"
+        var total = 0
+        for (tag, dir) in locations {
+            guard dir.resolvingSymlinksInPath().standardizedFileURL == dir.standardizedFileURL else {
+                report += "\(tag): linked directory omitted\n"; continue
+            }
+            let names = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).sorted().prefix(256)
+            var count = 0
+            for name in names {
+                let n = name.lowercased()
+                guard n == "savecheck" || n == "senrenbanka.cfu"
+                    || (n.hasPrefix("data") && (n.hasSuffix(".ksd") || n.hasSuffix(".bmp"))) else { continue }
+                let url = dir.appendingPathComponent(name)
+                guard let attr = try? fm.attributesOfItem(atPath: url.path),
+                      attr[.type] as? FileAttributeType == .typeRegular,
+                      let size = (attr[.size] as? NSNumber)?.intValue, size <= 2 << 20,
+                      total + size <= 8 << 20, count < 64, let data = try? Data(contentsOf: url) else { continue }
+                let safe = n.replacingOccurrences(of: "\n", with: "_").replacingOccurrences(of: "\t", with: "_")
+                report += "\(tag)/\(safe)\t\(data.count)\t\(SHA256Stream.hash(Array(data)).hex)\n"
+                count += 1; total += data.count
+            }
+            report += "\(tag): \(count) file(s) audited\n"
+        }
+        for (index, site) in SteamAPISwap.sites(in: gameRoot).enumerated() {
+            let cfg = gameRoot.resolvingSymlinksInPath().appendingPathComponent(site.path).deletingLastPathComponent().appendingPathComponent("steam_settings/configs.user.ini")
+            let expected = #"local_save_path=C:\users\playport\AppData\Roaming\GSE Saves"#
+            var state = "unavailable"
+            if cfg.resolvingSymlinksInPath().standardizedFileURL == cfg.standardizedFileURL,
+               let attr = try? fm.attributesOfItem(atPath: cfg.path), attr[.type] as? FileAttributeType == .typeRegular,
+               (attr[.size] as? NSNumber)?.intValue ?? Int.max <= 16 << 10,
+               let text = try? String(contentsOf: cfg, encoding: .utf8) {
+                state = text.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces) == expected }
+                    ? "expected" : "missing or different"
+            }
+            report += "emulator-site-\(index): save-root=\(state)\n"
+        }
+        return report
+    }
+
     /// Fixed, public file names only. Hashes let a report establish the exact
     /// executable/runtime used without exporting game bytes, saves or credentials.
     public static func compatibilityFingerprints(gameRoot: URL, runtime: URL) -> String {

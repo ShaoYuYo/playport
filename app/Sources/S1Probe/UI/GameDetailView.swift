@@ -757,6 +757,13 @@ private struct GameDetailPage: View {
                     guard !launch.running else { return }
                     Task { await model.syncCloud(app) }
                 }
+                PadRow(id: "opt:cloud-restore-steam", title: "重新下載 Steam 存檔",
+                       subtitle: "以 Steam 目前版本重新放置；手機被取代的檔案會先備份。",
+                       value: model.cloudSyncing.contains(app) ? "同步中…" : "從 Steam 恢復", accessory: .chevron,
+                       style: .plain) {
+                    guard !launch.running, !model.cloudSyncing.contains(app) else { return }
+                    Task { await model.syncCloud(app, restoreSteam: true) }
+                }
             }
         }
         if t.store != .steam, t.source != .cohort { localRows(t) }
@@ -1255,6 +1262,8 @@ enum ProblemReport {
                     let nls = LaunchDiagnostics.codepageFiles(prefix: WineHostRuntime.shared.prefixURL, runtime: runtime)
                     try nls.write(to: folder.appendingPathComponent("windows-codepages.txt"), atomically: true, encoding: .utf8)
                     if steamAppID == 1144400 {
+                        let saves = LaunchDiagnostics.senrenSaveState(prefix: WineHostRuntime.shared.prefixURL, gameRoot: root)
+                        try saves.write(to: folder.appendingPathComponent("save-backends.txt"), atomically: true, encoding: .utf8)
                         let fingerprints = LaunchDiagnostics.compatibilityFingerprints(gameRoot: root, runtime: runtime)
                         try fingerprints.write(to: folder.appendingPathComponent("compatibility-fingerprints.txt"), atomically: true, encoding: .utf8)
                     }

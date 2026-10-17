@@ -11,19 +11,24 @@ public struct FrameHealth: Sendable {
         public let averageDrawableWaitMS: Double
         public let maximumDrawableWaitMS: Double
         public let failedDrawables: Int
+        public let averagePacerWaitMS: Double
+        public let maximumPacerWaitMS: Double
     }
     private var start: Double?
     private var previous: Double?
     private var frames = 0, gaps = 0, calls = 0, failures = 0
     private var maxGap = 0.0, totalWait = 0.0, maxWait = 0.0
+    private var totalPacerWait = 0.0, maxPacerWait = 0.0
     public init() {}
 
-    public mutating func drawable(at time: Double, wait: Double, succeeded: Bool) {
+    public mutating func drawable(at time: Double, wait: Double, succeeded: Bool, pacerWait: Double = 0) {
         if start == nil { start = time }
         calls += 1
         let duration = max(0, wait)
         totalWait += duration
         maxWait = max(maxWait, duration)
+        totalPacerWait += max(0, pacerWait)
+        maxPacerWait = max(maxPacerWait, max(0, pacerWait))
         if !succeeded { failures += 1 }
     }
     public mutating func presented(at time: Double) {
@@ -41,10 +46,13 @@ public struct FrameHealth: Sendable {
         let result = Sample(fps: Double(frames) / (time - start), frames: frames, longGaps: gaps,
             maximumGapMS: maxGap * 1000,
             averageDrawableWaitMS: calls > 0 ? totalWait * 1000 / Double(calls) : 0,
-            maximumDrawableWaitMS: maxWait * 1000, failedDrawables: failures)
+            maximumDrawableWaitMS: maxWait * 1000, failedDrawables: failures,
+            averagePacerWaitMS: calls > 0 ? totalPacerWait * 1000 / Double(calls) : 0,
+            maximumPacerWaitMS: maxPacerWait * 1000)
         self.start = time
         frames = 0; gaps = 0; calls = 0; failures = 0
         maxGap = 0; totalWait = 0; maxWait = 0
+        totalPacerWait = 0; maxPacerWait = 0
         return result
     }
 }

@@ -106,3 +106,5 @@
 0105-ntdll-report-compact-FEX-span-and-callret-geometry.patch
 0106-win32u-poll-host-input-during-game-message-waits.patch
 0107-audio-preserve-stream-phase-and-bound-starvation-recov.patch
+0108-ntdll-inherit-process-ownership-in-native-system-work.patch
+0109-ntdll-record-bounded-save-backend-open-results.patch

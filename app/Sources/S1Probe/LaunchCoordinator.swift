@@ -331,6 +331,11 @@ enum LaunchCoordinator {
         args = titleMemory.arguments(over: args)
         if titleMemory.active {
             log("memory-economy: profile=senren-v2 default_pool_mb=256 cpu_count=\(config["cpu-count"] ?? "default") engine_cache_default=normal graphics_cache_default_mb=64 explicit_arguments=preserved")
+            if let root = r.steamAPI?.root,
+               memory.effectiveMB.map({ $0 - memory.footprintMB >= 128 }) ?? false {
+                let warm = TitleAssetWarmup.run(in: root)
+                log(String(format: "asset-warmup-v1: files=%d bytes=%d elapsed_ms=%.1f retained_asset_bytes=0", warm.files, warm.bytes, warm.seconds * 1000))
+            }
         }
 
         // The backend's builtins go before the runtime's own (wine_host_init,

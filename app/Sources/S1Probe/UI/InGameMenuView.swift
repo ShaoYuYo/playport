@@ -227,12 +227,23 @@ struct InGameMenuView: View {
     @ObservedObject private var launch = TitleLaunch.shared
     @ObservedObject private var router = PadRouter.shared
     @ObservedObject private var safe = WindowInsets.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var visible: Bool { (model.isOpen || model.quitting) && !model.editingControls }
 
     var body: some View {
-        Group {
-            if model.editingControls { Color.clear.allowsHitTesting(false) }
-            else { menuBody }
+        ZStack(alignment: .leading) {
+            if visible {
+                Color.black.opacity(0.4).ignoresSafeArea()
+                    .contentShape(Rectangle()).onTapGesture { model.resume() }
+                    .transition(.opacity)
+                menuBody
+                    .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
+            }
         }
+        .animation(reduceMotion ? .easeOut(duration: 0.16) : .spring(response: 0.32, dampingFraction: 0.9), value: visible)
+        .allowsHitTesting(visible)
+        .accessibilityHidden(!visible)
         .sheet(item: $model.panel) { panel in
             switch panel {
             case .controls: TouchMappingEditor()
@@ -244,10 +255,7 @@ struct InGameMenuView: View {
     @ViewBuilder private var menuBody: some View {
         let lead = safe.side(44, safe.insets.leading), trail = safe.side(44, safe.insets.trailing)
         ZStack(alignment: .topLeading) {
-            Color(red: 5 / 255, green: 7 / 255, blue: 10 / 255).opacity(0.6)
-                .contentShape(Rectangle())
-                .onTapGesture {}   // the game behind takes no touches
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(QuickMenu.playing(seconds: Date().timeIntervalSince(launch.startedAt)).uppercased())
                     .font(.system(size: 11, weight: .semibold)).tracking(1.1).foregroundStyle(PP.muted)
                     .padding(.horizontal, 14)
@@ -255,7 +263,7 @@ struct InGameMenuView: View {
                     .padding(.horizontal, 14).padding(.bottom, 10)
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(spacing: 3) {
+                        VStack(spacing: 8) {
                             ForEach(QuickMenuItem.allCases, id: \.self) { item in row(item).id(item) }
                         }
                     }
@@ -266,11 +274,11 @@ struct InGameMenuView: View {
                 .padding(.bottom, 45)
                 Spacer(minLength: 0)
             }
-            .padding(.top, 22).padding(.leading, lead).padding(.trailing, 20)
+            .padding(.vertical, 22).padding(.leading, lead).padding(.trailing, 20)
             .frame(width: 330 + lead - 44, alignment: .leading)
             .frame(maxHeight: .infinity, alignment: .top)
-            .background(PP.surface)
-            .overlay(alignment: .trailing) { Rectangle().fill(PP.line).frame(width: 1) }
+            .ppGlass(cornerRadius: 26, interactive: false)
+            .padding(.vertical, 12).padding(.leading, 12)
             .ignoresSafeArea()
             if downloadsWaiting {
                 HStack(spacing: 8) {
