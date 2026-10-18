@@ -905,7 +905,7 @@ private struct GameDetailPage: View {
             let source = ["steam": "先前 Steam 版本", "previous": "先前手機版本", "game": "遊戲儲存區舊版", "remote": "Steam 儲存區舊版"]
             PadModal.shared.picker(title: "復原先前備份", context: title.name,
                 note: points.isEmpty ? "目前沒有可恢復的舊版備份。" : "備份可能只含部分檔案。恢復後保留目前版本備份；請選「手機（已恢復備份）」才會將恢復的內容同步回 Steam。",
-                options: points.prefix(40).map { p in
+                options: points.map { p in
                     PadOption(id: p.id, label: p.at.formatted(date: .numeric, time: .standard) + " · " + (source[p.source] ?? "舊版"),
                               detail: "\(p.names.count) 個檔案 · " + p.names.joined(separator: ", "))
                 }, selected: nil) { id in
