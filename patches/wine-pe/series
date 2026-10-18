@@ -33,3 +33,4 @@
 0034-wow64win-convert-and-audit-menu-item-info.patch
 0035-ntdll-accept-owned-sub-gigabyte-arenas-in-the-root.patch
 0036-wow64-retain-distinct-exception-and-SEH-evidence.patch
+0037-kernelbase-preserve-signed-original-data-reads.patch

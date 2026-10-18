@@ -137,7 +137,7 @@ enum LaunchCoordinator {
     /// Puts the game's steam_api in the launch's mode: the emulator with its
     /// settings written and SteamStub taken off the executables Playport can
     /// unwrap, or the game's own of both. Preparation must finish before starting Wine.
-    private static func prepareSteamAPI(_ s: SteamAPI, selectedExecutable: String) throws -> [String: String] {
+    private static func prepareSteamAPI(_ s: SteamAPI, selectedExecutable: String, windowsExecutable: String) throws -> [String: String] {
         final class Box: @unchecked Sendable { var settings: SteamAPISwap.Settings? }
         let box = Box(), done = DispatchSemaphore(value: 0)
         Task.detached { box.settings = await s.settings(); done.signal() }
@@ -194,8 +194,16 @@ enum LaunchCoordinator {
             #endif
             throw error
         }
-        let env = s.mode == .emulated ? (settings ?? .init(appID: s.appID)).launchEnvironment : [:]
+        var env = s.mode == .emulated ? (settings ?? .init(appID: s.appID)).launchEnvironment : [:]
         if !env.isEmpty { log("steam-save-root-v2: authoritative launch root enabled") }
+        if s.mode == .emulated {
+            let paths = SignedOriginals.paths(in: s.root, selectedExecutable: URL(fileURLWithPath: selectedExecutable),
+                                              windowsExecutable: windowsExecutable)
+            if !paths.isEmpty {
+                env[SignedOriginals.environmentKey] = paths.joined(separator: "\n")
+                log("signed-readback-v1: \(paths.count) signed transformed file(s); read-only data opens use publisher originals; NT image loads unchanged")
+            }
+        }
         return env
     }
 
@@ -382,10 +390,12 @@ enum LaunchCoordinator {
             SteamTicketHost.arm(nil)
         }
         var steamEnvironment: [String: String] = [:]
+        unsetenv(SignedOriginals.environmentKey)
         if let s = r.steamAPI {
             do {
                 let selected = withUnsafeBytes(of: tp.unix_path) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
-                steamEnvironment = try prepareSteamAPI(s, selectedExecutable: selected)
+                let dos = withUnsafeBytes(of: tp.dos) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+                steamEnvironment = try prepareSteamAPI(s, selectedExecutable: selected, windowsExecutable: dos)
             } catch {
                 return Outcome(kind: .failed, line: "launch=failed steamapi=preparation", detail: error.localizedDescription)
             }

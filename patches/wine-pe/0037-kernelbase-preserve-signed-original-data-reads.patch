@@ -1,0 +1,83 @@
+From be1125aa588890d50e70b9729b670a93a839b2ab Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sun, 18 Oct 2026 20:08:57 +0800
+Subject: [PATCH] kernelbase: preserve signed originals for explicitly mapped
+ data reads
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-18-signed-game-readback.md
+Offered-upstream: no; downstream launch preparation contract
+---
+ dlls/kernelbase/file.c | 52 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 52 insertions(+)
+
+diff --git a/dlls/kernelbase/file.c b/dlls/kernelbase/file.c
+index 7b0f0a6..5454a80 100644
+--- a/dlls/kernelbase/file.c
++++ b/dlls/kernelbase/file.c
+@@ -792,6 +792,56 @@ static UINT get_nt_file_options( DWORD attributes, DWORD creation )
+ /*************************************************************************
+  *	CreateFileW   (kernelbase.@)
+  */
++/* A game may verify the publisher's signed executable after Playport has
++ * prepared a runnable image. Only explicit read-only Win32 data opens see
++ * that kept original; the NT image loader still maps the prepared image.
++ * This is not a successful-signature stub: the game verifies real bytes. */
++static void playport_original_readback( UNICODE_STRING *name, DWORD access, DWORD creation, DWORD flags )
++{
++    static LONG reports;
++    WCHAR *paths, *entry, *end, *original;
++    DWORD count, got, attributes, saved_error = GetLastError();
++    UNICODE_STRING replacement;
++    const DWORD allowed = GENERIC_READ | FILE_READ_DATA | FILE_READ_EA | FILE_READ_ATTRIBUTES |
++                          READ_CONTROL | SYNCHRONIZE;
++
++    if (creation != OPEN_EXISTING || !(access & (GENERIC_READ | FILE_READ_DATA)) ||
++        (access & ~allowed) || (flags & (FILE_FLAG_DELETE_ON_CLOSE | FILE_FLAG_OPEN_REPARSE_POINT)) ||
++        name->Length < 14 || wcsncmp( name->Buffer, L"\\??\\", 4 ) ||
++        name->Buffer[5] != ':' || name->Buffer[6] != '\\') return;
++    count = GetEnvironmentVariableW( L"PLAYPORT_ORIGINAL_READBACK", NULL, 0 );
++    if (!count || count > 8192) { SetLastError( saved_error ); return; }
++    paths = HeapAlloc( GetProcessHeap(), 0, count * sizeof(WCHAR) );
++    if (!paths) { SetLastError( saved_error ); return; }
++    got = GetEnvironmentVariableW( L"PLAYPORT_ORIGINAL_READBACK", paths, count );
++    if (!got || got >= count) goto done;
++    for (entry = paths; *entry; entry = *end ? end + 1 : end)
++    {
++        end = wcschr( entry, '\n' );
++        if (!end) end = entry + wcslen( entry );
++        if ((end - entry) * sizeof(WCHAR) != name->Length - 4 * sizeof(WCHAR) ||
++            wcsnicmp( entry, name->Buffer + 4, end - entry )) continue;
++        original = HeapAlloc( GetProcessHeap(), 0, name->Length + 12 );
++        if (!original) break;
++        memcpy( original, name->Buffer, name->Length );
++        wcscpy( original + name->Length / sizeof(WCHAR), L".orig" );
++        attributes = GetFileAttributesW( original + 4 );
++        if (attributes != INVALID_FILE_ATTRIBUTES && !(attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) &&
++            RtlCreateUnicodeString( &replacement, original ))
++        {
++            RtlFreeUnicodeString( name );
++            *name = replacement;
++            if (InterlockedIncrement( &reports ) <= 16)
++                ERR( "[signed-readback-v1] read-only data open uses kept publisher bytes; image loader unchanged\n" );
++        }
++        HeapFree( GetProcessHeap(), 0, original );
++        break;
++    }
++done:
++    HeapFree( GetProcessHeap(), 0, paths );
++    SetLastError( saved_error );
++}
++
+ HANDLE WINAPI DECLSPEC_HOTPATCH CreateFileW( LPCWSTR filename, DWORD access, DWORD sharing,
+                                              LPSECURITY_ATTRIBUTES sa, DWORD creation,
+                                              DWORD attributes, HANDLE template )
+@@ -853,6 +903,8 @@ HANDLE WINAPI DECLSPEC_HOTPATCH CreateFileW( LPCWSTR filename, DWORD access, DWO
+         return INVALID_HANDLE_VALUE;
+     }
+
++    playport_original_readback( &nameW, access, creation, attributes );
++
+     /* now call NtCreateFile */
+
+     if (attributes & FILE_FLAG_DELETE_ON_CLOSE)
