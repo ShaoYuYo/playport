@@ -77,6 +77,7 @@ final class GameSurfaceContainer: UIView {
             addSubview(button)
         }
         menuButton.accessibilityLabel = "遊戲設定"
+        addSubview(menuButton)
         addButton.setTitle("新增", for: .normal)
         menuButton.onOpen = { [weak self] in self?.openMenu() }
         addButton.addTarget(self, action: #selector(addControl), for: .touchUpInside)
@@ -119,7 +120,7 @@ final class GameSurfaceContainer: UIView {
                 TouchControlsStore.shared.move(binding.id, x: p.x, y: p.y)
             }
         }
-        surface.isUserInteractionEnabled = visible && !editing
+        surface.setDirectInputEnabled(visible && !editing)
         if visible && !editing { surface.becomeFirstResponder() }
         setNeedsLayout()
     }
@@ -357,6 +358,8 @@ struct TouchMappingEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("顯示觸控按鍵", isOn: $controls.layout.enabled)
+                    Text("單指點選或拖曳；雙指輕點是滑鼠右鍵，雙指上下滑動可捲動。設定鍵在畫面側邊中央，隱藏時先碰一下顯示，再點一次開啟。")
+                        .font(.footnote).foregroundStyle(.secondary)
                     Text("新增按鈕、選擇對應按鍵，再到遊戲畫面拖曳位置。位置會避開鏡頭與手勢區，可覆蓋遊戲畫面或放到黑邊。配置時遊戲暫停，按完成後繼續。每款遊戲分別保存。")
                         .font(.footnote).foregroundStyle(.secondary)
                     Button("在遊戲畫面拖曳位置", systemImage: "hand.draw") {

@@ -285,6 +285,26 @@ final class HostIO {
         }
     }
 
+    /// Gesture decisions arrive as ordered actions. Use the same ownership and
+    /// lifecycle releases as physical/mapped buttons, with no guest input while
+    /// the app/menu is inactive. Coordinates are relative to the presented client.
+    func surfaceGesture(_ action: SurfaceMouseGesture.Action, fraction f: (Int32, Int32)) {
+        if case .leftUp = action { touch(fraction: f, phase: .ended); return }
+        guard lifecycle.active, !lifecycle.background, !menuUp else { return }
+        switch action {
+        case .move: touch(fraction: f, phase: .moved)
+        case .leftDown: touch(fraction: f, phase: .began)
+        case .leftUp: break
+        case .rightClick:
+            winios_post_client_pointer(f.0, f.1, Pointer.move, 0)
+            mouseButton(down: true, downFlag: Pointer.rightDown, upFlag: Pointer.rightUp, source: "surface-right")
+            mouseButton(down: false, downFlag: Pointer.rightDown, upFlag: Pointer.rightUp, source: "surface-right")
+        case .wheel(_, let delta):
+            Self.trace.update { $0.wheel += 1 }
+            winios_post_client_pointer(f.0, f.1, Pointer.move | Pointer.wheel, UInt32(bitPattern: delta))
+        }
+    }
+
     private func attach(mouse: GCMouse) {
         HostIO.log("hostio: mouse connected \"\(mouse.vendorName ?? "?")\"")
         install(mouse: mouse, reason: "connected")
@@ -637,8 +657,12 @@ final class GameSurfaceView: UIView {
     override class var layerClass: AnyClass { PacedMetalLayer.self }
     override var canBecomeFirstResponder: Bool { true }
     private var registered = false
-    private var pointerTouch: ObjectIdentifier?
-    private var pointerPosition: (Int32, Int32) = (32768, 32768)
+    private var mouseGesture = SurfaceMouseGesture()
+    private var touchIDs: [ObjectIdentifier: Int] = [:]
+    private var nextTouchID = 0
+    private var lastPointerFraction: (Int32, Int32) = (32768, 32768)
+    private var holdTask: Task<Void, Never>?
+    private var holdDeadline: Double?
     private var renderBounds = CGSize.zero
     private var renderTarget = CGSize.zero
 
@@ -649,6 +673,7 @@ final class GameSurfaceView: UIView {
         let scale = max(0.25, min(window?.screen.nativeScale ?? 3,
                                  min(target.width / bounds.width, target.height / bounds.height)))
         guard renderBounds != bounds.size || renderTarget != target || abs(contentScaleFactor - scale) > 0.001 else { return }
+        if renderBounds != .zero && renderBounds != bounds.size { cancelDirectTouches() }
         renderBounds = bounds.size
         renderTarget = target
         if abs(contentScaleFactor - scale) > 0.001 { contentScaleFactor = scale }
@@ -660,10 +685,26 @@ final class GameSurfaceView: UIView {
         super.init(frame: .zero)
         backgroundColor = .black
         layer.contentsGravity = .resizeAspect
-        isMultipleTouchEnabled = false
+        isMultipleTouchEnabled = true
         // Counted only (hostio: input … hover=N): whether iOS shows a mouse to
         // UIKit as a hovering pointer when GCMouse's handlers stay silent.
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hovered)))
+        NotificationCenter.default.addObserver(self, selector: #selector(cancelDirectTouches),
+            name: UIApplication.willResignActiveNotification, object: nil)
+        HostIO.log("touch-gesture-v1: single=tap_drag_hold two_finger=right_tap_natural_wheel hold_ms=180")
+    }
+
+    deinit { holdTask?.cancel() }
+
+    func setDirectInputEnabled(_ enabled: Bool) {
+        if !enabled { cancelDirectTouches() }
+        isUserInteractionEnabled = enabled
+    }
+
+    @objc private func cancelDirectTouches() {
+        send(mouseGesture.cancel())
+        touchIDs.removeAll()
+        holdTask?.cancel(); holdTask = nil; holdDeadline = nil
     }
 
     @objc private func hovered(_ g: UIHoverGestureRecognizer) {
@@ -674,7 +715,7 @@ final class GameSurfaceView: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        guard let window else { return }
+        guard let window else { cancelDirectTouches(); return }
         // UIKit does not automatically give a custom CAMetalLayer-backed view
         // the screen's pixel scale. Vulkan WSI measures bounds * contentsScale;
         // leaving it at 1 makes a native-pixel swapchain permanently suboptimal
@@ -703,25 +744,68 @@ final class GameSurfaceView: UIView {
     private func forward(_ touches: Set<UITouch>) {
         let indirect = touches.filter { $0.type != .direct }.count
         HostIO.trace.update { $0.touches += touches.count - indirect; $0.pointerTouches += indirect }
-        let texture = PacedMetalLayer.lastPresented
-        let content = texture.map { CGSize(width: $0.width, height: $0.height) }
-            ?? (layer as? CAMetalLayer)?.drawableSize ?? bounds.size
+        var changes: [SurfaceMouseGesture.Contact] = []
+        var ended: [ObjectIdentifier] = []
+        var cancelled = false
         for t in touches where t.type == .direct {
-            let id = ObjectIdentifier(t)
+            let identity = ObjectIdentifier(t)
             let p = t.location(in: self)
             if t.phase == .began {
-                guard pointerTouch == nil,
-                      let f = SurfacePointer.fraction(x: p.x, y: p.y, width: bounds.width, height: bounds.height,
-                          contentWidth: content.width, contentHeight: content.height, clamp: false) else { continue }
-                pointerTouch = id
-                pointerPosition = f
-            } else {
-                guard pointerTouch == id else { continue }
-                if let f = SurfacePointer.fraction(x: p.x, y: p.y, width: bounds.width, height: bounds.height,
-                    contentWidth: content.width, contentHeight: content.height, clamp: true) { pointerPosition = f }
+                guard fraction(p, clamp: false) != nil else { continue }
+                nextTouchID &+= 1; touchIDs[identity] = nextTouchID
             }
-            HostIO.shared.touch(fraction: pointerPosition, phase: t.phase)
-            if t.phase == .ended || t.phase == .cancelled { pointerTouch = nil }
+            guard let id = touchIDs[identity] else { continue }
+            let phase: SurfaceMouseGesture.Phase
+            switch t.phase {
+            case .began: phase = .began
+            case .moved: phase = .moved
+            case .ended: phase = .ended; ended.append(identity)
+            case .cancelled: phase = .cancelled; cancelled = true
+            default: continue
+            }
+            changes.append(.init(id: id, x: p.x, y: p.y, phase: phase))
+        }
+        send(mouseGesture.update(changes, now: ProcessInfo.processInfo.systemUptime))
+        if cancelled { touchIDs.removeAll() }
+        else { for id in ended { touchIDs.removeValue(forKey: id) } }
+        scheduleHold()
+    }
+
+    private func fraction(_ p: CGPoint, clamp: Bool) -> (Int32, Int32)? {
+        let content = PacedMetalLayer.lastPresented.map { CGSize(width: $0.width, height: $0.height) }
+            ?? (layer as? CAMetalLayer)?.drawableSize ?? bounds.size
+        return SurfacePointer.fraction(x: p.x, y: p.y, width: bounds.width, height: bounds.height,
+            contentWidth: content.width, contentHeight: content.height, clamp: clamp)
+    }
+
+    private func send(_ actions: [SurfaceMouseGesture.Action]) {
+        for action in actions {
+            let p: SurfaceMouseGesture.Point
+            switch action {
+            case .move(let point), .leftDown(let point), .leftUp(let point), .rightClick(let point), .wheel(let point, _): p = point
+            }
+            if let f = fraction(CGPoint(x: p.x, y: p.y), clamp: true) {
+                lastPointerFraction = f
+                HostIO.shared.surfaceGesture(action, fraction: f)
+            } else if case .leftUp = action {
+                // Detachment/zero-size layout must still release a held guest
+                // button even when no valid drawable coordinate exists.
+                HostIO.shared.surfaceGesture(action, fraction: lastPointerFraction)
+            }
+        }
+    }
+
+    private func scheduleHold() {
+        guard holdDeadline != mouseGesture.deadline else { return }
+        holdTask?.cancel(); holdTask = nil; holdDeadline = mouseGesture.deadline
+        guard let deadline = mouseGesture.deadline else { return }
+        let delay = max(0, deadline - ProcessInfo.processInfo.systemUptime)
+        holdTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard let self else { return }
+            self.holdDeadline = nil
+            self.send(self.mouseGesture.advance(now: ProcessInfo.processInfo.systemUptime))
+            self.scheduleHold()
         }
     }
 
