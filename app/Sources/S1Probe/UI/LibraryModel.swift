@@ -200,13 +200,24 @@ final class LibraryModel: ObservableObject {
     /// and for a game that may run offline Play offline (`epicOffline`), which starts it as before
     /// step 1 of the store game sign-in plan, with no sign-in arguments.
     @discardableResult
-    func play(_ id: String, epicOffline: Bool = false) async throws -> Bool {
+    func play(_ id: String, epicOffline: Bool = false, phoneCloudOffline: Bool = false) async throws -> Bool {
         guard catalog.title(id: id)?.canPlay == true, !TitleLaunch.shared.running, !TitleLaunch.shared.spent else { return false }
         SteamAccountModel.current?.beginCloudLaunchPreparation()
         defer { SteamAccountModel.current?.finishCloudLaunchPreparation() }
         // A game whose saves changed on the phone and on Steam asks which to keep first; the
         // choice starts it, Decide later does not (UI/CloudConflictView.swift).
-        if let t = catalog.title(id: id), let app = t.appID, let steam = SteamAccountModel.current {
+        if phoneCloudOffline {
+            guard let t = catalog.title(id: id), t.appID == 1144400, let steam = SteamAccountModel.current else {
+                throw SteamCloudLaunchError(reason: "目前沒有可確認的手機存檔，無法使用這個離線啟動選項。")
+            }
+            do {
+                try await steam.service.preparePhoneCloudOfflinePlay(appID: 1144400,
+                    roots: Self.cloudRoots(appID: 1144400, installDir: t.installDir))
+            } catch {
+                Self.log("cloud: phone offline preparation failed: \(error)")
+                throw SteamCloudLaunchError(reason: "手機存檔的兩個儲存位置尚未一致，或備份還原尚未完成。請重新選取要還原的備份；本次未改動雲端存檔。")
+            }
+        } else if let t = catalog.title(id: id), let app = t.appID, let steam = SteamAccountModel.current {
             let conflicts = try await steam.openCloudConflicts(app, titleID: id)
             if !conflicts.isEmpty {
                 Self.log("play \(t.name) (\(id)): \(conflicts.count) cloud save conflict(s); asking which saves to keep")

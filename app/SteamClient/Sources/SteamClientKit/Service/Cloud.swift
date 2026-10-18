@@ -11,6 +11,34 @@ import Foundation
 /// are cloud files comes from PICS `ufs/savefiles` (root, path, pattern,
 /// recursive, platforms).
 public enum Cloud {
+    /// Only replay read operations explicitly refused as Busy. One budget is
+    /// shared by the entire sync, so an unavailable service cannot add a new
+    /// backoff window for every file. Never use this around an upload batch.
+    actor ReadRetry {
+        private var retries = 0
+        private let pause: @Sendable (UInt64) async throws -> Void
+        private let log: Logger
+
+        init(log: Logger = .silent,
+             pause: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }) {
+            self.log = log; self.pause = pause
+        }
+
+        func run<T: Sendable>(_ operation: @Sendable () async throws -> T) async throws -> T {
+            while true {
+                try Task.checkCancellation()
+                do { return try await operation() }
+                catch let error as SteamError {
+                    guard case .eresult(.busy, _) = error, retries < 3 else { throw error }
+                    let delay = UInt64(500_000_000) << retries
+                    retries += 1
+                    log.info("cloud", "cloud-read-retry-v1: Steam busy; retry \(retries)/3")
+                    try await pause(delay)
+                }
+            }
+        }
+    }
+
     /// Where each root is in the prefix.
     public struct Roots: Sendable, Equatable {
         /// `C:\users\playport`.

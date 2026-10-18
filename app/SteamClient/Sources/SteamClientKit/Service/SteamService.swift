@@ -816,6 +816,9 @@ public actor SteamService {
         var remoteSnapshot: [String: Cloud.Remote]?
         /// A Steam choice survives failure/cancellation until its snapshot is verified.
         var restoreSteamPending: Bool? = nil
+        /// Older builds could drop a failed phone-choice conflict. Require a
+        /// fresh choice before any legacy Senren automatic upload on upgrade.
+        var saveChoiceVersion: Int? = nil
     }
 
     /// Brings the game's cloud files on Steam and on the phone together
@@ -844,7 +847,8 @@ public actor SteamService {
             guard saveCloud(appID, intent) else { throw SteamError.transport("cannot keep Steam restore direction") }
         }
         let rules = (try await backend.appRecords([appID])[appID]).map(Cloud.rules) ?? []
-        let changes = try await backend.cloudChangelist(appID: appID)
+        let reader = Cloud.ReadRetry(log: log), cloudBackend = backend
+        let changes = try await reader.run { try await cloudBackend.cloudChangelist(appID: appID) }
         let remote = changes.remote
         // Each local file under the name Steam has for it, else the last sync's (Cloud.named).
         var files = Cloud.named(Cloud.localFiles(rules: rules, roots: roots, steamID: stored.steamID),
@@ -871,12 +875,16 @@ public actor SteamService {
             local[name] = sha
         }
         var plan = Cloud.plan(remote: remote, local: local, baseline: baseline)
+        if appID == 1144400, kept != nil, kept?.saveChoiceVersion != 1 {
+            for name in plan.keys where plan[name] == .upload { plan[name] = .conflict }
+        }
         for name in localDivergence { plan[name] = .conflict }
         // A game's first sync does not upload a file Steam lacks: the player says.
         if baseline == nil { for name in local.keys where remote[name] == nil { plan[name] = .conflict } }
         // A conflict stays one until the player settles it, even once a baseline exists.
         let open = kept?.accountTag == account ? Set(kept!.conflicts.map(\.name)) : []
         for name in open where plan[name] != nil { plan[name] = .conflict }
+        let awaitingChoice = Set(plan.filter { $0.value == .conflict }.keys)
         var settled: [String: String] = [:]   // phone-only files kept off Steam by choice
         for (name, choice) in resolve where plan[name] == .conflict {
             if choice == .steam, remote[name] == nil { plan[name] = nil; settled[name] = local[name]; continue }
@@ -904,7 +912,7 @@ public actor SteamService {
         for name in plan.filter({ $0.value == .download }).keys.sorted() {
             do {
                 guard let url = roots.file(name) else { throw SteamError.unsupported("no local root for \(name)") }
-                let data = try await backend.cloudDownload(appID: appID, name: name)
+                let data = try await reader.run { try await cloudBackend.cloudDownload(appID: appID, name: name) }
                 guard SHA1.hash(data).hex == remote[name]?.sha else {
                     throw SteamError.transport("Steam Cloud changed during download; retry sync")
                 }
@@ -928,7 +936,7 @@ public actor SteamService {
                 // Preserve the actual previous cloud version for ordinary
                 // uploads too: a game can silently write fresh progress.
                 do {
-                    let old = try await backend.cloudDownload(appID: appID, name: name)
+                    let old = try await reader.run { try await cloudBackend.cloudDownload(appID: appID, name: name) }
                     guard SHA1.hash(old).hex == previous.sha else {
                         throw SteamError.transport("Steam Cloud changed before upload; retry sync")
                     }
@@ -994,7 +1002,12 @@ public actor SteamService {
             if failed[name] == nil && (uploaded.contains(name) || downloaded.contains(name) || (r != nil && r == l)) { next[name] = l }
         }
         for (name, sha) in settled { next[name] = sha }
-        let conflicts = plan.filter { $0.value == .conflict }.keys.sorted().map { name -> CloudConflict in
+        // A chosen direction is not a completed transfer. If backing up the
+        // losing side or writing/verifying the choice failed, keep the open
+        // conflict and recovery marker; an ordinary retry must ask again.
+        let unresolved = Set(plan.filter { $0.value == .conflict }.keys)
+            .union(awaitingChoice.filter { failed[$0] != nil })
+        let conflicts = unresolved.sorted().map { name -> CloudConflict in
             let attrs = files[name].flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path) }
             let recovered = kept?.conflicts.first { $0.name == name && $0.recoveredBackup == true }
             return CloudConflict(name: name, phoneSize: (attrs?[.size] as? NSNumber)?.intValue,
@@ -1009,7 +1022,7 @@ public actor SteamService {
             : (mirrorEstablished ? 1 : nil)
         if !saveCloud(appID, CloudRecord(accountTag: account, baseline: Cloud.Baseline(changeNumber: changes.currentChangeNumber, files: next),
                                          conflicts: conflicts, at: at, nativeMirrorVersion: mirrorVersion, remoteSnapshot: remote,
-                                         restoreSteamPending: steamSnapshot && !failed.isEmpty ? true : nil)) {
+                                         restoreSteamPending: steamSnapshot && !failed.isEmpty ? true : nil, saveChoiceVersion: 1)) {
             failed["<sync-state>"] = "cannot keep verified save state; retry sync"
         }
         log.info("cloud", "app \(appID): \(remote.count) on Steam, \(local.count) on the phone; \(downloaded.count) down, "
@@ -1099,6 +1112,64 @@ public actor SteamService {
             guard try Data(contentsOf: url) == bytes else { throw SteamError.verificationFailed("restored save readback failed") }
         }
         return CloudSync(downloaded: [], uploaded: [], conflicts: record.conflicts, failed: [:], at: record.at)
+    }
+
+    /// UI-authorized offline launch of this title's current phone saves.
+    /// Verify both backends, then persist unresolved choices before launch.
+    /// No remote calls or agreement writes, including for old versions which
+    /// already lost a conflict marker after a failed explicit phone choice.
+    public func preparePhoneCloudOfflinePlay(appID: UInt32, roots: Cloud.Roots) async throws {
+        try checkNotSuspended()
+        guard cloudInFlight.insert(appID).inserted else { throw SteamError.transport("save operation already in progress") }
+        defer { cloudInFlight.remove(appID) }
+        guard appID == 1144400, let stored = try await backend.storedSession() else {
+            throw SteamError.verificationFailed("no local phone save account is available for offline play")
+        }
+        let account = Account(stored: stored).accountTag
+        var record = loadCloud(appID) ?? CloudRecord(accountTag: account,
+            baseline: Cloud.Baseline(changeNumber: 0, files: [:]), conflicts: [], at: now())
+        guard record.accountTag == account, record.restoreSteamPending != true else {
+            throw SteamError.verificationFailed("local saves belong to another account or have an incomplete Steam restore")
+        }
+        let spelling = (record.remoteSnapshot?.keys.sorted() ?? []) + record.baseline.files.keys.sorted()
+        let rawNames = Set(TitleInstaller.regularFiles(under: roots.remote))
+            .union(Cloud.mirroredFiles(roots).keys).union(record.conflicts.map(\.name))
+        let names = Set(rawNames.filter(Cloud.isMirroredSave).map { name in
+            spelling.first { $0.lowercased() == name.lowercased() } ?? name.lowercased()
+        })
+        guard names.contains(where: { $0.lowercased() == "datasu.ksd" }) else {
+            throw SteamError.verificationFailed("phone system progress is unavailable")
+        }
+        var choices: [CloudConflict] = []
+        for name in names.sorted() {
+            guard !name.contains("/"), !name.contains("\\"),
+                  let canonical = roots.file(name), let native = roots.mirrorFile(name) else {
+                throw SteamError.verificationFailed("local phone save placement is unavailable")
+            }
+            for url in [canonical, native] {
+                let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+                guard attrs[.type] as? FileAttributeType == .typeRegular,
+                      let size = attrs[.size] as? NSNumber, size.intValue > 0, size.intValue <= 2 << 20 else {
+                    throw SteamError.verificationFailed("local phone save is missing or unsafe")
+                }
+            }
+            guard try Data(contentsOf: canonical) == Data(contentsOf: native) else {
+                throw SteamError.verificationFailed("local phone save copies differ")
+            }
+            let kept = record.conflicts.first { $0.name.lowercased() == name.lowercased() }
+            let attrs = try FileManager.default.attributesOfItem(atPath: canonical.path)
+            choices.append(CloudConflict(name: name, phoneSize: (attrs[.size] as? NSNumber)?.intValue,
+                phoneTime: kept?.phoneTime ?? attrs[.modificationDate] as? Date,
+                steamSize: record.remoteSnapshot?[name]?.size,
+                steamTime: record.remoteSnapshot?[name].map { Date(timeIntervalSince1970: Double($0.time)) },
+                recoveredBackup: kept?.recoveredBackup))
+        }
+        let lowerNames = Set(names.map { $0.lowercased() })
+        record.conflicts.removeAll { lowerNames.contains($0.name.lowercased()) }
+        record.conflicts += choices
+        record.at = now()
+        guard saveCloud(appID, record) else { throw SteamError.transport("cannot keep offline phone save choices") }
+        log.info("cloud", "cloud-offline-phone-v1: local copies agree; unresolved choices kept, no cloud transfer")
     }
 
     /// The conflicts and time of the last sync, for the paired account.

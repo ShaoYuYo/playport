@@ -695,6 +695,151 @@ final class CloudServiceTests: XCTestCase {
         XCTAssertEqual(remote, Array("PC original".utf8))
     }
 
+    private func recoveredOfflineFixture() async throws -> (FakeBackend, SteamService, String) {
+        let backend = FakeBackend(), name = "datasu.ksd", app: UInt32 = 1144400
+        roots.gameSaveMirror = dir.appendingPathComponent("native")
+        await backend.set(cloud: [name: Array("old recovered progress".utf8)])
+        let service = try await self.service(backend)
+        _ = try await service.syncCloud(appID: app, roots: roots, backups: backups)
+        try Data("fresh progress".utf8).write(to: roots.file(name)!)
+        _ = try await service.syncCloud(appID: app, roots: roots, backups: backups)
+        let point = try XCTUnwrap(Cloud.Backups.recoveryPoints(in: backups, appID: app).first { $0.source == "steam" })
+        _ = try await service.restoreCloudBackup(appID: app, roots: roots, backups: backups, id: point.id)
+        return (backend, service, name)
+    }
+
+    func testRecoveredPhoneChoiceRetriesBusyBeforeBackingUpAndUploading() async throws {
+        let (backend, service, name) = try await recoveredOfflineFixture()
+        let before = await backend.count("download \(name)")
+        await backend.failCloudDownloads(name, with: Array(repeating: .eresult(.busy, context: "Cloud.ClientFileDownload#1"), count: 2))
+        let result = try await service.syncCloud(appID: 1144400, roots: roots, backups: backups, resolve: [name: .phone])
+        XCTAssertTrue(result.failed.isEmpty); XCTAssertTrue(result.conflicts.isEmpty)
+        XCTAssertEqual(result.uploaded, [name])
+        let after = await backend.count("download \(name)"), remote = await backend.cloudFile(name)
+        XCTAssertEqual(after - before, 3)
+        XCTAssertEqual(remote, Array("old recovered progress".utf8))
+        let versions = TitleInstaller.regularFiles(under: backups).compactMap { text(backups.appendingPathComponent($0)) }
+        XCTAssertTrue(versions.contains("fresh progress"), "the losing cloud version must still be backed up")
+    }
+
+    func testFailedRecoveredPhoneChoiceRetainsConflictAcrossRestartAndNeverAutoUploads() async throws {
+        let (backend, service, name) = try await recoveredOfflineFixture()
+        let before = await backend.count("upload \(name)")
+        await backend.failCloudDownloads(name, with: Array(repeating: .eresult(.busy, context: "Cloud.ClientFileDownload#1"), count: 4))
+        let failed = try await service.syncCloud(appID: 1144400, roots: roots, backups: backups, resolve: [name: .phone])
+        XCTAssertNotNil(failed.failed[name]); XCTAssertTrue(failed.uploaded.isEmpty)
+        XCTAssertEqual(failed.conflicts.map(\.name), [name]); XCTAssertEqual(failed.conflicts.first?.recoveredBackup, true)
+        XCTAssertEqual(text(roots.file(name)!), "old recovered progress")
+        XCTAssertEqual(text(roots.mirrorFile(name)!), "old recovered progress")
+        let restarted = try await self.service(backend)
+        let retry = try await restarted.syncCloud(appID: 1144400, roots: roots, backups: backups)
+        XCTAssertTrue(retry.uploaded.isEmpty); XCTAssertEqual(retry.conflicts.first?.recoveredBackup, true)
+        let after = await backend.count("upload \(name)"), remote = await backend.cloudFile(name)
+        XCTAssertEqual(after, before); XCTAssertEqual(remote, Array("fresh progress".utf8))
+    }
+
+    func testRecoveredSteamChoiceRetriesBusyAndReplacesBothLocalCopiesWithoutUpload() async throws {
+        let (backend, service, name) = try await recoveredOfflineFixture()
+        let before = await backend.count("download \(name)")
+        await backend.failCloudDownloads(name, with: [.eresult(.busy, context: "Cloud.ClientFileDownload#1")])
+        let result = try await service.syncCloud(appID: 1144400, roots: roots, backups: backups, resolve: [name: .steam])
+        XCTAssertTrue(result.failed.isEmpty); XCTAssertTrue(result.conflicts.isEmpty); XCTAssertTrue(result.uploaded.isEmpty)
+        XCTAssertEqual(result.downloaded, [name])
+        XCTAssertEqual(text(roots.file(name)!), "fresh progress"); XCTAssertEqual(text(roots.mirrorFile(name)!), "fresh progress")
+        let after = await backend.count("download \(name)")
+        XCTAssertEqual(after - before, 2)
+    }
+
+    func testRecoveredOfflineVerificationMakesNoNetworkCallsAndKeepsConflict() async throws {
+        let (backend, service, name) = try await recoveredOfflineFixture()
+        let before = await backend.calls
+        try await service.preparePhoneCloudOfflinePlay(appID: 1144400, roots: roots)
+        let after = await backend.calls, kept = await service.keptCloud(appID: 1144400)
+        XCTAssertEqual(before, after)
+        XCTAssertEqual(kept?.conflicts.first?.name, name); XCTAssertEqual(kept?.conflicts.first?.recoveredBackup, true)
+        let retry = try await service.syncCloud(appID: 1144400, roots: roots, backups: backups)
+        XCTAssertTrue(retry.uploaded.isEmpty); XCTAssertEqual(retry.conflicts.map(\.name), [name])
+    }
+
+    func testRecoveredOfflineVerificationRejectsMismatchedOrMissingCopies() async throws {
+        let (backend, service, name) = try await recoveredOfflineFixture()
+        try Data("different native progress".utf8).write(to: roots.mirrorFile(name)!)
+        do { try await service.preparePhoneCloudOfflinePlay(appID: 1144400, roots: roots); XCTFail("must reject differing saves") }
+        catch {}
+        try FileManager.default.removeItem(at: roots.mirrorFile(name)!)
+        do { try await service.preparePhoneCloudOfflinePlay(appID: 1144400, roots: roots); XCTFail("must reject a missing copy") }
+        catch {}
+        let remote = await backend.cloudFile(name)
+        XCTAssertEqual(remote, Array("fresh progress".utf8)); XCTAssertEqual(text(roots.file(name)!), "old recovered progress")
+    }
+
+    func testIncompleteSteamRestoreCannotBecomeRecoveredOfflinePlay() async throws {
+        let (backend, service, name) = try await recoveredOfflineFixture()
+        await backend.replaceCloudDownload(Array("bad download".utf8))
+        let failed = try await service.syncCloud(appID: 1144400, roots: roots, backups: backups, restoreSteam: true)
+        XCTAssertNotNil(failed.failed[name])
+        do { try await service.preparePhoneCloudOfflinePlay(appID: 1144400, roots: roots); XCTFail("must reject an incomplete Steam restore") }
+        catch {}
+        XCTAssertEqual(text(roots.file(name)!), "old recovered progress")
+    }
+
+    func testOfflinePhonePreparationRepairsLostLegacyMarkersWithoutInventingRecoveryEvidence() async throws {
+        let (backend, _, name) = try await recoveredOfflineFixture()
+        let record = dir.appendingPathComponent("state/steam-cloud/1144400.json")
+        for removeRecord in [false, true] {
+            if removeRecord {
+                try FileManager.default.removeItem(at: record)
+            } else {
+                var old = try JSONSerialization.jsonObject(with: Data(contentsOf: record)) as! [String: Any]
+                old["conflicts"] = [] // the r23 failure path dropped its recovery marker
+                try JSONSerialization.data(withJSONObject: old).write(to: record)
+            }
+            let service = try await self.service(backend)
+            let before = await backend.calls
+            try await service.preparePhoneCloudOfflinePlay(appID: 1144400, roots: roots)
+            let after = await backend.calls, kept = await service.keptCloud(appID: 1144400)
+            XCTAssertEqual(before, after)
+            XCTAssertEqual(kept?.conflicts.map(\.name), [name]); XCTAssertNil(kept?.conflicts.first?.recoveredBackup)
+            let retry = try await service.syncCloud(appID: 1144400, roots: roots, backups: backups)
+            XCTAssertTrue(retry.uploaded.isEmpty); XCTAssertEqual(retry.conflicts.map(\.name), [name])
+            XCTAssertEqual(text(roots.file(name)!), "old recovered progress")
+            let remote = await backend.cloudFile(name)
+            XCTAssertEqual(remote, Array("fresh progress".utf8))
+        }
+    }
+
+    func testOfflinePhonePreparationRefusesLaunchWhenItCannotPersistTheUnresolvedChoice() async throws {
+        let (backend, service, name) = try await recoveredOfflineFixture()
+        let record = dir.appendingPathComponent("state/steam-cloud/1144400.json")
+        try FileManager.default.removeItem(at: record)
+        try FileManager.default.createDirectory(at: record, withIntermediateDirectories: false)
+        do { try await service.preparePhoneCloudOfflinePlay(appID: 1144400, roots: roots); XCTFail("must retain protection before launch") }
+        catch {}
+        XCTAssertEqual(text(roots.file(name)!), "old recovered progress")
+        let remote = await backend.cloudFile(name)
+        XCTAssertEqual(remote, Array("fresh progress".utf8))
+    }
+
+    func testLegacyDroppedPhoneChoiceRequiresConfirmationBeforeAnyAutomaticUpload() async throws {
+        let (backend, _, name) = try await recoveredOfflineFixture()
+        let url = dir.appendingPathComponent("state/steam-cloud/1144400.json")
+        var old = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        old["conflicts"] = []
+        old.removeValue(forKey: "saveChoiceVersion")
+        try JSONSerialization.data(withJSONObject: old).write(to: url)
+        let service = try await self.service(backend)
+        let before = await backend.count("upload \(name)")
+        let upgrade = try await service.syncCloud(appID: 1144400, roots: roots, backups: backups)
+        XCTAssertTrue(upgrade.uploaded.isEmpty); XCTAssertEqual(upgrade.conflicts.map(\.name), [name])
+        let after = await backend.count("upload \(name)"), remote = await backend.cloudFile(name)
+        XCTAssertEqual(after, before); XCTAssertEqual(remote, Array("fresh progress".utf8))
+        let chosen = try await service.syncCloud(appID: 1144400, roots: roots, backups: backups, resolve: [name: .phone])
+        XCTAssertEqual(chosen.uploaded, [name]); XCTAssertTrue(chosen.conflicts.isEmpty)
+        try Data("later phone play".utf8).write(to: roots.file(name)!)
+        let later = try await service.syncCloud(appID: 1144400, roots: roots, backups: backups)
+        XCTAssertEqual(later.uploaded, [name], "migration must not ask again after a successful explicit choice")
+    }
+
     func testRestoreMustPersistDirectionBeforeReplacingAnyFile() async throws {
         let b = FakeBackend(), name = "datasu.ksd"
         await b.set(cloud: [name: Array("PC".utf8)])

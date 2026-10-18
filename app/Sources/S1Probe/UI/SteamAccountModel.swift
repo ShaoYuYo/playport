@@ -193,7 +193,11 @@ final class SteamAccountModel: ObservableObject {
             }
             return result.failed.isEmpty
         } catch {
-            cloudErrors[appID] = InstallCopy.reason(error)
+            if let steamError = error as? SteamError, case let .eresult(result, _) = steamError {
+                cloudErrors[appID] = "Steam 雲端服務暫時無法完成同步（\(result)）。請稍後重試。"
+            } else {
+                cloudErrors[appID] = InstallCopy.reason(error)
+            }
             SteamUILog.logger.warn("cloud", "app \(appID): not synced: \(error)")
             return false
         }
@@ -233,8 +237,8 @@ final class SteamAccountModel: ObservableObject {
         guard Self.cloudOn, LaunchSettingsStore.shared.settings(for: titleID).cloudSync ?? true else { return [] }
         for _ in 0..<120 where cloudSyncing.contains(appID) { try? await Task.sleep(for: .milliseconds(250)) }
         guard !cloudSyncing.contains(appID), await syncCloud(appID, forLaunch: true) else {
-            throw NSError(domain: "Playport.SteamCloud", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                "Steam 雲端存檔尚未同步完成。\(cloudErrors[appID] ?? "同步仍在進行中，請稍後重試。") 如需離線遊玩，可先在此遊戲的選項停用雲端同步。"])
+            throw SteamCloudLaunchError(reason:
+                "Steam 雲端存檔尚未同步完成。\(cloudErrors[appID] ?? "同步仍在進行中，請稍後重試。") 如需離線遊玩，可先在此遊戲的選項停用雲端同步。")
         }
         return cloud[appID]?.conflicts ?? []
     }
@@ -451,4 +455,11 @@ final class SteamAccountModel: ObservableObject {
         images[key] = img
         return img
     }
+}
+
+/// Only this explicitly user-facing reason crosses the release launch alert;
+/// unrelated runtime/path errors keep their existing generic presentation.
+struct SteamCloudLaunchError: LocalizedError {
+    let reason: String
+    var errorDescription: String? { reason }
 }

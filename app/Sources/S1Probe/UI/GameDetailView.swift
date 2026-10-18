@@ -73,6 +73,7 @@ private struct GameDetailPage: View {
     @ObservedObject private var gog = GOGAccount.shared
     @ObservedObject private var epic = EpicAccount.shared
     @State private var playError: String?
+    @State private var cloudLaunchFailed = false
     @State private var controllers = GCController.controllers().count
     @State private var stageOnDisk = false
     /// The version picker's choice; nil until the player picks one.
@@ -250,6 +251,9 @@ private struct GameDetailPage: View {
             }.value
         }
         .alert("Can't start \(name)", isPresented: Binding(get: { playError != nil }, set: { if !$0 { playError = nil } })) {
+            if cloudLaunchFailed, let t = installed, t.appID == 1144400 {
+                Button("使用手機存檔離線啟動") { start(t, phoneCloudOffline: true) }
+            }
             Button("OK") {}
         } message: {
             Text(playError ?? "")
@@ -422,15 +426,17 @@ private struct GameDetailPage: View {
             && !library.removing.contains(t.id) && job == nil
     }
 
-    private func start(_ t: InstalledTitle) {
+    private func start(_ t: InstalledTitle, phoneCloudOffline: Bool = false) {
         guard canPlay(t) else { return }
+        cloudLaunchFailed = false
         Task {
             do {
-                try await library.play(t.id)
+                try await library.play(t.id, phoneCloudOffline: phoneCloudOffline)
             } catch {
+                cloudLaunchFailed = error is SteamCloudLaunchError
                 #if PLAYPORT_RELEASE
                 LibraryModel.log("play \(t.id) refused: \(error)")
-                playError = "Playport could not prepare this game's launch."
+                playError = (error as? SteamCloudLaunchError)?.reason ?? "Playport could not prepare this game's launch."
                 #else
                 playError = "\(error)"
                 #endif

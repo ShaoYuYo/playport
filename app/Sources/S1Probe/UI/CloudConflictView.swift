@@ -6,6 +6,8 @@
 // call settles every file the same way (SteamService.resolveAll), and the side
 // not picked is backed up for 30 days (Cloud.Backups, pruned by LibraryModel).
 // B, Decide later, closes it and the game does not start.
+// Y explicitly starts Senren from verified phone saves with cloud choices
+// kept unresolved; this does not count as a completed sync.
 //
 // Play asks it first (LibraryModel.play, `cloudGate`) and starts the game once
 // the choice is settled; Game options' Cloud saves row asks it without a Play.
@@ -44,8 +46,33 @@ final class CloudConflictSession: ObservableObject {
         switch b {
         case .a: keep(.phone)
         case .x: keep(.steam)
+        case .y: playPhoneOffline()
         case .b: decideLater()
         default: break
+        }
+    }
+
+    var canPlayPhoneOffline: Bool {
+        thenPlay && appID == 1144400
+    }
+
+    func playPhoneOffline() {
+        guard canPlayPhoneOffline, settling == nil else { return }
+        settling = .phone
+        error = nil
+        if case .cloud(let s) = PadModal.shared.content, s === self { PadModal.shared.close() }
+        Task {
+            defer { settling = nil }
+            do {
+                if try await LibraryModel.shared.play(titleID, phoneCloudOffline: true) != true,
+                   !TitleLaunch.shared.running, !PadModal.shared.isUp {
+                    AppNavigation.shared.openTitle(titleID)
+                }
+            } catch {
+                LibraryModel.log("play phone offline refused: \(error)")
+                self.error = (error as? SteamCloudLaunchError)?.reason ?? "暫時無法準備遊戲，請稍後重試。"
+                if !TitleLaunch.shared.running, !PadModal.shared.isUp { PadModal.shared.cloudConflict(self) }
+            }
         }
     }
 
@@ -67,12 +94,12 @@ final class CloudConflictSession: ObservableObject {
             let left = steam.cloud[appID]?.conflicts ?? conflicts
             if case .signedIn = steam.state {
                 if let e = steam.cloudErrors[appID] {
-                    error = "Steam Cloud could not be reached (\(e)). Try again, or decide later."
+                    error = "雲端同步未完成：\(e)。" + (canPlayPhoneOffline ? "可重試，或使用手機存檔離線啟動。" : "請重試或稍後再選。")
                 } else if !left.isEmpty {
-                    error = "\(left.count) file(s) are still in conflict. Try again, or decide later."
+                    error = "仍有 \(left.count) 個檔案需要選擇版本，請重試或稍後再選。"
                 }
             } else {
-                error = "Playport needs to be signed in to Steam to settle this. Try again once it is, or decide later."
+                error = "需要登入 Steam 才能完成同步。可登入後重試，或稍後再選。"
             }
             guard error == nil else {
                 LibraryModel.log("cloud: \(titleID): not settled: \(error!)")
@@ -87,6 +114,8 @@ final class CloudConflictSession: ObservableObject {
                 }
             } catch {
                 LibraryModel.log("play \(titleID) refused: \(error)")
+                self.error = (error as? SteamCloudLaunchError)?.reason ?? "暫時無法準備遊戲，請稍後重試。"
+                if !TitleLaunch.shared.running, !PadModal.shared.isUp { PadModal.shared.cloudConflict(self) }
             }
         }
     }
@@ -127,6 +156,9 @@ struct CloudConflictView: View {
                 Spacer()
                 HStack {
                     Spacer()
+                    if session.canPlayPhoneOffline {
+                        PadModalHint(button: .y, label: "使用手機存檔離線啟動") { session.press(.y) }
+                    }
                     PadModalHint(button: .b, label: session.thenPlay ? "稍後再選（暫不啟動）" : "稍後再選") {
                         session.press(.b)
                     }
