@@ -202,6 +202,7 @@ final class LibraryModel: ObservableObject {
     @discardableResult
     func play(_ id: String, epicOffline: Bool = false, phoneCloudOffline: Bool = false) async throws -> Bool {
         guard catalog.title(id: id)?.canPlay == true, !TitleLaunch.shared.running, !TitleLaunch.shared.spent else { return false }
+        let preparationBegan = ProcessInfo.processInfo.systemUptime
         SteamAccountModel.current?.beginCloudLaunchPreparation()
         defer { SteamAccountModel.current?.finishCloudLaunchPreparation() }
         // A game whose saves changed on the phone and on Steam asks which to keep first; the
@@ -252,6 +253,7 @@ final class LibraryModel: ObservableObject {
         #endif
         // A Steam app's steam_api: the emulator told about the paired account, or the game's own.
         let service = SteamAccountModel.current?.service
+        let ticketBegan = ProcessInfo.processInfo.systemUptime
         // The emulator's encrypted app ticket, on by default (decision 0017): asked for now, while the
         // session is up (TitleLaunch.start closes it), after the start's sweep of old ones.
         var ticket: Secret<[UInt8]>?
@@ -260,9 +262,12 @@ final class LibraryModel: ObservableObject {
         var tickets: SteamTicketBroker?
         if let app = t.appID, settings.steamAPI == .emulated, let service {
             await ticketSweep?.value
-            ticket = await service.encryptedAppTicket(appID: app)
-            tickets = await service.prepareTicketSession(appID: app, playLog: SteamTicketHost.log)
+            let prepared = await service.prepareLaunchTickets(appID: app, playLog: SteamTicketHost.log)
+            ticket = prepared.encrypted
+            tickets = prepared.broker
         }
+        Self.log(String(format: "launch-prep-v1: setup_cloud_ms=%.1f tickets_ms=%.1f ticket_requests=parallel",
+            (ticketBegan - preparationBegan) * 1000, (ProcessInfo.processInfo.systemUptime - ticketBegan) * 1000))
         let steamAPI = t.appID.map { app in
             LaunchCoordinator.SteamAPI(appID: app, root: Self.paths.games.appendingPathComponent(t.installDir, isDirectory: true),
                                        mode: settings.steamAPI,

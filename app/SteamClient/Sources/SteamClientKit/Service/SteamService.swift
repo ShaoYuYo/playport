@@ -1297,6 +1297,16 @@ public actor SteamService {
 
     // MARK: a live play's tickets (decision 0062)
 
+    /// Independent job-routed requests can overlap. Both retain their own
+    /// existing deadlines/fallbacks, and both finish before launch suspends
+    /// the CM session or writes the game's Steam settings.
+    public func prepareLaunchTickets(appID: UInt32, timeout: Double = 5, playLog: Logger? = nil)
+        async -> (encrypted: Secret<[UInt8]>?, broker: SteamTicketBroker?) {
+        async let encrypted = encryptedAppTicket(appID: appID, timeout: timeout)
+        async let broker = prepareTicketSession(appID: appID, timeout: timeout, playLog: playLog)
+        return await (encrypted, broker)
+    }
+
     /// Arms the launched game's auth session and web API tickets, asked for
     /// after Play and before `suspendForLaunch`, within `timeout` seconds: the
     /// app's ownership ticket, at least one game connect token (waiting up to

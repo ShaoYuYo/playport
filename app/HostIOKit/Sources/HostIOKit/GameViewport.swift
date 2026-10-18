@@ -33,6 +33,19 @@ public struct GameViewport: Sendable {
 
     public var pageSize: Int { max(2, min(10, Int(max(0, safe.height - 112) / 50) * 2)) }
 
+    /// Prefer a side letterbox inside the control-safe canvas, at the outer
+    /// edge and away from rounded corners. A wider camera-free side wins.
+    /// If the picture fills the screen, use the less obstructed safe edge.
+    public func menuFrame(contentWidth: Double, contentHeight: Double) -> CGRect {
+        let fit = Display.aspectFit(contentWidth: contentWidth, contentHeight: contentHeight,
+                                    width: game.width, height: game.height)
+        let picture = CGRect(x: game.minX + fit.0, y: game.minY + fit.1, width: fit.2, height: fit.3)
+        let leftSpace = picture.minX - safe.minX, rightSpace = safe.maxX - picture.maxX
+        let size = min(44, min(safe.width, safe.height))
+        let x = rightSpace >= leftSpace ? safe.maxX - size : safe.minX
+        return CGRect(x: x, y: safe.midY - size / 2, width: size, height: size)
+    }
+
     public func controlFrame(index: Int) -> CGRect {
         let rows = pageSize / 2
         let column = index / rows, row = index % rows

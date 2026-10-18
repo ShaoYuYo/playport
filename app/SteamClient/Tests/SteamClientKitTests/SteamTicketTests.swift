@@ -260,6 +260,20 @@ final class TicketPushTests: XCTestCase {
     }
 }
 
+private actor TicketLaunchGate {
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        if released { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func release() {
+        released = true
+        let pending = waiters; waiters = []
+        for waiter in pending { waiter.resume() }
+    }
+}
+
 final class TicketServiceTests: XCTestCase {
     func signedIn(_ b: FakeBackend) async -> SteamService {
         await b.set(stored: FakeBackend.session(exp: 2_000_000_000))
@@ -320,5 +334,55 @@ final class TicketServiceTests: XCTestCase {
         XCTAssertFalse(on.connected)
         let suspended = await s.prepareTicketSession(appID: 1)
         XCTAssertNil(suspended)
+    }
+
+    func testLaunchRequestsBothTicketsBeforeEitherRequestIsAllowedToFinish() async throws {
+        let backend = FakeBackend(), gate = TicketLaunchGate()
+        let service = await signedIn(backend)
+        backend.connectTokens.add([Secret([1, 2, 3])], keep: 10)
+        backend.traffic.setOpen(true)
+        let encryptedStarted = expectation(description: "encrypted started"), ownershipStarted = expectation(description: "ownership started")
+        await backend.set(ticketStart: { name in
+            if name == "encrypted" { encryptedStarted.fulfill() } else { ownershipStarted.fulfill() }
+            await gate.wait()
+        })
+        let task = Task { await service.prepareLaunchTickets(appID: 1144400) }
+        await fulfillment(of: [encryptedStarted, ownershipStarted], timeout: 1)
+        // Release even on an expectation failure, so a sequential regression
+        // fails cleanly rather than leaving a permanently suspended test.
+        await gate.release()
+        let result = await task.value
+        XCTAssertEqual(result.encrypted?.value, Array("a made-up encrypted app ticket".utf8))
+        XCTAssertTrue(result.broker?.isArmed == true)
+        let encryptedCount = await backend.count("ticket 1144400"), ownershipCount = await backend.count("ownership 1144400")
+        XCTAssertEqual(encryptedCount, 1); XCTAssertEqual(ownershipCount, 1)
+        await service.endPlay()
+    }
+
+    func testParallelLaunchKeepsIndependentFailureFallbacks() async throws {
+        let backend = FakeBackend(), service = await signedIn(backend)
+        backend.connectTokens.add([Secret([1])], keep: 10)
+        await backend.set(ticket: .failure(SteamError.eresult(.accessDenied, context: "encrypted")))
+        let first = await service.prepareLaunchTickets(appID: 1144400)
+        XCTAssertNil(first.encrypted); XCTAssertNotNil(first.broker)
+        await service.endPlay()
+        await backend.set(ticket: .success([4, 5, 6]))
+        await backend.set(ownership: .failure(SteamError.eresult(.accessDenied, context: "ownership")))
+        let second = await service.prepareLaunchTickets(appID: 1144400)
+        XCTAssertEqual(second.encrypted?.value, [4, 5, 6]); XCTAssertNil(second.broker)
+        await service.suspendForLaunch()
+        let on = await backend.loggedOn
+        XCTAssertFalse(on.connected)
+    }
+
+    func testParallelLaunchRetainsEncryptedDeadlineWithoutLosingReadyBroker() async throws {
+        let backend = FakeBackend(), service = await signedIn(backend)
+        backend.connectTokens.add([Secret([1])], keep: 10)
+        await backend.set(ticket: .success([1, 2, 3]), delay: 2_000_000_000)
+        let began = Date()
+        let result = await service.prepareLaunchTickets(appID: 1144400, timeout: 0.05)
+        XCTAssertNil(result.encrypted); XCTAssertNotNil(result.broker)
+        XCTAssertLessThan(Date().timeIntervalSince(began), 0.8)
+        await service.endPlay()
     }
 }

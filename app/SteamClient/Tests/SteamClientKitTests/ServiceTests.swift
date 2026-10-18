@@ -209,9 +209,12 @@ actor FakeBackend: SteamBackend {
 
     var ticket: Result<[UInt8], Error> = .success(Array("a made-up encrypted app ticket".utf8))
     var ticketDelay: UInt64 = 0
+    var ticketStart: (@Sendable (String) async -> Void)?
+    func set(ticketStart hook: (@Sendable (String) async -> Void)?) { ticketStart = hook }
     func set(ticket t: Result<[UInt8], Error>, delay ns: UInt64 = 0) { ticket = t; ticketDelay = ns }
     func encryptedAppTicket(appID: UInt32, timeout: Double) async throws -> Secret<[UInt8]> {
         calls.append("ticket \(appID)")
+        await ticketStart?("encrypted")
         if ticketDelay > 0 { try await Task.sleep(nanoseconds: ticketDelay) }
         return Secret(try ticket.get())
     }
@@ -226,6 +229,7 @@ actor FakeBackend: SteamBackend {
     func set(ownership o: Result<[UInt8], Error>) { ownership = o }
     func appOwnershipTicket(appID: UInt32, timeout: Double) async throws -> Secret<[UInt8]> {
         calls.append("ownership \(appID)")
+        await ticketStart?("ownership")
         return Secret(try ownership.get())
     }
     func sendAuthList(_ list: CMsgClientAuthList) async throws { authLists.append(list) }

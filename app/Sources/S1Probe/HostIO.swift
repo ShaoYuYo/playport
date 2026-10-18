@@ -742,6 +742,7 @@ final class GameSurfaceView: UIView {
 
 struct GameSurface: UIViewRepresentable {
     @AppStorage(GameViewport.edgeToEdgeKey) private var edgeToEdge = true
+    @AppStorage(EdgeMenuVisibility.preferenceKey) private var menuAutoHide = true
     @ObservedObject private var controls = TouchControlsStore.shared
     @ObservedObject private var launch = TitleLaunch.shared
     @ObservedObject private var menu = InGameMenu.shared
@@ -750,7 +751,7 @@ struct GameSurface: UIViewRepresentable {
     func updateUIView(_ view: GameSurfaceContainer, context: Context) {
         view.update(layout: controls.layout,
                     visible: launch.acceptsMenu && !launch.showsSheet && (!menu.isOpen || menu.editingControls) && !web.isUp,
-                    editing: menu.editingControls, edgeToEdge: edgeToEdge)
+                    editing: menu.editingControls, edgeToEdge: edgeToEdge, menuAutoHide: menuAutoHide)
     }
 }
 #endif
