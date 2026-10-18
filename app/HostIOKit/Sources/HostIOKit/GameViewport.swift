@@ -7,22 +7,28 @@ import CoreGraphics
 /// Keep the render view and controls in one coordinate space. Side rails are
 /// outside the game's view and inside the window's camera/home-indicator insets.
 public struct GameViewport: Sendable {
+    public static let edgeToEdgeKey = "display.edgeToEdge"
     public let safe: CGRect
     public let game: CGRect
     public let leftRail: CGRect
     public let rightRail: CGRect
 
     public init(width: Double, height: Double, top: Double, left: Double, bottom: Double, right: Double,
-                contentWidth: Double, contentHeight: Double, docked: Bool) {
+                contentWidth: Double, contentHeight: Double, docked: Bool, edgeToEdge: Bool = false) {
         safe = CGRect(x: max(0, left), y: max(0, top),
                       width: max(1, width - max(0, left) - max(0, right)),
                       height: max(1, height - max(0, top) - max(0, bottom)))
         let rail = docked && safe.width >= 360 ? 56.0 : 0.0
         leftRail = CGRect(x: safe.minX, y: safe.minY, width: rail, height: safe.height)
         rightRail = CGRect(x: safe.maxX - rail, y: safe.minY, width: rail, height: safe.height)
+        // Rendering may use the full window while hit targets retain their
+        // separate camera/home-indicator-safe canvas. Do not shrink the game
+        // vertically just to keep a button away from the home indicator.
+        let canvas = edgeToEdge ? CGRect(x: 0, y: 0, width: max(1, width), height: max(1, height)) : safe
+        let renderRail = edgeToEdge ? 0 : rail
         let fit = Display.aspectFit(contentWidth: contentWidth, contentHeight: contentHeight,
-                                    width: safe.width - rail * 2, height: safe.height)
-        game = CGRect(x: safe.minX + rail + fit.0, y: safe.minY + fit.1, width: fit.2, height: fit.3)
+                                    width: canvas.width - renderRail * 2, height: canvas.height)
+        game = CGRect(x: canvas.minX + renderRail + fit.0, y: canvas.minY + fit.1, width: fit.2, height: fit.3)
     }
 
     public var pageSize: Int { max(2, min(10, Int(max(0, safe.height - 112) / 50) * 2)) }

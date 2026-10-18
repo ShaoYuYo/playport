@@ -274,6 +274,8 @@ private struct GraphicsSettings: View {
     @AppStorage(MetalHUD.key) private var metalHUD = false
     @AppStorage(MemorySafety.preferenceKey) private var memoryHeadroom = MemorySafety.defaultMB
     @AppStorage(TitleMemory.preferenceKey) private var memoryEconomy = true
+    @AppStorage(MemorySafety.warningPreferenceKey) private var showMemoryWarnings = true
+    @AppStorage(GameViewport.edgeToEdgeKey) private var edgeToEdge = true
 
     var body: some View {
         SettingsNote(text: "What every game uses unless you change it on the game's page.")
@@ -285,6 +287,9 @@ private struct GraphicsSettings: View {
         let limits = SettingSteps(values: LaunchSettingsText.frameLimits + [0], defaultValue: min(60, UIScreen.main.maximumFramesPerSecond))
         valueRow("frameLimit", "Frame rate limit", "Lower saves battery and heat", limits,
                  name: LaunchSettingsText.frameLimit, value: global.frameLimit)
+        SettingsSwitchRow(id: "edge-to-edge", title: "畫面延伸至螢幕邊緣",
+                          subtitle: "移除為安全區預留的上下空間，維持遊戲比例；控制按鈕仍避開鏡頭與手勢區。",
+                          on: $edgeToEdge)
         let backends = SettingSteps(values: GraphicsBackend.allCases.filter { Manifest.has($0) || $0 == launchSettings.global.graphics },
                                     defaultValue: GraphicsBackend.default)
         valueRow("graphics", "Direct3D", "Vulkan is experimental", backends,
@@ -296,8 +301,11 @@ private struct GraphicsSettings: View {
             memoryHeadroom = MemorySafety.choices[$0]
         }
         SettingsNote(text: "預設安全餘裕 100 MB，這是配置前的安全檢查，不會預先占用這些 RAM。JIT 程式碼池在啟動時固定大小。")
-        SettingsSwitchRow(id: "memory-economy", title: "遊戲省記憶體模式",
-                          subtitle: "目前適用於千戀＊萬花：256 MB JIT、較少工作執行緒、64 MB 圖片快取，兼顧重用圖片與 RAM。下次啟動套用。",
+        SettingsSwitchRow(id: "memory-warning", title: "顯示記憶體餘裕提醒",
+                          subtitle: "關閉後隱藏遊戲上方的 RAM 提醒；記憶體安全檢查與失敗紀錄仍然保留。",
+                          on: $showMemoryWarnings)
+        SettingsSwitchRow(id: "memory-economy", title: "千戀萬花執行最佳化",
+                          subtitle: "256 MB JIT、較少工作執行緒、64 MB 圖片快取；連續更新依螢幕更新率節流，避免不限模式空轉。下次啟動套用，明確的啟動參數優先。",
                           on: $memoryEconomy)
         SettingsSwitchRow(id: "metalHUD", title: "Metal HUD", subtitle: "Frame rate, frame time and memory over a game",
                           on: $metalHUD)

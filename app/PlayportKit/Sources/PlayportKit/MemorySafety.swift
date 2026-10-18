@@ -4,6 +4,7 @@ import Foundation
 /// Safety headroom, not a prediction or an entitlement to more physical RAM.
 public enum MemorySafety {
     public static let preferenceKey = "memorySafetyHeadroomMB"
+    public static let warningPreferenceKey = "memorySafetyShowWarnings"
     public static let defaultMB = 100
     public static let choices = [50, 100, 150, 200, 300, 500, 750, 1024]
     public static func margin(_ value: Int) -> Int { min(1024, max(0, value)) }

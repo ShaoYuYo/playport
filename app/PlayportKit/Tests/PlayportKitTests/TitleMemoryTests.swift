@@ -64,7 +64,7 @@ final class TitleMemoryTests: XCTestCase {
     }
     func testEngineCadenceFollowsTheLaunchLimitWithoutOverridingExplicitArguments() {
         let p = TitleMemory(steamAppID: 1144400, i386: true, enabled: true)
-        for fps in [0, 30, 60, 120] {
+        for fps in [30, 60, 120] {
             XCTAssertTrue(p.arguments(over: [], frameLimit: fps).contains("-contfreq=\(fps)"))
         }
         XCTAssertFalse(p.arguments(over: [], frameLimit: -1).contains { $0.hasPrefix("-contfreq") })
@@ -81,9 +81,23 @@ final class TitleMemoryTests: XCTestCase {
         let p = TitleMemory(steamAppID: 1144400, i386: true, enabled: true)
         XCTAssertTrue(p.arguments(over: [], frameLimit: 30, displayRefreshRate: 60).contains("-contfreq=60"))
         XCTAssertTrue(p.arguments(over: [], frameLimit: 30, displayRefreshRate: 120).contains("-contfreq=120"))
-        XCTAssertTrue(p.arguments(over: [], frameLimit: 0, displayRefreshRate: 120).contains("-contfreq=0"))
+        XCTAssertTrue(p.arguments(over: [], frameLimit: 0, displayRefreshRate: 120).contains("-contfreq=120"))
         let explicit = p.arguments(over: ["-CONTFREQ=30"], frameLimit: 60, displayRefreshRate: 120)
         XCTAssertEqual(explicit.filter { $0.lowercased().hasPrefix("-contfreq") }, ["-CONTFREQ=30"])
+    }
+
+    func testUnlimitedPresentationNeverDefaultsToUnboundedContinuousWork() {
+        let p = TitleMemory(steamAppID: 1144400, i386: true, enabled: true)
+        for panel in [nil, 0, -1, 60] as [Int?] {
+            XCTAssertTrue(p.arguments(over: [], frameLimit: 0, displayRefreshRate: panel).contains("-contfreq=60"))
+        }
+        XCTAssertTrue(p.arguments(over: [], frameLimit: 240, displayRefreshRate: 60).contains("-contfreq=60"))
+        XCTAssertTrue(p.arguments(over: [], frameLimit: 0, displayRefreshRate: 1000).contains("-contfreq=240"))
+        for explicit in [["-CONTFREQ=0"], ["-contfreq", "0"]] {
+            let args = p.arguments(over: explicit, frameLimit: 0, displayRefreshRate: 60)
+            XCTAssertEqual(Array(args.prefix(explicit.count)), explicit)
+            XCTAssertEqual(args.filter { $0.lowercased().hasPrefix("-contfreq") }.count, 1)
+        }
     }
 
 }

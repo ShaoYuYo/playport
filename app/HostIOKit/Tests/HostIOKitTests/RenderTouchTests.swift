@@ -4,6 +4,33 @@ import XCTest
 @testable import HostIOKit
 
 final class RenderTouchTests: XCTestCase {
+    func testFullWindowRenderingRemovesVerticalSafeAreaBarsWithoutMovingControls() {
+        for (left, right) in [(47.0, 0.0), (0.0, 47.0)] {
+            for (contentWidth, contentHeight) in [(1280.0, 720.0), (2338.0, 1080.0)] {
+                let old = GameViewport(width: 844, height: 390, top: 4, left: left + 4,
+                    bottom: 25, right: right + 4, contentWidth: contentWidth, contentHeight: contentHeight, docked: false)
+                let full = GameViewport(width: 844, height: 390, top: 4, left: left + 4,
+                    bottom: 25, right: right + 4, contentWidth: contentWidth, contentHeight: contentHeight,
+                    docked: false, edgeToEdge: true)
+                XCTAssertEqual(full.safe, old.safe)
+                XCTAssertEqual(full.game.midY, 195, accuracy: 0.001)
+                // The native monitor ratio differs slightly from this window.
+                XCTAssertLessThan(full.game.minY, 0.1)
+                XCTAssertGreaterThan(full.game.maxY, 389.9)
+                XCTAssertEqual(full.game.width / full.game.height, contentWidth / contentHeight, accuracy: 0.001)
+                XCTAssertGreaterThan(full.game.height, old.game.height)
+                for x in [0.0, 0.5, 1] {
+                    let button = full.customFrame(x: x, y: 1, width: 73)
+                    XCTAssertEqual(button, old.customFrame(x: x, y: 1, width: 73))
+                    XCTAssertTrue(full.safe.contains(button))
+                }
+                let center = SurfacePointer.fraction(x: full.game.width / 2, y: full.game.height / 2,
+                    width: full.game.width, height: full.game.height,
+                    contentWidth: contentWidth, contentHeight: contentHeight, clamp: false)!
+                XCTAssertEqual(center.0, 32768); XCTAssertEqual(center.1, 32768)
+            }
+        }
+    }
     func testRailsStayInsideCameraInsetsAndOutsideGameOnEitherRotation() {
         for (left, right) in [(47.0, 0.0), (0.0, 47.0), (47.0, 47.0)] {
             let v = GameViewport(width: 844, height: 390, top: 4, left: left + 4,
@@ -103,6 +130,35 @@ final class RenderTouchTests: XCTestCase {
         h.requested(at: 1)
         let next = h.sample(at: 2)!
         XCTAssertEqual(next.averageRequestGapMS, 1000 / 30, accuracy: 0.001)
+    }
+
+    func testProducerGapExcludesDrawableAndLimiterWaitsAcrossSamples() {
+        var h = FrameHealth()
+        h.requested(at: 0)
+        h.drawable(at: 0.005, wait: 0.010, succeeded: true, pacerWait: 0.005)
+        h.requested(at: 0.020) // only 5 ms outside the previous drawable call
+        h.drawable(at: 0.025, wait: 0.010, succeeded: true, pacerWait: 0.005)
+        let first = h.sample(at: 1)!
+        XCTAssertEqual(first.averageProducerGapMS, 5, accuracy: 0.0001)
+        XCTAssertEqual(first.maximumProducerGapMS, 5, accuracy: 0.0001)
+        XCTAssertEqual(first.averageDrawableWaitMS, 10, accuracy: 0.0001)
+        XCTAssertEqual(first.averagePacerWaitMS, 5, accuracy: 0.0001)
+        h.requested(at: 1.1)
+        let next = h.sample(at: 2)!
+        XCTAssertEqual(next.averageProducerGapMS, 1065, accuracy: 0.0001)
+        XCTAssertEqual(next.maximumProducerGapMS, 1065, accuracy: 0.0001)
+        XCTAssertEqual(next.averageDrawableWaitMS, 0)
+    }
+
+    func testProcessCPUUsesItsOwnSampleWindowAndSupportsMultipleCores() {
+        var h = FrameHealth()
+        h.requested(at: 0)
+        XCTAssertNil(h.sample(at: 1, cpuSeconds: 10)!.processCPUPercent)
+        XCTAssertEqual(h.sample(at: 3, cpuSeconds: 15)!.processCPUPercent!, 250, accuracy: 0.0001)
+        XCTAssertNil(h.sample(at: 4, cpuSeconds: 1)!.processCPUPercent) // counter reset
+        XCTAssertNil(h.sample(at: 5, cpuSeconds: .nan)!.processCPUPercent)
+        XCTAssertNil(h.sample(at: 6, cpuSeconds: 2)!.processCPUPercent)
+        XCTAssertEqual(h.sample(at: 7, cpuSeconds: 2)!.processCPUPercent, 0)
     }
 
 }

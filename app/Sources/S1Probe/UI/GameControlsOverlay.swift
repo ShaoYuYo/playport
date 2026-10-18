@@ -57,6 +57,7 @@ final class GameSurfaceContainer: UIView {
     private var layout = TouchLayout()
     private var visible = false
     private var editing = false
+    private var edgeToEdge = true
     private var geometry: GameViewport?
     private var lastGeometry = ""
 
@@ -92,10 +93,11 @@ final class GameSurfaceContainer: UIView {
         InGameMenu.shared.panel = .controls
     }
 
-    func update(layout: TouchLayout, visible: Bool, editing: Bool) {
+    func update(layout: TouchLayout, visible: Bool, editing: Bool, edgeToEdge: Bool) {
         self.layout = layout.normalized
         self.visible = visible
         self.editing = editing
+        self.edgeToEdge = edgeToEdge
         for id in Array(buttons.keys) where !self.layout.buttons.contains(where: { $0.id == id }) {
             buttons.removeValue(forKey: id)?.removeFromSuperview()
         }
@@ -128,7 +130,7 @@ final class GameSurfaceContainer: UIView {
         let pixels = TitleScreen.pixelSize
         let geometry = GameViewport(width: bounds.width, height: bounds.height,
             top: insets.top + 4, left: insets.left + 4, bottom: insets.bottom + 4, right: insets.right + 4,
-            contentWidth: pixels.width, contentHeight: pixels.height, docked: false)
+            contentWidth: pixels.width, contentHeight: pixels.height, docked: false, edgeToEdge: edgeToEdge)
         self.geometry = geometry
         surface.frame = geometry.game
         surface.configureRenderSize(pixels)
@@ -149,7 +151,7 @@ final class GameSurfaceContainer: UIView {
         bringSubviewToFront(menuButton)
         bringSubviewToFront(addButton)
         // Sparse layout evidence, without per-frame UI publishing or device IDs.
-        let summary = "game=\(Int(surface.bounds.width))x\(Int(surface.bounds.height)) safe=\(Int(insets.left)),\(Int(insets.right)),\(Int(insets.bottom)) docked=\(layout.docked)"
+        let summary = "viewport-v2 game=\(Int(surface.bounds.width))x\(Int(surface.bounds.height)) safe=\(Int(insets.left)),\(Int(insets.right)),\(Int(insets.bottom)) edge_to_edge=\(edgeToEdge) docked=\(layout.docked)"
         if summary != lastGeometry { lastGeometry = summary; HostIO.log("touch-ui: " + summary) }
     }
 

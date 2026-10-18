@@ -35,9 +35,13 @@ public struct TitleMemory: Equatable, Sendable {
         // when no script rate is set. Keep its ceiling at the panel rate:
         // freezing it at a 30 FPS launch cap would make the in-game 60/unlimited
         // picker unable to raise the engine later. Presentation is capped
-        // separately by FramePacer. Zero and explicit player arguments survive.
+        // separately by FramePacer. An unlimited presentation setting must NOT
+        // turn continuous callbacks into a CPU busy loop: there is no benefit
+        // to calculating transitions faster than the panel can display them.
+        // Explicit player arguments (including -contfreq=0) still win.
         if let frameLimit, frameLimit >= 0 {
-            let ceiling = frameLimit == 0 ? 0 : max(frameLimit, displayRefreshRate ?? frameLimit)
+            let ceiling = displayRefreshRate.flatMap { $0 > 0 ? $0 : nil }
+                ?? (frameLimit > 0 ? frameLimit : 60)
             defaults.append(("contfreq", String(min(240, ceiling))))
         }
         for (key, value) in defaults {

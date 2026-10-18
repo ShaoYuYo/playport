@@ -40,6 +40,7 @@
 
 #if canImport(UIKit)
 import AVFAudio
+import Darwin
 import Foundation
 import GameController
 import HostIO
@@ -558,13 +559,21 @@ final class PacedMetalLayer: CAMetalLayer {
     static var latestHealth: FrameHealth.Sample? { latest.withLock { $0 } }
     static func resetHealth() { health.withLock { $0 = FrameHealth() }; latest.withLock { $0 = nil } }
     static func healthReport() -> String? {
-        guard let s = health.withLock({ $0.sample(at: CACurrentMediaTime()) }) else { return nil }
+        // One process-clock read per existing five-second report, not per
+        // frame. No new sampler, timer, GPU readback or battery monitor.
+        var cpu = timespec()
+        let cpuSeconds = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &cpu) == 0
+            ? Double(cpu.tv_sec) + Double(cpu.tv_nsec) / 1_000_000_000 : nil
+        guard let s = health.withLock({ $0.sample(at: CACurrentMediaTime(), cpuSeconds: cpuSeconds) }) else { return nil }
         latest.withLock { $0 = s }
         let size = lastPresented.map { "\($0.width)x\($0.height)" } ?? "none"
-        return String(format: "render-health: fps=%.1f frames=%d gaps_over50ms=%d max_gap_ms=%.1f drawable_wait_avg_ms=%.1f drawable_wait_max_ms=%.1f failed=%d pixels=%@ pacer_wait_avg_ms=%.1f pacer_wait_max_ms=%.1f present_gap_avg_ms=%.1f present_jitter_ms=%.1f request_gap_max_ms=%.1f request_gap_avg_ms=%.1f",
+        return String(format: "render-health: fps=%.1f frames=%d gaps_over50ms=%d max_gap_ms=%.1f drawable_wait_avg_ms=%.1f drawable_wait_max_ms=%.1f failed=%d pixels=%@ pacer_wait_avg_ms=%.1f pacer_wait_max_ms=%.1f present_gap_avg_ms=%.1f present_jitter_ms=%.1f request_gap_max_ms=%.1f request_gap_avg_ms=%.1f producer_gap_avg_ms=%.1f producer_gap_max_ms=%.1f process_cpu_pct=%@ thermal=%@ low_power=%d",
             s.fps, s.frames, s.longGaps, s.maximumGapMS, s.averageDrawableWaitMS,
             s.maximumDrawableWaitMS, s.failedDrawables, size, s.averagePacerWaitMS, s.maximumPacerWaitMS,
-            s.averagePresentationGapMS, s.presentationJitterMS, s.maximumRequestGapMS, s.averageRequestGapMS)
+            s.averagePresentationGapMS, s.presentationJitterMS, s.maximumRequestGapMS, s.averageRequestGapMS,
+            s.averageProducerGapMS, s.maximumProducerGapMS,
+            s.processCPUPercent.map { String(format: "%.1f", $0) } ?? "unknown",
+            ThermalLog.name(ProcessInfo.processInfo.thermalState), ProcessInfo.processInfo.isLowPowerModeEnabled ? 1 : 0)
     }
 
     /// The frame on screen, nil before the first.
@@ -732,6 +741,7 @@ final class GameSurfaceView: UIView {
 }
 
 struct GameSurface: UIViewRepresentable {
+    @AppStorage(GameViewport.edgeToEdgeKey) private var edgeToEdge = true
     @ObservedObject private var controls = TouchControlsStore.shared
     @ObservedObject private var launch = TitleLaunch.shared
     @ObservedObject private var menu = InGameMenu.shared
@@ -740,7 +750,7 @@ struct GameSurface: UIViewRepresentable {
     func updateUIView(_ view: GameSurfaceContainer, context: Context) {
         view.update(layout: controls.layout,
                     visible: launch.acceptsMenu && !launch.showsSheet && (!menu.isOpen || menu.editingControls) && !web.isUp,
-                    editing: menu.editingControls)
+                    editing: menu.editingControls, edgeToEdge: edgeToEdge)
     }
 }
 #endif

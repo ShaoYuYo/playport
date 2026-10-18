@@ -56,10 +56,11 @@ final class MemorySafetyWatch: ObservableObject {
 
 struct MemorySafetyBanner: View {
     @ObservedObject private var watch = MemorySafetyWatch.shared
+    @AppStorage(MemorySafety.warningPreferenceKey) private var showWarnings = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Group {
-            if let warning = watch.warning {
+            if showWarnings, let warning = watch.warning {
                 Label(warning, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 10)
@@ -70,6 +71,7 @@ struct MemorySafetyBanner: View {
             }
         }
         .animation(.easeOut(duration: reduceMotion ? 0.1 : 0.2), value: watch.warning)
+        .animation(.easeOut(duration: reduceMotion ? 0.1 : 0.2), value: showWarnings)
         .allowsHitTesting(false)
     }
 }

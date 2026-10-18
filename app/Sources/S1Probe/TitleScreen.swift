@@ -54,7 +54,8 @@ enum TitleScreen {
         let hz = UIScreen.main.maximumFramesPerSecond
         setenv("MADEIRA_SCREEN_HZ", String(hz), 1)
         summary = "screen \(screen) (panel \(Int(px.width))x\(Int(px.height)) px), landscape, swap chain aspect-fitted, "
-            + "presents free-running, display link asks for up to \(Self.frameLimit > 0 ? Self.frameLimit : hz) Hz"
+            + "presents free-running, refresh request \(Self.frameLimit > 0 ? Self.frameLimit : hz) Hz"
+            + (link == nil ? " (native cadence, no empty display-link callbacks)" : " (ProMotion display link)")
             + (Self.frameLimit > 0 ? ", frames limited to \(Self.frameLimit) FPS" : ", no frame rate limit")
             + ", guest monitor \(ProcessInfo.processInfo.environment["MADEIRA_SCREEN_HZ"] ?? "60") Hz"
     }
@@ -67,12 +68,20 @@ enum TitleScreen {
         let maximum = UIScreen.main.maximumFramesPerSecond
         frameLimit = fps > 0 ? min(fps, maximum) : 0
         PacedMetalLayer.limit(fps: frameLimit)
+        let top = Float(frameLimit > 0 ? frameLimit : maximum)
+        // A 60 Hz panel already presents at its native refresh. An empty
+        // display-link callback there just wakes the main thread every frame,
+        // including static scenes. Only retain the request needed for >60 Hz.
+        guard top > 60 else {
+            link?.invalidate()
+            link = nil
+            return
+        }
         if link == nil {
             let newLink = CADisplayLink(target: Tick.shared, selector: #selector(Tick.tick))
             newLink.add(to: .main, forMode: .common)
             link = newLink
         }
-        let top = Float(frameLimit > 0 ? frameLimit : maximum)
         guard let link else { return }
         link.preferredFrameRateRange = CAFrameRateRange(minimum: min(60, top), maximum: top, preferred: top)
     }
