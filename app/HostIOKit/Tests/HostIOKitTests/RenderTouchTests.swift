@@ -150,6 +150,21 @@ final class RenderTouchTests: XCTestCase {
         XCTAssertEqual(next.averageDrawableWaitMS, 0)
     }
 
+    func testProducerGapExcludesPacingAfterDrawableAcquisition() {
+        var h = FrameHealth()
+        h.requested(at: 0)
+        h.drawable(at: 0, wait: 0.002, succeeded: true, pacerWait: 0.014, returnedAt: 0.016)
+        h.requested(at: 0.020)
+        let s = h.sample(at: 1)!
+        XCTAssertEqual(s.averageProducerGapMS, 4, accuracy: 0.0001)
+        XCTAssertEqual(s.averageDrawableWaitMS, 2, accuracy: 0.0001)
+        XCTAssertEqual(s.averagePacerWaitMS, 14, accuracy: 0.0001)
+        // Invalid timestamps cannot make the producer interval disappear.
+        h.drawable(at: 1, wait: 0.002, succeeded: true, returnedAt: .nan)
+        h.requested(at: 1.010)
+        XCTAssertEqual(h.sample(at: 2)!.averageProducerGapMS, 8, accuracy: 0.0001)
+    }
+
     func testProcessCPUUsesItsOwnSampleWindowAndSupportsMultipleCores() {
         var h = FrameHealth()
         h.requested(at: 0)

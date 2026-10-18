@@ -27,4 +27,12 @@ public struct FramePacer: Sendable {
         next = due + interval
         return due - now
     }
+
+    /// Drawable backpressure and the software limiter share one deadline.
+    /// Waiting for a GPU surface must consume the planned frame budget rather
+    /// than adding a second full delay before that wait.
+    public static func remainingDelay(deadline: Double, now: Double) -> Double {
+        guard deadline.isFinite, now.isFinite else { return 0 }
+        return max(0, deadline - now)
+    }
 }

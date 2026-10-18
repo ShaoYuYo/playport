@@ -4,14 +4,15 @@ import XCTest
 @testable import HostIOKit
 
 final class EdgeMenuTests: XCTestCase {
-    func testRevealTouchCannotOpenMenuButNextTapCan() {
+    func testOneTapOpensBothHiddenAndVisibleMenu() {
         var menu = EdgeMenuVisibility()
         menu.configure(active: true, autoHide: true, editing: false, now: 0)
         menu.expire(now: 3)
         XCTAssertFalse(menu.shown); XCTAssertNil(menu.deadline)
         menu.begin(now: 4)
         XCTAssertTrue(menu.shown); XCTAssertNil(menu.deadline)
-        XCTAssertFalse(menu.end(inside: true, now: 4.1))
+        XCTAssertTrue(menu.end(inside: true, now: 4.1))
+        XCTAssertFalse(menu.end(inside: true, now: 4.15)) // no duplicate activation
         menu.begin(now: 4.2)
         XCTAssertTrue(menu.end(inside: true, now: 4.3))
     }
@@ -59,20 +60,34 @@ final class EdgeMenuTests: XCTestCase {
         XCTAssertEqual(menu.deadline, 6.5)
     }
 
-    func testMenuUsesCameraFreeBlackRailOnBothRotationsWithoutChangingGameSize() {
-        for (left, right) in [(47.0, 0.0), (0.0, 47.0)] {
+    func testMenuStaysAtSafeTopRightAcrossRotationAndGameResolution() {
+        for (left, right) in [(47.0, 0.0), (0.0, 47.0), (47.0, 47.0)] {
+            var previous: CGRect?
             for monitor in [(1280.0, 720.0), (2338.0, 1080.0)] {
                 let v = GameViewport(width: 844, height: 390, top: 4, left: left + 4, bottom: 25, right: right + 4,
                     contentWidth: monitor.0, contentHeight: monitor.1, docked: false, edgeToEdge: true)
-                let frame = v.menuFrame(contentWidth: 1280, contentHeight: 720)
-                XCTAssertTrue(v.safe.contains(frame)); XCTAssertEqual(frame.width, 44)
-                if left > 0 { XCTAssertEqual(frame.maxX, v.safe.maxX) }
-                else { XCTAssertEqual(frame.minX, v.safe.minX) }
-                let fit = Display.aspectFit(contentWidth: 1280, contentHeight: 720, width: v.game.width, height: v.game.height)
-                let picture = CGRect(x: v.game.minX + fit.0, y: v.game.minY + fit.1, width: fit.2, height: fit.3)
-                XCTAssertFalse(frame.intersects(picture))
+                let frame = v.menuFrame()
+                XCTAssertTrue(v.safe.contains(frame)); XCTAssertEqual(frame.width, 48)
+                XCTAssertEqual(frame.height, 48)
+                XCTAssertEqual(frame.maxX, v.safe.maxX)
+                XCTAssertEqual(frame.minY, v.safe.minY)
+                if let previous { XCTAssertEqual(frame, previous) }
+                previous = frame
                 XCTAssertEqual(v.game.midY, 195, accuracy: 0.001)
             }
         }
+    }
+
+    func testDisabledMenuCannotReactToStaleTouchOrHover() {
+        var menu = EdgeMenuVisibility()
+        menu.configure(active: true, autoHide: true, editing: false, now: 0)
+        menu.begin(now: 1)
+        menu.configure(active: false, autoHide: true, editing: false, now: 1.1)
+        menu.hover(true, now: 1.2)
+        menu.begin(now: 1.3)
+        XCTAssertFalse(menu.end(inside: true, now: 1.4))
+        XCTAssertFalse(menu.shown); XCTAssertNil(menu.deadline)
+        menu.configure(active: true, autoHide: true, editing: false, now: 4)
+        XCTAssertEqual(menu.deadline, 6.5)
     }
 }

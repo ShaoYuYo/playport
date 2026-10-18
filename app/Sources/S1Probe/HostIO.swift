@@ -279,7 +279,9 @@ final class HostIO {
             winios_post_client_pointer(f.0, f.1, Pointer.move, 0)
         case .ended, .cancelled:
             guard inputOwners.update(code: 65536 + Int(Pointer.leftUp), source: "surface", down: false) else { return }
-            if lifecycle.buttonUp(upFlag: Pointer.leftUp) { winios_post_client_pointer(f.0, f.1, Pointer.move | Pointer.leftUp, 0) }
+            // A release changes button state only. Reposting a final absolute
+            // move can create a jump/velocity sample in a game's drag handler.
+            if lifecycle.buttonUp(upFlag: Pointer.leftUp) { winios_pointer(0, 0, Pointer.leftUp, 0) }
         default:
             break
         }
@@ -629,13 +631,16 @@ final class PacedMetalLayer: CAMetalLayer {
     override func nextDrawable() -> (any CAMetalDrawable)? {
         let pacingStart = CACurrentMediaTime()
         Self.health.withLock { $0.requested(at: pacingStart) }
-        let wait = Self.pacer.withLock { $0.delay(now: pacingStart) }
-        if wait > 0 { Thread.sleep(forTimeInterval: wait) }
+        let deadline = Self.pacer.withLock { pacingStart + $0.delay(now: pacingStart) }
         let t0 = CACurrentMediaTime()
         let drawable = super.nextDrawable()
         let t1 = CACurrentMediaTime()
         let succeeded = drawable != nil
-        Self.health.withLock { $0.drawable(at: t0, wait: t1 - t0, succeeded: succeeded, pacerWait: t0 - pacingStart) }
+        let wait = succeeded ? FramePacer.remainingDelay(deadline: deadline, now: t1) : 0
+        if wait > 0 { Thread.sleep(forTimeInterval: wait) }
+        let returned = CACurrentMediaTime()
+        Self.health.withLock { $0.drawable(at: t0, wait: t1 - t0, succeeded: succeeded,
+                                          pacerWait: returned - t1, returnedAt: returned) }
         #if !PLAYPORT_RELEASE
         if drawable != nil { Self.countDrawable() }
         #endif
@@ -661,6 +666,7 @@ final class GameSurfaceView: UIView {
     private var touchIDs: [ObjectIdentifier: Int] = [:]
     private var nextTouchID = 0
     private var lastPointerFraction: (Int32, Int32) = (32768, 32768)
+    private var gestureContentSize: CGSize?
     private var holdTask: Task<Void, Never>?
     private var holdDeadline: Double?
     private var renderBounds = CGSize.zero
@@ -704,6 +710,7 @@ final class GameSurfaceView: UIView {
     @objc private func cancelDirectTouches() {
         send(mouseGesture.cancel())
         touchIDs.removeAll()
+        gestureContentSize = nil
         holdTask?.cancel(); holdTask = nil; holdDeadline = nil
     }
 
@@ -751,7 +758,11 @@ final class GameSurfaceView: UIView {
             let identity = ObjectIdentifier(t)
             let p = t.location(in: self)
             if t.phase == .began {
-                guard fraction(p, clamp: false) != nil else { continue }
+                if touchIDs.isEmpty { gestureContentSize = currentContentSize }
+                guard fraction(p, clamp: false) != nil else {
+                    if touchIDs.isEmpty { gestureContentSize = nil }
+                    continue
+                }
                 nextTouchID &+= 1; touchIDs[identity] = nextTouchID
             }
             guard let id = touchIDs[identity] else { continue }
@@ -768,12 +779,17 @@ final class GameSurfaceView: UIView {
         send(mouseGesture.update(changes, now: ProcessInfo.processInfo.systemUptime))
         if cancelled { touchIDs.removeAll() }
         else { for id in ended { touchIDs.removeValue(forKey: id) } }
+        if touchIDs.isEmpty { gestureContentSize = nil }
         scheduleHold()
     }
 
-    private func fraction(_ p: CGPoint, clamp: Bool) -> (Int32, Int32)? {
-        let content = PacedMetalLayer.lastPresented.map { CGSize(width: $0.width, height: $0.height) }
+    private var currentContentSize: CGSize {
+        PacedMetalLayer.lastPresented.map { CGSize(width: $0.width, height: $0.height) }
             ?? (layer as? CAMetalLayer)?.drawableSize ?? bounds.size
+    }
+
+    private func fraction(_ p: CGPoint, clamp: Bool) -> (Int32, Int32)? {
+        let content = gestureContentSize ?? currentContentSize
         return SurfacePointer.fraction(x: p.x, y: p.y, width: bounds.width, height: bounds.height,
             contentWidth: content.width, contentHeight: content.height, clamp: clamp)
     }

@@ -19,11 +19,25 @@ final class SurfaceMouseGestureTests: XCTestCase {
         XCTAssertNil(g.deadline)
         XCTAssertTrue(g.advance(now: 1).isEmpty)
     }
-    func testDragStartsAtOriginalPointAndReleasesAtFinalPoint() {
+    func testDragReleasesAtLastMovedPointWithoutLiftMomentum() {
         var g = G(); _ = g.update([c(1, 100, 100, .began)], now: 0)
         XCTAssertEqual(g.update([c(1, 110, 100, .moved)], now: 0.03), [.leftDown(p(100,100)), .move(p(110,100))])
         XCTAssertNil(g.deadline)
-        XCTAssertEqual(g.update([c(1, 120, 100, .ended)], now: 0.1), [.leftUp(p(120,100))])
+        XCTAssertEqual(g.update([c(1, 120, 100, .ended)], now: 0.1), [.leftUp(p(110,100))])
+        XCTAssertTrue(g.advance(now: 1).isEmpty)
+        XCTAssertTrue(g.cancel().isEmpty)
+    }
+
+    func testLiftOnlyDisplacementCannotSynthesizeADrag() {
+        var g = G(); _ = g.update([c(1,100,100,.began)], now: 0)
+        XCTAssertEqual(g.update([c(1,150,100,.ended)], now: 0.1), [.leftDown(p(150,100)), .leftUp(p(150,100))])
+        XCTAssertTrue(g.advance(now: 1).isEmpty)
+    }
+
+    func testHeldButtonReleaseDoesNotMoveToLiftCoordinate() {
+        var g = G(); _ = g.update([c(1,100,100,.began)], now: 0)
+        XCTAssertEqual(g.advance(now: 0.18), [.leftDown(p(100,100))])
+        XCTAssertEqual(g.update([c(1,140,100,.ended)], now: 0.2), [.leftUp(p(100,100))])
         XCTAssertTrue(g.cancel().isEmpty)
     }
     func testStationaryHoldUsesOneDeadlineAndDoesNotRepeatDown() {

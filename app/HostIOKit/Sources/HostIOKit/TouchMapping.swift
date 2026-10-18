@@ -2,7 +2,7 @@
 import Foundation
 
 /// Event-driven menu visibility. The UI schedules at most the next deadline;
-/// it does not poll. A touch which reveals a hidden button never opens it.
+/// it does not poll. A tap opens the same fixed target even while hidden.
 public struct EdgeMenuVisibility: Sendable {
     public static let preferenceKey = "controls.menuAutoHide"
     public static let delay = 2.5
@@ -10,13 +10,12 @@ public struct EdgeMenuVisibility: Sendable {
     public private(set) var shown = false
     public private(set) var deadline: Double?
     private var autoHide = false, editing = false, held = false, hovering = false
-    private var pressedVisible = false
     public init() {}
 
     public mutating func configure(active: Bool, autoHide: Bool, editing: Bool, now: Double) {
         guard self.active != active || self.autoHide != autoHide || self.editing != editing else { return }
         self.active = active; self.autoHide = autoHide; self.editing = editing
-        held = false; pressedVisible = false
+        held = false
         if !active { hovering = false }
         shown = active
         schedule(now: now)
@@ -26,17 +25,18 @@ public struct EdgeMenuVisibility: Sendable {
     }
     public mutating func begin(now: Double) {
         guard active else { return }
-        pressedVisible = shown; held = true; shown = true; deadline = nil
+        held = true; shown = true; deadline = nil
     }
     public mutating func end(inside: Bool, now: Double) -> Bool {
         guard active, held else { return false }
-        let open = inside && pressedVisible
-        held = false; pressedVisible = false; schedule(now: now)
+        let open = inside
+        held = false; schedule(now: now)
         return open
     }
     public mutating func hover(_ inside: Bool, now: Double) {
+        guard active else { hovering = false; return }
         hovering = inside
-        if active && inside { shown = true }
+        if inside { shown = true }
         schedule(now: now)
     }
     public mutating func expire(now: Double) {

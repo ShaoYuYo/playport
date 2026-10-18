@@ -320,6 +320,21 @@ final class PadScriptTests: XCTestCase {
 }
 
 final class FramePacerTests: XCTestCase {
+    func testDrawableAcquisitionConsumesTheSameLimiterDeadline() {
+        var p = FramePacer(fps: 60)
+        XCTAssertEqual(p.delay(now: 0), 0)
+        let request = 0.005
+        let deadline = request + p.delay(now: request)
+        // A 10 ms drawable wait leaves only 1.67 ms of the 11.67 ms budget.
+        let ready = request + 0.010
+        let remainder = FramePacer.remainingDelay(deadline: deadline, now: ready)
+        XCTAssertEqual(remainder, 1.0 / 60 - ready, accuracy: 1e-9)
+        XCTAssertEqual(ready + remainder, 1.0 / 60, accuracy: 1e-9)
+        XCTAssertEqual(FramePacer.remainingDelay(deadline: deadline, now: 0.030), 0)
+        XCTAssertEqual(FramePacer.remainingDelay(deadline: .nan, now: ready), 0)
+        XCTAssertEqual(FramePacer.remainingDelay(deadline: deadline, now: .infinity), 0)
+    }
+
     func testSmallOverrunsDoNotMoveTheCadenceAndLongStallsDoNotBurst() {
         var p = FramePacer(fps: 60)
         XCTAssertEqual(p.delay(now: 0), 0)

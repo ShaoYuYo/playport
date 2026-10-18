@@ -53,11 +53,14 @@ public struct FrameHealth: Sendable {
         lastRequest = max(time, lastRequest ?? time)
     }
 
-    public mutating func drawable(at time: Double, wait: Double, succeeded: Bool, pacerWait: Double = 0) {
+    public mutating func drawable(at time: Double, wait: Double, succeeded: Bool, pacerWait: Double = 0,
+                                 returnedAt: Double? = nil) {
         if start == nil { start = time }
         calls += 1
         let duration = max(0, wait)
-        lastReturn = max(time + duration, lastReturn ?? (time + duration))
+        let ready = time + duration
+        let returned = returnedAt.flatMap { $0.isFinite && $0 >= ready ? $0 : nil } ?? ready
+        lastReturn = max(returned, lastReturn ?? returned)
         totalWait += duration
         maxWait = max(maxWait, duration)
         totalPacerWait += max(0, pacerWait)

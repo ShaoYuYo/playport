@@ -57,7 +57,7 @@ enum TitleScreen {
             + "presents free-running, refresh request \(Self.frameLimit > 0 ? Self.frameLimit : hz) Hz"
             + (link == nil ? " (native cadence, no empty display-link callbacks)" : " (ProMotion display link)")
             + (Self.frameLimit > 0 ? ", frames limited to \(Self.frameLimit) FPS" : ", no frame rate limit")
-            + ", guest monitor \(ProcessInfo.processInfo.environment["MADEIRA_SCREEN_HZ"] ?? "60") Hz"
+            + ", guest monitor \(ProcessInfo.processInfo.environment["MADEIRA_SCREEN_HZ"] ?? "60") Hz; frame-pacing-v2 drawable wait counts toward limiter deadline"
     }
 
     /// ProMotion keeps a CAMetalLayer at 60 Hz unless the app asks for more:

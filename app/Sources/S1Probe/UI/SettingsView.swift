@@ -292,7 +292,7 @@ private struct GraphicsSettings: View {
                           subtitle: "移除為安全區預留的上下空間，維持遊戲比例；控制按鈕仍避開鏡頭與手勢區。",
                           on: $edgeToEdge)
         SettingsSwitchRow(id: "menu-auto-hide", title: "自動隱藏遊戲設定按鈕",
-                          subtitle: "側邊按鈕約 2.5 秒後淡出；碰原位置顯示，再點開啟。配置按鍵或使用 VoiceOver 時保持顯示。",
+                          subtitle: "右上角按鈕約 2.5 秒後淡出；點原位置一下即可開啟。配置按鍵或使用 VoiceOver 時保持顯示。",
                           on: $menuAutoHide)
         let backends = SettingSteps(values: GraphicsBackend.allCases.filter { Manifest.has($0) || $0 == launchSettings.global.graphics },
                                     defaultValue: GraphicsBackend.default)

@@ -55,7 +55,7 @@ struct GameDisplayView: View {
                 }
                 Section("遊戲提醒") {
                     Toggle("自動隱藏設定按鈕", isOn: $menuAutoHide)
-                    Text("約 2.5 秒後淡出。手指碰側邊原位置即可顯示，再點一次開啟；滑鼠移到按鈕也能顯示。設定按鈕優先放在避開鏡頭的黑邊，沒有黑邊時靠安全邊緣。配置按鍵與使用 VoiceOver 時保持顯示。")
+                    Text("約 2.5 秒後淡出。點右上角原位置一下即可開啟；滑鼠移到按鈕也能顯示。位置固定在避開鏡頭的安全邊緣。配置按鍵與使用 VoiceOver 時保持顯示。")
                         .font(.footnote).foregroundStyle(.secondary)
                     Toggle("顯示記憶體餘裕提醒", isOn: $showMemoryWarnings)
                     Text("關閉後不顯示遊戲上方的 RAM 提醒；記憶體安全檢查與失敗紀錄仍然保留。")

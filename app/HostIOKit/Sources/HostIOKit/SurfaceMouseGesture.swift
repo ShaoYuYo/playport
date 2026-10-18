@@ -101,14 +101,20 @@ public struct SurfaceMouseGesture: Sendable {
             }
             if !ended.isEmpty { draining = true }
         } else if !invalid, let first, let p = points[first] {
-            last = p
-            if !leftHeld && p.distance(origin) >= Self.movementThreshold {
-                leftHeld = true; deadline = nil; out.append(.leftDown(origin))
-            }
             if ended.contains(first) {
+                // Lift coordinates can jump as the finger leaves the glass.
+                // End a drag at its last delivered move, without a final fling
+                // sample or starting a new drag from the lift event alone.
+                let releasePoint = leftHeld ? last : p
                 if !leftHeld { out.append(.leftDown(p)) }
-                out.append(.leftUp(p)); leftHeld = false; deadline = nil
-            } else if leftHeld { out.append(.move(p)) }
+                out.append(.leftUp(releasePoint)); leftHeld = false; deadline = nil
+            } else {
+                last = p
+                if !leftHeld && p.distance(origin) >= Self.movementThreshold {
+                    leftHeld = true; deadline = nil; out.append(.leftDown(origin))
+                }
+                if leftHeld { out.append(.move(p)) }
+            }
         }
         for id in ended { points.removeValue(forKey: id) }
         if points.isEmpty {

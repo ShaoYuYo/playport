@@ -84,7 +84,13 @@ final class GameSurfaceContainer: UIView {
     }
     required init?(coder: NSCoder) { fatalError("created in code") }
     @objc private func openMenu() {
-        if editing { InGameMenu.shared.resume() } else { InGameMenu.shared.open() }
+        if editing {
+            HostIO.log("menu-input-v2: finish-editing")
+            InGameMenu.shared.resume()
+        } else {
+            let opened = InGameMenu.shared.open()
+            HostIO.log("menu-input-v2: top-right activated accepted=\(opened)")
+        }
     }
     @objc private func addControl() {
         let b = TouchBinding(action: .enter, x: 0.5, y: 0.5)
@@ -136,10 +142,7 @@ final class GameSurfaceContainer: UIView {
         self.geometry = geometry
         surface.frame = geometry.game
         surface.configureRenderSize(pixels)
-        // Senren's 16:9 scene is fitted within its monitor-sized swap chain.
-        // Use that known picture aspect to find side bars without GPU readback.
-        let picture = TitleLaunch.shared.appID == 1144400 ? CGSize(width: 1280, height: 720) : pixels
-        menuButton.frame = geometry.menuFrame(contentWidth: picture.width, contentHeight: picture.height)
+        menuButton.frame = geometry.menuFrame()
         addButton.frame = CGRect(x: geometry.safe.minX + 2, y: geometry.safe.minY + 2, width: 58, height: 44)
         addButton.isHidden = !visible || !editing
         addButton.isEnabled = layout.buttons.count < 20
@@ -152,7 +155,7 @@ final class GameSurfaceContainer: UIView {
         bringSubviewToFront(menuButton)
         bringSubviewToFront(addButton)
         // Sparse layout evidence, without per-frame UI publishing or device IDs.
-        let summary = "viewport-v3 game=\(Int(surface.bounds.width))x\(Int(surface.bounds.height)) safe=\(Int(insets.left)),\(Int(insets.right)),\(Int(insets.bottom)) edge_to_edge=\(edgeToEdge) menu=\(Int(menuButton.frame.minX)),\(Int(menuButton.frame.minY)) docked=\(layout.docked)"
+        let summary = "viewport-v4 game=\(Int(surface.bounds.width))x\(Int(surface.bounds.height)) safe=\(Int(insets.left)),\(Int(insets.right)),\(Int(insets.bottom)) edge_to_edge=\(edgeToEdge) menu=\(Int(menuButton.frame.minX)),\(Int(menuButton.frame.minY)),\(Int(menuButton.frame.width)) menu_attached=\(menuButton.superview === self) docked=\(layout.docked)"
         if summary != lastGeometry { lastGeometry = summary; HostIO.log("touch-ui: " + summary) }
     }
 
@@ -164,11 +167,13 @@ final class GameSurfaceContainer: UIView {
     }
 }
 
-/// Only this 44-point edge target intercepts the reveal touch. The transparent
-/// control stays hit-testable while its glass button fades, so a first reveal
-/// cannot click the game behind it. No display link or repeating timer.
-private final class EdgeMenuControl: UIControl {
+/// A fixed 48-point target: a real glass UIButton when shown and a transparent
+/// UIButton when hidden. Both open on one tap without forwarding it to the
+/// game. The pressed button stays attached throughout its touch sequence.
+private final class EdgeMenuControl: UIView {
     private let visual = UIButton(type: .system)
+    private let reveal = UIButton(type: .custom)
+    private weak var heldBy: UIButton?
     private var visibility = EdgeMenuVisibility()
     private var hideTask: Task<Void, Never>?
     private var scheduledDeadline: Double?
@@ -183,16 +188,25 @@ private final class EdgeMenuControl: UIControl {
         appearance.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4)
         visual.configuration = appearance
         visual.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
-        visual.isUserInteractionEnabled = false; visual.isAccessibilityElement = false
         addSubview(visual)
+        addSubview(reveal)
+        for button in [visual, reveal] {
+            button.isAccessibilityElement = false
+            button.isExclusiveTouch = true
+            button.addTarget(self, action: #selector(pressed(_:)), for: .touchDown)
+            button.addTarget(self, action: #selector(releasedInside(_:)), for: .touchUpInside)
+            button.addTarget(self, action: #selector(cancelled(_:)), for: [.touchUpOutside, .touchCancel])
+        }
         isAccessibilityElement = true; accessibilityTraits = .button; isHidden = true
-        addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hovered)))
+        let hover = UIHoverGestureRecognizer(target: self, action: #selector(hovered))
+        hover.cancelsTouchesInView = false
+        addGestureRecognizer(hover)
         NotificationCenter.default.addObserver(self, selector: #selector(accessibilityChanged),
             name: UIAccessibility.voiceOverStatusDidChangeNotification, object: nil)
     }
     required init?(coder: NSCoder) { fatalError("created in code") }
     deinit { hideTask?.cancel() }
-    override func layoutSubviews() { super.layoutSubviews(); visual.frame = bounds }
+    override func layoutSubviews() { super.layoutSubviews(); visual.frame = bounds; reveal.frame = bounds }
     func configure(active: Bool, editing: Bool, autoHide: Bool) {
         requestedAutoHide = autoHide
         if self.editing != editing {
@@ -203,6 +217,7 @@ private final class EdgeMenuControl: UIControl {
             visual.setImage(UIImage(systemName: "gearshape.fill"), for: .normal)
         }
         accessibilityLabel = editing ? "完成配置並返回遊戲" : "遊戲設定"
+        if !active { heldBy = nil }
         visibility.configure(active: active, autoHide: autoHide && !UIAccessibility.isVoiceOverRunning,
                              editing: editing, now: ProcessInfo.processInfo.systemUptime)
         refresh()
@@ -214,18 +229,24 @@ private final class EdgeMenuControl: UIControl {
         visibility.hover(gesture.state == .began || gesture.state == .changed, now: ProcessInfo.processInfo.systemUptime)
         refresh()
     }
-    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-        guard visibility.active else { return false }
-        visibility.begin(now: ProcessInfo.processInfo.systemUptime); refresh(); return true
+    @objc private func pressed(_ sender: UIButton) {
+        guard visibility.active, heldBy == nil else { return }
+        heldBy = sender
+        visibility.begin(now: ProcessInfo.processInfo.systemUptime)
+        refresh()
     }
-    override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
-        let inside = touch.map { bounds.contains($0.location(in: self)) } ?? false
-        let open = visibility.end(inside: inside, now: ProcessInfo.processInfo.systemUptime)
+    @objc private func releasedInside(_ sender: UIButton) {
+        guard heldBy === sender else { return }
+        let open = visibility.end(inside: true, now: ProcessInfo.processInfo.systemUptime)
+        heldBy = nil
         refresh()
         if open { onOpen?() }
     }
-    override func cancelTracking(with event: UIEvent?) {
-        _ = visibility.end(inside: false, now: ProcessInfo.processInfo.systemUptime); refresh()
+    @objc private func cancelled(_ sender: UIButton) {
+        guard heldBy === sender else { return }
+        heldBy = nil
+        _ = visibility.end(inside: false, now: ProcessInfo.processInfo.systemUptime)
+        refresh()
     }
     override func accessibilityActivate() -> Bool {
         guard visibility.active else { return false }
@@ -233,11 +254,21 @@ private final class EdgeMenuControl: UIControl {
     }
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window == nil { hideTask?.cancel(); hideTask = nil; scheduledDeadline = nil }
+        if window == nil {
+            heldBy = nil
+            _ = visibility.end(inside: false, now: ProcessInfo.processInfo.systemUptime)
+            hideTask?.cancel(); hideTask = nil; scheduledDeadline = nil
+        }
         else { refresh() }
     }
     private func refresh() {
         isHidden = !visibility.active
+        // Revealing the glass must not hide/disable the UIButton that owns
+        // the ongoing touch, or UIKit can cancel its touchUpInside event.
+        let revealOwnsTouch = heldBy === reveal
+        reveal.isHidden = !visibility.active || (visibility.shown && !revealOwnsTouch)
+        visual.isUserInteractionEnabled = visibility.active && visibility.shown && !revealOwnsTouch
+        if !reveal.isHidden { bringSubviewToFront(reveal) }
         let alpha: CGFloat = visibility.shown ? 1 : 0
         if visibility.shown { visual.isHidden = false }
         if visual.alpha != alpha {
@@ -358,7 +389,7 @@ struct TouchMappingEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("顯示觸控按鍵", isOn: $controls.layout.enabled)
-                    Text("單指點選或拖曳；雙指輕點是滑鼠右鍵，雙指上下滑動可捲動。設定鍵在畫面側邊中央，隱藏時先碰一下顯示，再點一次開啟。")
+                    Text("單指點選或拖曳；雙指輕點是滑鼠右鍵，雙指上下滑動可捲動。設定鍵固定在避開鏡頭的右上角，隱藏時點原位置一下即可開啟。")
                         .font(.footnote).foregroundStyle(.secondary)
                     Text("新增按鈕、選擇對應按鍵，再到遊戲畫面拖曳位置。位置會避開鏡頭與手勢區，可覆蓋遊戲畫面或放到黑邊。配置時遊戲暫停，按完成後繼續。每款遊戲分別保存。")
                         .font(.footnote).foregroundStyle(.secondary)
