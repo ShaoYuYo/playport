@@ -375,6 +375,7 @@ private struct StorageSettings: View {
 
     var body: some View {
         SettingsNote(text: "Games and their saves live inside Playport. Deleting the app deletes them.")
+        SettingsNote(text: "遊戲檔案位置：檔案 App → 瀏覽 → 我的 iPhone → Playport → prefix → drive_c → Games。雲端同步保留的舊版存檔位於 Playport 的 Cloud Backups 資料夾。")
         SettingsInfoRow(id: "free", title: "Free on this phone", value: library.freeBytes.map(ByteCount.format) ?? "Unknown")
         let used = library.catalog.titles.compactMap(\.sizeBytes).reduce(0, +)
         SettingsInfoRow(id: "games", title: "Games", subtitle: "\(library.catalog.titles.count) installed",

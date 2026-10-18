@@ -50,7 +50,7 @@ struct GameDisplayView: View {
                         LabeledContent("遊戲要求影格間隔", value: String(format: "%.1f ms", sample.averageRequestGapMS))
                         LabeledContent("等待顯示影像", value: String(format: "%.1f ms", sample.averageDrawableWaitMS))
                         LabeledContent("啟動器限幀等待", value: String(format: "%.1f ms", sample.averagePacerWaitMS))
-                        Text("這是遊戲暫停前最近一段紀錄；選單期間不計入遊戲 FPS。千戀萬花會在下次啟動時讓引擎更新節奏跟隨所選上限，遊戲腳本仍可自行限制更新。")
+                        Text("這是遊戲暫停前最近一段紀錄；選單期間不計入遊戲 FPS。千戀萬花的引擎更新上限依裝置更新率設定，呈現上限可立即切換；靜止畫面按需重畫，FPS 不等於螢幕更新率。遊戲腳本仍可自行限制更新。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 }

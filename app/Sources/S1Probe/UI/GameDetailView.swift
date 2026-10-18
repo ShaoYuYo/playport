@@ -930,6 +930,13 @@ private struct GameDetailPage: View {
         if !c.conflicts.isEmpty { s += " · \(c.conflicts.count) 個檔案待選擇版本" }
         if let inventory = c.inventory {
             s += " · 手動 \(inventory.manual)／快速 \(inventory.quick)"
+            if !inventory.manualPages.isEmpty {
+                s += " · 讀檔第 " + inventory.manualPages.map(String.init).joined(separator: "、") + " 頁"
+            }
+            if inventory.quick > 0 { s += " · 快速存檔分頁" }
+            if inventory.manual > 0 || inventory.quick > 0 {
+                s += "。請從遊戲的「讀取存檔」選擇；「繼續」只讀最近一次中斷進度。"
+            }
         }
         return s
     }

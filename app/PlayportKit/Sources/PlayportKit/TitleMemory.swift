@@ -24,7 +24,7 @@ public struct TitleMemory: Equatable, Sendable {
         return result
     }
 
-    public func arguments(over base: [String], frameLimit: Int? = nil) -> [String] {
+    public func arguments(over base: [String], frameLimit: Int? = nil, displayRefreshRate: Int? = nil) -> [String] {
         guard active else { return base }
         var result = base
         // The old low mode tells KiriKiri it has zero physical memory and
@@ -32,9 +32,14 @@ public struct TitleMemory: Equatable, Sendable {
         // but allow the engine's normal cache policy to reuse decoded scenes.
         var defaults = [("memusage", "normal"), ("gclim", "64"), ("drawthread", "2")]
         // The actual title engine's continuous handler otherwise busy-spins
-        // when no script rate is set. Bound that work to the selected cadence;
-        // zero remains unlimited. Explicit player arguments still win.
-        if let frameLimit, frameLimit >= 0 { defaults.append(("contfreq", String(min(240, frameLimit)))) }
+        // when no script rate is set. Keep its ceiling at the panel rate:
+        // freezing it at a 30 FPS launch cap would make the in-game 60/unlimited
+        // picker unable to raise the engine later. Presentation is capped
+        // separately by FramePacer. Zero and explicit player arguments survive.
+        if let frameLimit, frameLimit >= 0 {
+            let ceiling = frameLimit == 0 ? 0 : max(frameLimit, displayRefreshRate ?? frameLimit)
+            defaults.append(("contfreq", String(min(240, ceiling))))
+        }
         for (key, value) in defaults {
             let option = "-" + key
             if !base.contains(where: { $0.lowercased() == option || $0.lowercased().hasPrefix(option + "=") }) {

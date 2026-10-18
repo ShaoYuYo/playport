@@ -732,6 +732,8 @@ def main():
         # delivers nothing (2026-09-23). The reference app sets it.
         check(info.get("UIApplicationSupportsIndirectInputEvents") is True,
               "Info.plist: UIApplicationSupportsIndirectInputEvents (mouse through GCMouse, not as touches)")
+        check(info.get("UIFileSharingEnabled") is True and info.get("LSSupportsOpeningDocumentsInPlace") is True,
+              "Info.plist: existing Documents tree is accessible in Files and through file sharing")
         check({"en", "zh-Hant", "zh-Hans"}.issubset(set(info.get("CFBundleLocalizations", []))),
               "localization: English, Traditional Chinese and Simplified Chinese are declared")
         for locale in ("en", "zh-Hant", "zh-Hans"):

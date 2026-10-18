@@ -653,6 +653,7 @@ final class CloudServiceTests: XCTestCase {
         let inventory = Cloud.SaveInventory(names: ["data_0010_01.bmp", "DATA_0010_01.BMP", "data_0010_02.bmp",
             "data_quick_01.bmp", "data_continue.bmp", "private.bmp", "../data_0010_03.bmp"])
         XCTAssertEqual(inventory.manualGroups, ["0010": 2])
+        XCTAssertEqual(inventory.manualPages, [10])
         XCTAssertEqual(inventory.manual, 2); XCTAssertEqual(inventory.quick, 1); XCTAssertTrue(inventory.hasContinue)
     }
 

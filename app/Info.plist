@@ -32,6 +32,11 @@
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Playport</string>
+	<!-- Expose the existing Documents tree in Files, including installed games. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<!-- The app delegate narrows these per launch: landscape for a title, portrait otherwise. -->

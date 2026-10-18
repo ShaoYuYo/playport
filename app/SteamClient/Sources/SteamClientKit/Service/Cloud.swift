@@ -182,7 +182,7 @@ public enum Cloud {
         return m(0, 0)
     }
 
-    /// Raw manual filename groups, without assuming their in-game page mapping.
+    /// Senren's native filename mapping, verified with its own save reader.
     public struct SaveInventory: Sendable, Equatable {
         public var manualGroups: [String: Int] = [:]
         public var quick = 0
@@ -197,6 +197,11 @@ public enum Cloud {
             }
         }
         public var manual: Int { manualGroups.values.reduce(0, +) }
+        /// Group 0010 maps to the game's manual page 10; quick saves use a
+        /// separate filename family and are shown on the quick-save tab.
+        public var manualPages: [Int] {
+            Set(manualGroups.keys.compactMap(Int.init).filter { $0 > 0 }).sorted()
+        }
     }
 
     static func recoverableSenrenName(_ name: String) -> Bool {

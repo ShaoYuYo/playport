@@ -77,4 +77,13 @@ final class TitleMemoryTests: XCTestCase {
         XCTAssertEqual(other.arguments(over: [], frameLimit: 60), [])
     }
 
+    func testThirtyFPSLaunchDoesNotFreezeEngineBelowLaterPresentationChoice() {
+        let p = TitleMemory(steamAppID: 1144400, i386: true, enabled: true)
+        XCTAssertTrue(p.arguments(over: [], frameLimit: 30, displayRefreshRate: 60).contains("-contfreq=60"))
+        XCTAssertTrue(p.arguments(over: [], frameLimit: 30, displayRefreshRate: 120).contains("-contfreq=120"))
+        XCTAssertTrue(p.arguments(over: [], frameLimit: 0, displayRefreshRate: 120).contains("-contfreq=0"))
+        let explicit = p.arguments(over: ["-CONTFREQ=30"], frameLimit: 60, displayRefreshRate: 120)
+        XCTAssertEqual(explicit.filter { $0.lowercased().hasPrefix("-contfreq") }, ["-CONTFREQ=30"])
+    }
+
 }

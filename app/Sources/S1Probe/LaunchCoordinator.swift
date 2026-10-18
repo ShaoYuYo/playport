@@ -332,9 +332,10 @@ enum LaunchCoordinator {
         let economy = UserDefaults.standard.object(forKey: TitleMemory.preferenceKey) as? Bool ?? true
         let titleMemory = TitleMemory(steamAppID: r.steamAppID, i386: machine == 0x14c, enabled: economy)
         let config = titleMemory.config(over: r.config)
-        args = titleMemory.arguments(over: args, frameLimit: r.frameLimit)
+        let displayRefreshRate = getenv("MADEIRA_SCREEN_HZ").flatMap { Int(String(cString: $0)) } ?? 60
+        args = titleMemory.arguments(over: args, frameLimit: r.frameLimit, displayRefreshRate: displayRefreshRate)
         if titleMemory.active {
-            log("engine-pacing-v1: requested_hz=\(r.frameLimit) explicit_contfreq=preserved; runtime script overrides remain possible")
+            log("engine-pacing-v2: presentation_limit=\(r.frameLimit) panel_hz=\(displayRefreshRate) engine_ceiling_follows_panel; explicit arguments and runtime script overrides remain possible")
             log("memory-economy: profile=senren-v2 default_pool_mb=256 cpu_count=\(config["cpu-count"] ?? "default") engine_cache_default=normal graphics_cache_default_mb=64 explicit_arguments=preserved")
             if let root = r.steamAPI?.root,
                memory.effectiveMB.map({ $0 - memory.footprintMB >= 128 }) ?? false {
