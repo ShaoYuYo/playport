@@ -39,7 +39,7 @@ GEOMETRY
 void* CallRetStackBase{};CpuStateFrame* CurrentFrame{};
 };}
 namespace LogMan::Msg {template<class... T>void EFmt(const char*,T...) {}}
-constexpr size_t M=1024*1024,CAP=1024*M,GRANULE=65536;
+constexpr size_t M=1024*1024,CAP=768*M,GRANULE=65536;
 static unsigned char* arena;static unsigned char used[CAP/GRANULE];
 uintptr_t ios_fex_band_base,ios_fex_band_end;
 struct MEM_ADDRESS_REQUIREMENTS {void* LowestStartingAddress;void* HighestEndingAddress;size_t Alignment;};
@@ -98,14 +98,15 @@ int main(int argc,char** argv) {
  memset(used,2,460*M/GRANULE);
  using TS=FEXCore::Core::InternalThreadState;using Frame=FEXCore::Core::CpuStateFrame;
  constexpr size_t Size=TS::CALLRET_STACK_SIZE;
- static_assert(TS::CALLRET_DEFAULT_OFFSET==4*M&&TS::CALLRET_LIVE_OFFSET==2*M&&TS::CALLRET_LIVE_SIZE==4*M);
+ static_assert(TS::CALLRET_DEFAULT_OFFSET==Size/2&&TS::CALLRET_LIVE_OFFSET==Size/4&&TS::CALLRET_LIVE_SIZE==Size/2);
+ static_assert(TS::CALLRET_DEFAULT_OFFSET-TS::CALLRET_LIVE_OFFSET>=65536*16);
  Frame frames[64]{};TS threads[64]{};size_t started=0;
  for(size_t i=0;i<64;++i){
   threads[i].CurrentFrame=&frames[i];
   bool ok=FEX::Windows::CallRetStack::InitializeThread(&threads[i]);
   if(!ok){assert(!threads[i].CallRetStackBase);break;}
   ++started;auto info=FEX::Windows::CallRetStack::GetInfoThread(&threads[i]);
-  assert(info.DefaultLocation==(uintptr_t)threads[i].CallRetStackBase+4*M);
+  assert(info.DefaultLocation==(uintptr_t)threads[i].CallRetStackBase+TS::CALLRET_DEFAULT_OFFSET);
   assert(info.AllocationEnd-info.AllocationBase==Size+8192);
   assert(frames[i].State.callret_sp==info.DefaultLocation&&frames[i].State.callret_sp_base==(uintptr_t)threads[i].CallRetStackBase);
   auto* sp=(uint64_t*)frames[i].State.callret_sp;sp[-2]=0x12345678;sp[-1]=0x87654321;
@@ -116,8 +117,8 @@ int main(int argc,char** argv) {
   assert(FEX::Windows::CallRetStack::InitializeThread(&threads[0]));FEX::Windows::CallRetStack::DestroyThread(&threads[0]);
   assert(mappings.empty());puts("PASS: actual init failure path releases mappings and next initialization succeeds");
  }else{
-  if(Size==8*M)assert(started==64);else assert(started<64);
-  printf("Actual init: reservation=%zu MiB, %zu/64 stacks with 460 MiB fixed other users; default/window unchanged\n",Size/M,started);
+  assert((Size==4*M&&started==64)||(Size==8*M&&started==38));
+  printf("Actual init: reservation=%zu MiB, %zu/64 stacks in a 768 MiB arena with 460 MiB fixed other users\n",Size/M,started);
   for(size_t i=0;i<started;++i)FEX::Windows::CallRetStack::DestroyThread(&threads[i]);
   assert(mappings.empty()&&releases==started);
  }
@@ -130,3 +131,15 @@ subprocess.run([str(out/'test')],check=True,timeout=60)
 for name in ['reserve','commit']:
  env=os.environ.copy();env['MADEIRA_FEX_FAIL_CALLRET']=name+':1'
  subprocess.run([str(out/'test'),name],env=env,check=True,timeout=60)
+
+# Compare the previous real reservation constants against exactly the same
+# arena and mapping fixture. No game, phone or system address map is changed.
+revision=subprocess.check_output(['git','-C',str(tree),'log','-1','--format=%H',
+    '--grep=^iOS: bound return predictions in a compact per-thread reservation$']).decode().strip()
+if not revision:raise RuntimeError('compact prediction patch is absent')
+prior=subprocess.check_output(['git','-C',str(tree),'show',revision+'^:FEXCore/include/FEXCore/Debug/InternalThreadState.h']).decode()
+a=prior.index('#ifdef FEX_IOS_HOST',prior.index('// The prediction cache'))
+b=prior.index('  // The low address of the call-ret stack allocation',a)
+(out/'baseline.cpp').write_text(prefix.replace(geometry,prior[a:b])+actual+suffix)
+subprocess.run(['g++','-std=c++23','-O1','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-pthread',str(out/'baseline.cpp'),'-o',str(out/'baseline')],check=True)
+subprocess.run([str(out/'baseline')],check=True,timeout=60)

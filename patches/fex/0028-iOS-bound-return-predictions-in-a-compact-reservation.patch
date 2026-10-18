@@ -1,0 +1,147 @@
+From 445f021290a17dcfcbda613f5ac9ada90a690adb Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sun, 18 Oct 2026 15:00:14 +0800
+Subject: [PATCH] iOS: bound return predictions in a compact per-thread
+ reservation
+
+The r25 owner report exhausts a 768 MiB arena at 43..44 live threads,
+while physical-memory checks deny no allocations. Halve the iOS
+prediction reservation and move every emitted CALL/RET guard to the
+named geometry. Retain the full reset/decommit, callback guard,
+allocation containment and non-iOS constants. Guest stacks are unchanged.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-18-steamglass-r26.md
+Offered-upstream: no (bounded iOS host address band)
+---
+ .../Source/Interface/Core/JIT/BranchOps.cpp   | 26 ++++++++++---------
+ .../FEXCore/Debug/InternalThreadState.h       | 15 +++++++----
+ Source/Windows/Common/CallRetStack.h          |  6 +++--
+ 3 files changed, 28 insertions(+), 19 deletions(-)
+
+diff --git a/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp b/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp
+index 5af080427..696a7cb4a 100644
+--- a/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp
++++ b/FEXCore/Source/Interface/Core/JIT/BranchOps.cpp
+@@ -16,6 +16,7 @@ $end_info$
+ #include <FEXCore/Debug/InternalThreadState.h>
+ #include <FEXCore/HLE/SyscallHandler.h>
+ #include <FEXCore/Utils/MathUtils.h>
++#include <bit>
+ 
+ namespace FEXCore::CPU {
+ 
+@@ -191,21 +192,22 @@ DEF_OP(ExitFunction) {
+            * so entries are pushed and never popped -- non-local exits (SEH unwind, C++
+            * throw) skip the guest RETs, and CEF init throws constantly.
+            *
+-           * Bound it to a 4MB window CENTRED on DefaultLocation (base + 4MB): test
+-           * (sp - (base + 2MB)) >> 22, so sp-base must stay in [2MB, 6MB). Caps pushes at
+-           * ~131,072 entries (~65,536 nested calls), far beyond any real program.
++           * Bound the pointer to the named window centred on DefaultLocation.
++           * iOS uses [base+1MiB,base+3MiB), starting at base+2MiB; the
++           * predecrement push has a full 1MiB lower cushion. Keep the
++           * original geometry for other hosts. The check changes no flags.
+            *
+            * Resetting is SAFE, not a papering-over: this stack is purely a return-address
+            * PREDICTOR. A stale or missing entry fails the `sub TMP1, TMP1, RipReg` compare
+            * and falls through to the L1 lookup, which is always correct. A reset costs
+            * mispredictions, nothing else. */
+           ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp_base));
+-          add(ARMEmitter::Size::i64Bit, TMP1, TMP1, 0x200000);
++          add(ARMEmitter::Size::i64Bit, TMP1, TMP1, FEXCore::Core::InternalThreadState::CALLRET_LIVE_OFFSET);
+           sub(ARMEmitter::Size::i64Bit, TMP1, REG_CALLRET_SP, TMP1);
+-          lsr(ARMEmitter::Size::i64Bit, TMP1, TMP1, 22);
++          lsr(ARMEmitter::Size::i64Bit, TMP1, TMP1, std::countr_zero(FEXCore::Core::InternalThreadState::CALLRET_LIVE_SIZE));
+           (void)cbz(ARMEmitter::Size::i64Bit, TMP1, &l_callret_ok);
+           ldr(REG_CALLRET_SP, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp_base));
+-          add(ARMEmitter::Size::i64Bit, REG_CALLRET_SP, REG_CALLRET_SP, 0x400000);
++          add(ARMEmitter::Size::i64Bit, REG_CALLRET_SP, REG_CALLRET_SP, FEXCore::Core::InternalThreadState::CALLRET_DEFAULT_OFFSET);
+           (void)Bind(&l_callret_ok);
+         }
+ #endif
+@@ -263,12 +265,12 @@ DEF_OP(ExitFunction) {
+         ARMEmitter::ForwardLabel l_callret_ok;
+         /* iOS-Madeira ml263: tightened to a 4MB window -- see the first CALL push site. */
+         ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp_base));
+-        add(ARMEmitter::Size::i64Bit, TMP1, TMP1, 0x200000);
++        add(ARMEmitter::Size::i64Bit, TMP1, TMP1, FEXCore::Core::InternalThreadState::CALLRET_LIVE_OFFSET);
+         sub(ARMEmitter::Size::i64Bit, TMP1, REG_CALLRET_SP, TMP1);
+-        lsr(ARMEmitter::Size::i64Bit, TMP1, TMP1, 22);
++        lsr(ARMEmitter::Size::i64Bit, TMP1, TMP1, std::countr_zero(FEXCore::Core::InternalThreadState::CALLRET_LIVE_SIZE));
+         (void)cbz(ARMEmitter::Size::i64Bit, TMP1, &l_callret_ok);
+         ldr(REG_CALLRET_SP, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp_base));
+-        add(ARMEmitter::Size::i64Bit, REG_CALLRET_SP, REG_CALLRET_SP, 0x400000);
++        add(ARMEmitter::Size::i64Bit, REG_CALLRET_SP, REG_CALLRET_SP, FEXCore::Core::InternalThreadState::CALLRET_DEFAULT_OFFSET);
+         (void)Bind(&l_callret_ok);
+       }
+ #endif
+@@ -317,12 +319,12 @@ DEF_OP(ExitFunction) {
+         ARMEmitter::ForwardLabel l_callret_ok;
+         /* iOS-Madeira ml263: tightened to a 4MB window -- see the first CALL push site. */
+         ldr(TMP1, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp_base));
+-        add(ARMEmitter::Size::i64Bit, TMP1, TMP1, 0x200000);
++        add(ARMEmitter::Size::i64Bit, TMP1, TMP1, FEXCore::Core::InternalThreadState::CALLRET_LIVE_OFFSET);
+         sub(ARMEmitter::Size::i64Bit, TMP1, REG_CALLRET_SP, TMP1);
+-        lsr(ARMEmitter::Size::i64Bit, TMP1, TMP1, 22);
++        lsr(ARMEmitter::Size::i64Bit, TMP1, TMP1, std::countr_zero(FEXCore::Core::InternalThreadState::CALLRET_LIVE_SIZE));
+         (void)cbz(ARMEmitter::Size::i64Bit, TMP1, &l_callret_ok);
+         ldr(REG_CALLRET_SP, STATE, offsetof(FEXCore::Core::CpuStateFrame, State.callret_sp_base));
+-        add(ARMEmitter::Size::i64Bit, REG_CALLRET_SP, REG_CALLRET_SP, 0x400000);
++        add(ARMEmitter::Size::i64Bit, REG_CALLRET_SP, REG_CALLRET_SP, FEXCore::Core::InternalThreadState::CALLRET_DEFAULT_OFFSET);
+         (void)Bind(&l_callret_ok);
+       }
+ #endif
+diff --git a/FEXCore/include/FEXCore/Debug/InternalThreadState.h b/FEXCore/include/FEXCore/Debug/InternalThreadState.h
+index 91a47c809..f6bf40388 100644
+--- a/FEXCore/include/FEXCore/Debug/InternalThreadState.h
++++ b/FEXCore/include/FEXCore/Debug/InternalThreadState.h
+@@ -110,17 +110,22 @@ struct alignas(FEXCore::Utils::FEX_PAGE_SIZE) InternalThreadState : public FEXCo
+   void* FrontendPtr;
+ 
+   // The prediction cache is not the guest architectural return stack.
+-  // iOS CALL/RET guards already use [base+2MiB, base+6MiB), starting at
+-  // base+4MiB. Keep that full prediction window while reserving 8MiB,
+-  // instead of 16MiB per thread. Callback pushes use the same window.
++  // r26: a 768MiB host band exhausted at 43..44 live threads. Reserve 4MiB
++  // per iOS thread, with a 2MiB prediction window around base+2MiB.
++  // The downward half still holds 65,536 predictions; exceeding it falls
++  // back to the normal guest-target lookup. This is not the x86 stack.
++  // All emitted guards and callback pushes use these same constants.
+ #ifdef FEX_IOS_HOST
+-  static constexpr size_t CALLRET_STACK_SIZE {0x800000};
++  static constexpr size_t CALLRET_STACK_SIZE {0x400000};
++  static constexpr size_t CALLRET_DEFAULT_OFFSET {0x200000};
++  static constexpr size_t CALLRET_LIVE_OFFSET {0x100000};
++  static constexpr size_t CALLRET_LIVE_SIZE {0x200000};
+ #else
+   static constexpr size_t CALLRET_STACK_SIZE {0x1000000};
+-#endif
+   static constexpr size_t CALLRET_DEFAULT_OFFSET {0x400000};
+   static constexpr size_t CALLRET_LIVE_OFFSET {0x200000};
+   static constexpr size_t CALLRET_LIVE_SIZE {0x400000};
++#endif
+   static_assert(CALLRET_DEFAULT_OFFSET >= CALLRET_LIVE_OFFSET + 16);
+   static_assert(CALLRET_DEFAULT_OFFSET < CALLRET_LIVE_OFFSET + CALLRET_LIVE_SIZE);
+   static_assert(CALLRET_LIVE_OFFSET + CALLRET_LIVE_SIZE < CALLRET_STACK_SIZE);
+diff --git a/Source/Windows/Common/CallRetStack.h b/Source/Windows/Common/CallRetStack.h
+index 063a77a65..6e816cda1 100644
+--- a/Source/Windows/Common/CallRetStack.h
++++ b/Source/Windows/Common/CallRetStack.h
+@@ -216,9 +216,11 @@ bool InitializeThread(FEXCore::Core::InternalThreadState* Thread) {
+       reported = true;
+       auto Info = GetInfoThread(Thread);
+       LogMan::Msg::EFmt("[callret-geom] base={:#x} default={:#x} size={:#x} "
+-                        "guard-window=[base+0x200000, base+0x600000) grows-DOWN",
++                        "prediction-v2 guard-window=[base+{:#x}, base+{:#x}) grows-DOWN",
+                         reinterpret_cast<uint64_t>(Thread->CallRetStackBase), Info.DefaultLocation,
+-                        FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE);
++                        FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE,
++                        FEXCore::Core::InternalThreadState::CALLRET_LIVE_OFFSET,
++                        FEXCore::Core::InternalThreadState::CALLRET_LIVE_OFFSET + FEXCore::Core::InternalThreadState::CALLRET_LIVE_SIZE);
+       /* iOS-Madeira ml271: print the REAL CpuStateFrame offsets once.
+        *
+        * The ntdll-unix side reads these fields out of x28 in signal handlers using
+-- 
+2.43.0
+

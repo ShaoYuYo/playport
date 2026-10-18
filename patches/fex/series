@@ -26,3 +26,4 @@
 0025-JIT-guard-iOS-WoW64-call-return-predictions.patch
 0026-iOS-share-disowned-scratch-and-contain-WoW64-init-failure.patch
 0027-iOS-trim-callret-reservations-and-bound-callback-pushes.patch
+0028-iOS-bound-return-predictions-in-a-compact-reservation.patch

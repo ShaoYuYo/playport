@@ -32,6 +32,8 @@ def guards(source):
 prefix=r'''
 #include <CodeEmitter/Emitter.h>
 #include <FEXCore/Core/CoreState.h>
+#include <FEXCore/Debug/InternalThreadState.h>
+#include <bit>
 #include <cstdio>
 #include <cstdlib>
 namespace FEXCore::Allocator {
@@ -70,10 +72,10 @@ int main(int argc,char **argv) {
 '''
 out=repo/'.work/callret-guard-test';out.mkdir(parents=True,exist_ok=True)
 os.environ['TMPDIR']=str(out)
-includes=[headers/'CodeEmitter',headers/'FEXCore/include',headers/'FEXHeaderUtils',headers/'External/fmt/include']
+includes=[tree/'FEXCore/include',headers/'CodeEmitter',headers/'FEXCore/include',headers/'FEXHeaderUtils',headers/'External/fmt/include']
 code_at=0x100000;state_at=0x200000;base=0x4000000
-cases=[0,base-16,base,base+(2<<20)-16,base+(2<<20),base+(4<<20),base+(6<<20)-16,base+(6<<20),base+(16<<20),0xfffffffffffffff0]
-for label,source,ios,ec in [('before-wow64',old,True,False),('after-wow64',fixed,True,False),('after-ec',fixed,True,True),('native-wow64',fixed,False,False)]:
+cases=[0,base-16,base]+[base+(m<<20)+delta for m in [1,2,3,4,6,8,16] for delta in [-16,0,16]]+[0xfffffffffffffff0]
+for label,source,ios,ec in [('before-wow64',old,True,False),('after-wow64',fixed,True,False),('after-ec',fixed,True,True),('native-wow64',fixed,False,False),('native-ec',fixed,False,True)]:
     src=out/(label+'.cpp')
     body='\n'.join('case '+str(i)+': {\n'+guard+'\n break;}\n' for i,guard in enumerate(guards(source)))
     src.write_text(prefix+body+suffix);exe=out/label
@@ -96,7 +98,8 @@ for label,source,ios,ec in [('before-wow64',old,True,False),('after-wow64',fixed
             uc.reg_write(UC_ARM64_REG_X0,0x12345678);uc.reg_write(UC_ARM64_REG_X16,0x87654321)
             uc.reg_write(UC_ARM64_REG_NZCV,0xa0000000)
             if code:uc.emu_start(code_at,code_at+len(code),count=64)
-            expected=base+(4<<20) if ios and label!='before-wow64' and not base+(2<<20)<=value<base+(6<<20) else value
+            low,default,high=(1,2,3) if ios else (2,4,6)
+            expected=base+(default<<20) if (ios or ec) and label!='before-wow64' and not base+(low<<20)<=value<base+(high<<20) else value
             assert uc.reg_read(reg)==expected,(label,site,hex(value),hex(uc.reg_read(reg)),hex(expected))
             assert uc.reg_read(UC_ARM64_REG_NZCV)==0xa0000000,'guest flags clobbered'
             assert uc.reg_read(UC_ARM64_REG_X28)==state_at,'state pointer clobbered'
@@ -108,8 +111,8 @@ for label,source,ios,ec in [('before-wow64',old,True,False),('after-wow64',fixed
 print('Old WoW64 leaves the reported underflow pointer unchanged; all three new sites reset it before memory access.')
 
 # Execute the production callback guard AND its following sentinel push.
-# Include the real thread-state constants: changing the reservation must not
-# silently move the existing CALL/RET window or the default pointer.
+# Include the real thread-state constants: callback and CALL/RET guards must
+# agree on the compact window and the default pointer.
 callback=(tree/'FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp').read_text()
 if '[callret-callback-v1]' in callback:
     a=callback.index('#if defined(ARCHITECTURE_arm64ec) || defined(FEX_IOS_HOST)',callback.index('// load static regs',callback.index('JITCallback') if 'JITCallback' in callback else 0))
@@ -126,14 +129,14 @@ if '[callret-callback-v1]' in callback:
         subprocess.run(command,check=True)
         binary=out/(label+'.bin');sp_off,base_off=map(int,subprocess.check_output([str(exe),'0',str(binary)]).decode().split())
         for value in cases+[base+(8<<20),base+(16<<20)-16]:
-            uc=Uc(UC_ARCH_ARM64,UC_MODE_ARM);uc.mem_map(code_at,4096);uc.mem_map(state_at,4096);uc.mem_map(base,8<<20)
+            uc=Uc(UC_ARCH_ARM64,UC_MODE_ARM);uc.mem_map(code_at,4096);uc.mem_map(state_at,4096);uc.mem_map(base,4<<20)
             uc.mem_write(state_at+sp_off,struct.pack('<Q',value));uc.mem_write(state_at+base_off,struct.pack('<Q',base))
             uc.mem_write(code_at,binary.read_bytes());reg=UC_ARM64_REG_X17 if ec else UC_ARM64_REG_X25
             uc.reg_write(reg,value);uc.reg_write(UC_ARM64_REG_X28,state_at);uc.reg_write(UC_ARM64_REG_NZCV,0xa0000000)
-            expected=value if base+(2<<20)<=value<base+(6<<20) else base+(4<<20)
+            expected=value if base+(1<<20)<=value<base+(3<<20) else base+(2<<20)
             uc.mem_write(expected-16,b'\xff'*16)
             uc.emu_start(code_at,code_at+len(binary.read_bytes()),count=64)
             assert uc.reg_read(reg)==expected-16,(label,hex(value))
             assert uc.mem_read(expected-16,16)==b'\0'*16
             assert uc.reg_read(UC_ARM64_REG_NZCV)==0xa0000000
-        print(label+': 12 actual AArch64 callback guard-and-push boundary cases passed')
+        print(label+': '+str(len(cases)+2)+' actual AArch64 callback guard-and-push boundary cases passed')

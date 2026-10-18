@@ -1,0 +1,72 @@
+From 57e4930c78a578f3a384920947e5c77fd718422e Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Sun, 18 Oct 2026 15:00:17 +0800
+Subject: [PATCH] ntdll: describe compact return predictions in arena and fault
+ reports
+
+Match the 4 MiB iOS reservation and 2 MiB default offset used by FEX.
+These changes affect diagnostic accounting only; the guest stack and
+memory-allocation decisions remain unchanged.
+
+Class: ios-port
+Evidence: docs/evidence/2026-10-18-steamglass-r26.md
+Offered-upstream: no (owned iOS diagnostics)
+---
+ build/ntdll-unix/signal_arm64_ios.c | 8 ++++----
+ build/ntdll-unix/virtual_ios.c      | 4 ++--
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/build/ntdll-unix/signal_arm64_ios.c b/build/ntdll-unix/signal_arm64_ios.c
+index 02e523e..fc4a14d 100644
+--- a/build/ntdll-unix/signal_arm64_ios.c
++++ b/build/ntdll-unix/signal_arm64_ios.c
+@@ -9263,7 +9263,7 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
+                             ERR("[callret] frame=%p sp=%p(ok=%d) base=%p(ok=%d) in_range=%d\n",
+                                 (void *)(uintptr_t)frame, (void *)(uintptr_t)sp, ok_sp,
+                                 (void *)(uintptr_t)base, ok_base,
+-                                (ok_sp && ok_base && base && sp >= base && sp < base + 0x1000000));
++                                (ok_sp && ok_base && base && sp >= base && sp < base + 0x400000));
+                             if (ok_ent)
+                                 ERR("[callret] top (PREDICTION HISTORY — stale/completed frames expected, NOT an unwind): %llx %llx %llx %llx %llx %llx %llx %llx\n",
+                                     (unsigned long long)ent[0], (unsigned long long)ent[1],
+@@ -9660,12 +9660,12 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
+                              * entries (4.6% and 0.3% of the window). Print what
+                              * is actually being asked — entries USED — so it
+                              * cannot be misread again. */
+-                            unsigned long long dflt = cr[1] + 0x400000;
++                            unsigned long long dflt = cr[1] + 0x200000;
+                             unsigned long long used_b = (dflt > cr[0]) ? dflt - cr[0] : 0;
+ 
+-                            ERR("  [callret] sp=%p base=%p default=%p used=%llu entries (%llu bytes, %llu%% of 4MB)\n",
++                            ERR("  [callret] sp=%p base=%p default=%p used=%llu entries (%llu bytes, %llu%% of 2MB)\n",
+                                 (void *)cr[0], (void *)cr[1], (void *)(uintptr_t)dflt,
+-                                used_b / 16, used_b, (used_b * 100) / 0x400000 );
++                                used_b / 16, used_b, (used_b * 100) / 0x200000 );
+ 
+                             /* ml213: the cap was 0x100000, but a real run had depth=168218
+                              * (1.28MB of stack) and the dump was skipped for no good
+diff --git a/build/ntdll-unix/virtual_ios.c b/build/ntdll-unix/virtual_ios.c
+index b175ccc..31ebafa 100644
+--- a/build/ntdll-unix/virtual_ios.c
++++ b/build/ntdll-unix/virtual_ios.c
+@@ -5090,7 +5090,7 @@ struct ios_band_census
+ };
+ 
+ #define IOS_BAND_SPAN 0x400000ULL    /* rpmalloc: 4 MiB, 4 MiB-aligned */
+-#define IOS_BAND_CALLRET 0x800000ULL /* prediction reservation, plus guards */
++#define IOS_BAND_CALLRET 0x400000ULL /* prediction reservation, plus guards */
+ 
+ static void ios_band_gap( struct ios_band_census *c, ULONG_PTR b, ULONG_PTR e )
+ {
+@@ -5122,7 +5122,7 @@ static struct wine_rb_entry *ios_band_first_locked( ULONG_PTR lo )
+ }
+ 
+ /* What each view is, by its shape: an rpmalloc span is exactly 4 MiB on a
+- * 4 MiB boundary, a call-return stack is 8 MiB plus its two guard pages, an
++ * 4 MiB boundary, a call-return stack is 4 MiB plus its two guard pages, an
+  * L1 lookup cache is 2 MiB; the rest (rpmalloc heap metadata and large blocks,
+  * FEX's pooled buffers) is counted in bytes. virtual_mutex must be held. */
+ static void ios_band_census_locked( struct ios_band_census *c )
+-- 
+2.43.0
+

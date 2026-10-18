@@ -28,17 +28,17 @@ int main(void){
  const ULONG_PTR M=1024*1024,base=0x100000000ULL;
  ios_fex_arena_base_unix=base;ios_fex_arena_end_unix=base+1024*M;
  views[0].base=(void*)(base+4*M);views[0].size=4*M;
- views[1].base=(void*)(base+16*M);views[1].size=8*M+8192;
+ views[1].base=(void*)(base+16*M);views[1].size=4*M+8192;
  views[2].base=(void*)(base+32*M);views[2].size=2*M;
  views[3].base=(void*)(base+40*M);views[3].size=65536;
  for(int i=0;i<3;++i)views[i].entry.next=&views[i+1].entry;
  struct ios_band_census c;ios_band_census_locked(&c);
  assert(c.views==4&&c.spans==1&&c.callret==1&&c.l1==1&&c.other_bytes==65536);
- assert(c.used==14*M+8192+65536&&ios_band_used_peak==c.used);
+ assert(c.used==10*M+8192+65536&&ios_band_used_peak==c.used);
  assert(c.largest_free==984*M-65536);
  memset(&c,0,sizeof(c));ios_band_gap(&c,base,base+13*M);
  assert(c.span_slots==3&&c.largest_free==13*M);
- puts("PASS: actual native census identifies 4-MiB spans, 8-MiB stacks, L1 caches and compact aligned slots");
+ puts("PASS: actual native census identifies 4-MiB stacks plus guards, with unchanged other-view accounting");
 }
 '''
 (out/'test.c').write_text(c)
