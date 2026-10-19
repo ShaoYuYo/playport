@@ -62,32 +62,66 @@ public struct TitleMemory: Equatable, Sendable {
 /// Bounded OS file-cache warmup before guest threads start. This does not
 /// retain decoded assets or compile game scripts/shaders outside their engine.
 public enum TitleAssetWarmup {
+    /// Opt-in for all stores and imported titles, independent of RAM economy.
+    /// This is file read-ahead, not a persistent executable-code cache.
+    public static let preferenceKey = "titleStartupReadAhead"
+    public static let minimumHeadroomMB = 128
     public struct Result: Sendable { public let files: Int; public let bytes: Int; public let seconds: Double }
 
-    public static func run(in root: URL, byteLimit: Int = 8 << 20, seconds: Double = 0.25) -> Result {
+    public static func run(in root: URL, executable: String? = nil,
+                           byteLimit: Int = 8 << 20, seconds: Double = 0.25) -> Result {
         let began = ProcessInfo.processInfo.systemUptime
         let fm = FileManager.default
         var files = 0, bytes = 0
+        let root = root.standardizedFileURL
+        func result() -> Result { Result(files: files, bytes: bytes, seconds: ProcessInfo.processInfo.systemUptime - began) }
+        // Canonical system ancestors (e.g. /var on iOS) are allowed. Links
+        // inside the game root, including plugin directories, are not followed.
+        guard byteLimit > 0, seconds > 0,
+              (try? fm.attributesOfItem(atPath: root.path)[.type] as? FileAttributeType) == .typeDirectory else { return result() }
+        let canonicalRoot = root.resolvingSymlinksInPath()
+        func safe(_ url: URL) -> Bool {
+            let relative = String(url.path.dropFirst(root.path.count))
+            return url.path.hasPrefix(root.path + "/") &&
+                url.resolvingSymlinksInPath().path == canonicalRoot.path + relative
+        }
         func regular(_ url: URL) -> Bool {
-            (try? fm.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular
+            safe(url) && (try? fm.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular
         }
         var candidates: [URL] = []
-        // Do not traverse links, recurse through the install or warm whole XP3s.
+        // The selected executable goes first, even when many DLLs sort before
+        // it. A caller cannot use this name to read outside the game directory.
+        if let executable, !executable.isEmpty,
+           (executable as NSString).lastPathComponent == executable {
+            candidates.append(root.appendingPathComponent(executable))
+        }
+        // Bounded one-level listing only. Generic resource container headers
+        // help engines outside the measured KiriKiri pair too; never read saves,
+        // decoded scenes, or entire archives into an app-owned memory cache.
         for dir in [root, root.appendingPathComponent("plugin")] {
             guard ProcessInfo.processInfo.systemUptime - began < seconds else { break }
+            guard dir == root || safe(dir) else { continue }
             guard (try? fm.attributesOfItem(atPath: dir.path)[.type] as? FileAttributeType) == .typeDirectory else { continue }
-            let names = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).sorted().prefix(2048)
-            candidates += names.map { dir.appendingPathComponent($0) }.filter {
-                ["exe", "dll", "xp3"].contains($0.pathExtension.lowercased())
+            guard let walk = fm.enumerator(at: dir, includingPropertiesForKeys: nil,
+                                          options: [.skipsSubdirectoryDescendants]) else { continue }
+            var names: [String] = []
+            for case let url as URL in walk {
+                guard names.count < 2048, ProcessInfo.processInfo.systemUptime - began < seconds else { break }
+                names.append(url.lastPathComponent)
+            }
+            candidates += names.sorted().map { dir.appendingPathComponent($0) }.filter {
+                ["exe", "dll", "xp3", "pak", "rpa", "arc", "vfs"].contains($0.pathExtension.lowercased())
             }
         }
+        var seen = Set<String>()
         for url in candidates.prefix(64) {
             guard bytes < max(0, byteLimit), ProcessInfo.processInfo.systemUptime - began < seconds else { break }
-            guard regular(url) else { continue }
+            guard seen.insert(url.path).inserted, regular(url) else { continue }
             guard ProcessInfo.processInfo.systemUptime - began < seconds,
                   let file = try? FileHandle(forReadingFrom: url) else { break }
             defer { try? file.close() }
-            let cap = min(byteLimit - bytes, url.pathExtension.lowercased() == "xp3" ? 16 << 10 : 512 << 10)
+            let code = ["exe", "dll"].contains(url.pathExtension.lowercased())
+            let cap = min(byteLimit - bytes, code ? 512 << 10 : 16 << 10)
             guard cap > 0, let header = try? file.read(upToCount: cap) else { continue }
             bytes += header.count; files += 1
             // XP3 index offset is public container metadata. Warm only a small
@@ -101,6 +135,6 @@ public enum TitleAssetWarmup {
                 }
             }
         }
-        return Result(files: files, bytes: bytes, seconds: ProcessInfo.processInfo.systemUptime - began)
+        return result()
     }
 }

@@ -274,6 +274,7 @@ private struct GraphicsSettings: View {
     @AppStorage(MetalHUD.key) private var metalHUD = false
     @AppStorage(MemorySafety.preferenceKey) private var memoryHeadroom = MemorySafety.defaultMB
     @AppStorage(TitleMemory.preferenceKey) private var memoryEconomy = true
+    @AppStorage(TitleAssetWarmup.preferenceKey) private var startupReadAhead = false
     @AppStorage(MemorySafety.warningPreferenceKey) private var showMemoryWarnings = true
     @AppStorage(GameViewport.edgeToEdgeKey) private var edgeToEdge = true
     @AppStorage(EdgeMenuVisibility.preferenceKey) private var menuAutoHide = true
@@ -311,6 +312,15 @@ private struct GraphicsSettings: View {
         SettingsSwitchRow(id: "memory-economy", title: "節省 RAM（所有遊戲）",
                           subtitle: "減少自動工作執行緒；千戀萬花與魔女的夜宴另用 256 MB JIT 池、64 MB 圖片快取與更新節流。下次啟動套用，手動參數優先。多核心遊戲可能變慢，可關閉比較。",
                           on: $memoryEconomy)
+        SettingsSwitchRow(id: "startup-read-ahead", title: "啟動檔案預讀快取（所有遊戲）",
+                          subtitle: "啟動前預讀少量程式與資源標頭，交由 iOS 回收；適用各商店與手動匯入。下次啟動套用。",
+                          on: Binding(get: { startupReadAhead }, set: { enable in
+            if !enable { startupReadAhead = false; return }
+            PadModal.shared.picker(title: "開啟啟動檔案預讀快取？",
+                note: "每次啟動最多預讀 8 MB，約 0.25 秒後停止新增讀取；記憶體餘裕不足時略過。可能改善首次讀檔，也可能增加一點啟動時間，效果依遊戲而異。這不是轉譯碼磁碟快取，不能保存 JIT 權限或取代 JIT 啟用。",
+                options: [PadOption(id: "off", label: "保持關閉"), PadOption(id: "on", label: "開啟所有遊戲的預讀")],
+                selected: "off") { startupReadAhead = $0 == "on" }
+        }))
         SettingsSwitchRow(id: "metalHUD", title: "Metal HUD", subtitle: "Frame rate, frame time and memory over a game",
                           on: $metalHUD)
         SettingsNote(text: "預設 720p／60 FPS 上限，先控制繪圖負載。原生解析度與更高 FPS 仍可手動選擇；若卡頓可試 30 FPS 或更低解析度。"

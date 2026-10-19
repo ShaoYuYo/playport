@@ -57,7 +57,8 @@ struct SetupCheckSettings: View {
                         value: router.controller == nil ? "Optional" : "Ready")
         jitRows
         SettingsNote(text: "遊戲下載的行動數據開關不影響 JIT。行動數據可能使 iOS 的本機 VPN 迴路無法連線；目前核心建議使用 Wi‑Fi。只有行動數據時，可先連接 LocalDevVPN，再暫時開啟飛航模式並返回啟用 JIT；首次下載元件仍需網路。Playport 無法替你切換系統網路，遊戲結束後的 App 重啟也可能需要本機隧道。")
-        SettingsInfoRow(id: "setup:jit-engine", title: "Windows 指令轉譯", subtitle: "目前核心需要 JIT，沒有可用的免 JIT 執行模式。", value: "JIT")
+        SettingsInfoRow(id: "setup:jit-engine", title: "Windows 指令轉譯", subtitle: "目前核心需要 JIT。UTM SE 使用另一種較慢的解譯器，不能直接套用至此核心。", value: "JIT")
+        SettingsNote(text: "JIT 啟用完成、遊戲開始後，可手動恢復行動數據，JIT 本身不需持續連網；App 被系統結束或重新啟動後仍需再次啟用。自己的個人熱點無法讓同一支手機連回自己，也不能把行動數據偽裝成 Wi‑Fi。")
         PadRow(id: "set:setup:vpn", title: "LocalDevVPN", subtitle: "JIT reaches this phone through it",
                value: tunnelUp.map { $0 ? "Connected" : "Not connected" } ?? "Checking…", accessory: .chevron,
                hint: "Connect") {
@@ -207,6 +208,10 @@ struct SetupCheckSettings: View {
                         subtitle: reading.entitled == false ? "This copy was signed without it" : nil,
                         value: reading.entitled.map { $0 ? "On" : "Off" } ?? "Unknown")
         SettingsInfoRow(id: "setup:pool", title: "JIT memory", value: MemoryNeed.format(mb: MemoryLimit.poolMB(reading)))
+        PadRow(id: "set:setup:memory-help", title: "增加記憶體權限／GetMoreRam",
+               subtitle: "檢查目前簽章並查看如何啟用；需要重新簽署安裝，不會憑空增加實體 RAM。",
+               value: reading.entitled.map { $0 ? "已具備權限" : "尚未具備" } ?? "未知",
+               accessory: .chevron, hint: "查看") { SetupRing.memoryHowTo() }
         #if !PLAYPORT_RELEASE
         if reading.simulatedMB != nil {
             SettingsInfoRow(id: "setup:realLimit", title: "Real limit",

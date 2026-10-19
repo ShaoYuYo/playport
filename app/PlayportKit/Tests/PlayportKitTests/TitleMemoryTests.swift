@@ -4,6 +4,56 @@ import XCTest
 @testable import PlayportKit
 
 final class TitleMemoryTests: XCTestCase {
+    func testWarmupPrioritizesImportedExecutableAndReadsItOnlyOnce() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let fm = FileManager.default
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 4).write(to: root.appendingPathComponent("a.dll"))
+        try Data(repeating: 2, count: 100).write(to: root.appendingPathComponent("z.exe"))
+        let first = TitleAssetWarmup.run(in: root, executable: "z.exe", byteLimit: 50, seconds: 5)
+        XCTAssertEqual(first.files, 1)
+        XCTAssertEqual(first.bytes, 50)
+        let all = TitleAssetWarmup.run(in: root, executable: "z.exe", seconds: 5)
+        XCTAssertEqual(all.files, 2)
+        XCTAssertEqual(all.bytes, 104)
+    }
+
+    func testWarmupSupportsOtherEnginesWithoutReadingWholeArchivesOrSaves() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let fm = FileManager.default
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        for name in ["data.pak", "data.rpa", "data.arc", "data.vfs", "progress.sav", "steam_autocloud.vdf"] {
+            try Data(repeating: 1, count: 1 << 20).write(to: root.appendingPathComponent(name))
+        }
+        let result = TitleAssetWarmup.run(in: root, seconds: 5)
+        XCTAssertEqual(result.files, 4)
+        XCTAssertEqual(result.bytes, 4 * (16 << 10))
+    }
+
+    func testWarmupRejectsLinkedPluginDirectoryAndTraversalExecutable() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let fm = FileManager.default
+        defer { try? fm.removeItem(at: root) }
+        let game = root.appendingPathComponent("game"), outside = root.appendingPathComponent("other")
+        try fm.createDirectory(at: game, withIntermediateDirectories: true)
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 100).write(to: outside.appendingPathComponent("private.dll"))
+        try fm.createSymbolicLink(at: game.appendingPathComponent("plugin"), withDestinationURL: outside)
+        let result = TitleAssetWarmup.run(in: game, executable: "../other/private.dll", seconds: 5)
+        XCTAssertEqual(result.files, 0)
+        XCTAssertEqual(result.bytes, 0)
+    }
+
+    func testWarmupHandlesMissingOrNonDirectoryInstallWithoutFailingLaunch() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertEqual(TitleAssetWarmup.run(in: root).bytes, 0)
+        try Data([1]).write(to: root)
+        XCTAssertEqual(TitleAssetWarmup.run(in: root).files, 0)
+    }
+
     func testWarmupBoundsBytesAndSkipsLinksAndPrivateFiles() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let fm = FileManager.default
