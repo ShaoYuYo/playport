@@ -7,16 +7,19 @@
 
 import PlayportKit
 import SteamClientKit
+import Combine
 import SwiftUI
 import UIKit
 
 @MainActor
 final class LocalArt: ObservableObject {
+    /// Cache contents can be evicted; a small revision publishes arrivals.
+    @Published private var imageRevision = 0
     static let shared = LocalArt()
     nonisolated static let directory = SteamPaths.art.appendingPathComponent("local", isDirectory: true)
 
     /// By cache key; NSNull-like `nil` entries are remembered as "no icon".
-    @Published private var images: [String: UIImage?] = [:]
+    private var missing = Set<String>()
     private var loading = Set<String>()
 
     static func key(_ t: InstalledTitle) -> String? {
@@ -28,7 +31,8 @@ final class LocalArt: ObservableObject {
     /// The icon if it is known; starts reading it otherwise.
     func icon(for t: InstalledTitle) -> UIImage? {
         guard let key = Self.key(t), let exe = t.executable else { return nil }
-        if let known = images[key] { return known }
+        if let known = ArtworkMemoryCache.shared["local/" + key] { return known }
+        if missing.contains(key) { return nil }
         guard loading.insert(key).inserted else { return nil }
         let exeURL = LibraryModel.paths.games.appendingPathComponent(t.installDir, isDirectory: true)
             .appendingPathComponent(exe.replacingOccurrences(of: "\\", with: "/"))
@@ -43,7 +47,9 @@ final class LocalArt: ObservableObject {
                 image = decoded
             }
             await MainActor.run {
-                LocalArt.shared.images[key] = .some(image)
+                LocalArt.shared.imageRevision &+= 1
+                if let image { ArtworkMemoryCache.shared["local/" + key] = image }
+                else { LocalArt.shared.missing.insert(key) }
                 LocalArt.shared.loading.remove(key)
             }
         }

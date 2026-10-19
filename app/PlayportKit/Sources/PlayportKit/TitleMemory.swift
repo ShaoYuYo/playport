@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 
-/// Measured title-specific reductions. Other games keep their existing budget.
+/// Optional worker reductions for every title; measured engine-specific budgets.
 /// The pool is fixed before JIT activation; it cannot grow during a play.
 public struct TitleMemory: Equatable, Sendable {
     public static let preferenceKey = "titleMemoryEconomy"
     public let poolMB: Int?
     public let active: Bool
+    public let engineProfile: Bool
 
     public init(steamAppID: UInt32?, i386: Bool, enabled: Bool) {
-        active = enabled && i386 && steamAppID == 1144400
+        active = enabled
+        engineProfile = enabled && i386 && [UInt32(1144400), 2458530].contains(steamAppID ?? 0)
         // Supplied startup report: head 26 + tail 33 MiB, no pool refusals.
         // Keep room for the normal 128 MiB translation buffer and later images.
-        poolMB = active ? 256 : nil
+        // Both supplied KiriKiri reports fit head + tail below 188 MiB.
+        // Other engines retain the general pool: a smaller one is not safe
+        // merely because a game opted into fewer automatic workers.
+        poolMB = engineProfile ? 256 : nil
     }
 
     public func config(over base: [String: String]) -> [String: String] {
@@ -25,7 +30,7 @@ public struct TitleMemory: Equatable, Sendable {
     }
 
     public func arguments(over base: [String], frameLimit: Int? = nil, displayRefreshRate: Int? = nil) -> [String] {
-        guard active else { return base }
+        guard engineProfile else { return base }
         var result = base
         // The old low mode tells KiriKiri it has zero physical memory and
         // disables its segment/layer caches. Keep the bounded worker fleet,

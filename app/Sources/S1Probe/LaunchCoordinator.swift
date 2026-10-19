@@ -344,8 +344,8 @@ enum LaunchCoordinator {
         args = titleMemory.arguments(over: args, frameLimit: r.frameLimit, displayRefreshRate: displayRefreshRate)
         if titleMemory.active {
             log("engine-pacing-v3: presentation_limit=\(r.frameLimit) panel_hz=\(displayRefreshRate) continuous_ceiling_follows_panel_including_unlimited; explicit arguments and runtime script overrides remain possible")
-            log("memory-economy: profile=senren-v2 default_pool_mb=256 cpu_count=\(config["cpu-count"] ?? "default") engine_cache_default=normal graphics_cache_default_mb=64 explicit_arguments=preserved")
-            if let root = r.steamAPI?.root,
+            log("memory-economy-v3: enabled=1 engine_profile=\(titleMemory.engineProfile ? "kirikiri" : "general") pool_mb=\(titleMemory.poolMB.map(String.init) ?? "general") cpu_count=\(config["cpu-count"] ?? "default") explicit_settings=preserved")
+            if titleMemory.engineProfile, let root = r.steamAPI?.root,
                memory.effectiveMB.map({ $0 - memory.footprintMB >= 128 }) ?? false {
                 let warm = TitleAssetWarmup.run(in: root)
                 log(String(format: "asset-warmup-v1: files=%d bytes=%d elapsed_ms=%.1f retained_asset_bytes=0", warm.files, warm.bytes, warm.seconds * 1000))

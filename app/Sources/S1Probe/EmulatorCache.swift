@@ -17,7 +17,7 @@ import PlayportKit
 enum EmulatorCache {
     /// The prefix's fex-emu cache directory.
     nonisolated static var directory: URL {
-        WineHostRuntime.documents.appendingPathComponent("prefix/drive_c/users/playport/AppData/Local/fex-emu",
+        WineHostRuntime.documents.appendingPathComponent("prefix/drive_c/users/playport/AppData/Local/fex-emu/DiskCache",
                                                           isDirectory: true)
     }
 

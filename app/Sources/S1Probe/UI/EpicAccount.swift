@@ -246,8 +246,9 @@ final class EpicAccount: ObservableObject, DownloadDriver {
 /// An Epic game's 16:9 art from Epic's image CDN, kept under Caches (re-fetchable).
 @MainActor
 final class EpicArt: ObservableObject {
+    /// Cache contents can be evicted; a small revision publishes arrivals.
+    @Published private var imageRevision = 0
     static let shared = EpicArt()
-    @Published private var images: [String: UIImage] = [:]
     private var loading = Set<String>()
 
     /// 800 wide (800×450) for a tile; 1920 behind a page and the launch screen.
@@ -264,7 +265,7 @@ final class EpicArt: ObservableObject {
 
     func image(_ g: EpicGame, wide: Bool) -> UIImage? {
         let key = "\(g.id)/\(wide)"
-        if let i = images[key] { return i }
+        if let i = ArtworkMemoryCache.shared["epic/" + key] { return i }
         guard let url = g.art(width: Self.width(wide: wide)), loading.insert(key).inserted else { return nil }
         let file = Self.file(g.id, wide: wide)
         Task.detached(priority: .utility) {
@@ -276,7 +277,11 @@ final class EpicArt: ObservableObject {
             }
             let image = data.flatMap(UIImage.init(data:))
             await MainActor.run {
-                if let image { EpicArt.shared.images[key] = image }
+                if let image {
+                    EpicArt.shared.imageRevision &+= 1
+                    ArtworkMemoryCache.shared["epic/" + key] = image
+                    EpicArt.shared.loading.remove(key)
+                }
             }
         }
         return nil

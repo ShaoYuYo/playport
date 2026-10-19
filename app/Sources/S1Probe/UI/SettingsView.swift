@@ -308,8 +308,8 @@ private struct GraphicsSettings: View {
         SettingsSwitchRow(id: "memory-warning", title: "顯示記憶體餘裕提醒",
                           subtitle: "關閉後隱藏遊戲上方的 RAM 提醒；記憶體安全檢查與失敗紀錄仍然保留。",
                           on: $showMemoryWarnings)
-        SettingsSwitchRow(id: "memory-economy", title: "千戀萬花執行最佳化",
-                          subtitle: "256 MB JIT、較少工作執行緒、64 MB 圖片快取；連續更新依螢幕更新率節流，避免不限模式空轉。下次啟動套用，明確的啟動參數優先。",
+        SettingsSwitchRow(id: "memory-economy", title: "節省 RAM（所有遊戲）",
+                          subtitle: "減少自動工作執行緒；千戀萬花與魔女的夜宴另用 256 MB JIT 池、64 MB 圖片快取與更新節流。下次啟動套用，手動參數優先。多核心遊戲可能變慢，可關閉比較。",
                           on: $memoryEconomy)
         SettingsSwitchRow(id: "metalHUD", title: "Metal HUD", subtitle: "Frame rate, frame time and memory over a game",
                           on: $metalHUD)
@@ -384,6 +384,7 @@ private struct ControllerSettings: View {
 
 private struct StorageSettings: View {
     @ObservedObject private var library = LibraryModel.shared
+    @ObservedObject private var maintenance = StorageMaintenance.shared
 
     var body: some View {
         SettingsNote(text: "Games and their saves live inside Playport. Deleting the app deletes them.")
@@ -392,32 +393,24 @@ private struct StorageSettings: View {
         let used = library.catalog.titles.compactMap(\.sizeBytes).reduce(0, +)
         SettingsInfoRow(id: "games", title: "Games", subtitle: "\(library.catalog.titles.count) installed",
                         value: ByteCount.format(used))
+        PadRow(id: "set:storage-cleanup", title: "最佳化儲存空間",
+               subtitle: launch.running ? "遊戲執行中：只清除超過一天的匯出報告，保留使用中的快取。"
+                   : "清除可重建的圖形／轉譯快取與舊匯出報告。保留遊戲、存檔與雲端備份；快取重建時首次載入可能較慢。",
+               value: maintenance.busy ? "清理中…" : nil, hint: maintenance.busy ? "" : "清理") {
+            maintenance.clean()
+        }
+        if !maintenance.status.isEmpty { SettingsNote(text: maintenance.status) }
+        SettingsNote(text: "清理不壓縮遊戲音訊，也不刪除遊戲可能引用的相同名稱檔案。執行中無法安全縮減遊戲資料；已清除的檔案量與 iOS 實際釋放空間可能不同。")
         ForEach(library.catalog.titles.sorted { ($0.sizeBytes ?? 0) > ($1.sizeBytes ?? 0) }) { t in
             PadRow(id: "set:title:\(t.id)", title: t.name, value: t.sizeBytes.map(ByteCount.format) ?? "Unknown",
                    accessory: .chevron, hint: "Open") {
                 AppNavigation.shared.openTitle(t.id)
             }
         }
-        // FEX's disk cache (decision 0056): its size, and the one way to clear it (decision 0012).
-        PadRow(id: "set:emulator-cache", title: "Emulator cache",
-               subtitle: "Speeds up later starts; cleared past 5 GB or when space is low",
-               value: cacheBytes.map(ByteCount.format) ?? "…", hint: launch.running ? "" : "Clear") {
-            guard !launch.running, !clearing else { return }
-            clearing = true
-            Task {
-                cacheBytes = await Task.detached(priority: .userInitiated) { () -> UInt64 in
-                    EmulatorCache.clear()
-                    return EmulatorCache.size()
-                }.value
-                clearing = false
-            }
-        }
-        .task { cacheBytes = await Task.detached(priority: .utility) { EmulatorCache.size() }.value }
+
     }
 
     @ObservedObject private var launch = TitleLaunch.shared
-    @State private var cacheBytes: UInt64?
-    @State private var clearing = false
 }
 
 // MARK: About

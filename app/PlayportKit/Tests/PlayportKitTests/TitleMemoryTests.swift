@@ -42,13 +42,28 @@ final class TitleMemoryTests: XCTestCase {
         XCTAssertGreaterThan(profile.poolMB!, 26 + 128 + 100)
         for other in [TitleMemory(steamAppID: nil, i386: true, enabled: true),
                       TitleMemory(steamAppID: 367520, i386: true, enabled: true),
-                      TitleMemory(steamAppID: 1144400, i386: false, enabled: true),
-                      TitleMemory(steamAppID: 1144400, i386: true, enabled: false)] {
-            XCTAssertFalse(other.active)
+                      TitleMemory(steamAppID: 1144400, i386: false, enabled: true)] {
+            XCTAssertTrue(other.active)
+            XCTAssertFalse(other.engineProfile)
             XCTAssertNil(other.poolMB)
-            XCTAssertEqual(other.config(over: ["jumbo-mb": "0"]), ["jumbo-mb": "0"])
+            XCTAssertEqual(other.config(over: ["jumbo-mb": "0"]), ["jumbo-mb": "0", "cpu-count": "2"])
             XCTAssertEqual(other.arguments(over: ["-custom"]), ["-custom"])
         }
+    }
+
+    func testGlobalOptOutAndSecondEngineBudget() {
+        for app in [nil, 1144400, 2458530, 367520] as [UInt32?] {
+            let off = TitleMemory(steamAppID: app, i386: true, enabled: false)
+            XCTAssertFalse(off.active)
+            XCTAssertNil(off.poolMB)
+            XCTAssertEqual(off.config(over: [:]), [:])
+            XCTAssertEqual(off.arguments(over: []), [])
+        }
+        let witch = TitleMemory(steamAppID: 2458530, i386: true, enabled: true)
+        XCTAssertTrue(witch.engineProfile)
+        XCTAssertEqual(witch.poolMB, 256)
+        XCTAssertGreaterThan(witch.poolMB!, 26 + 161 + 64)
+        XCTAssertTrue(witch.arguments(over: [], frameLimit: 60).contains("-gclim=64"))
     }
 
     func testExplicitSettingsWinAndUnrelatedArgumentsSurvive() {

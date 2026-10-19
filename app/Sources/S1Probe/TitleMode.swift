@@ -63,7 +63,7 @@ final class TitleLaunch: ObservableObject {
                graphicsEnvironment: [String: String] = [:], steamAppID: UInt32? = nil,
                fex: FEXProfile.Launch? = nil, steamAPI: LaunchCoordinator.SteamAPI? = nil,
                memory: MemoryNeed? = nil, epic: LaunchCoordinator.Epic? = nil, galaxy: GalaxyListener? = nil) -> Bool {
-        guard !running, !spent else { return false }
+        guard !running, !spent, !StorageMaintenance.shared.busy else { return false }
         self.title = title
         self.titleID = titleID
         TouchControlsStore.shared.load(titleID: titleID)
@@ -148,6 +148,7 @@ final class TitleLaunch: ObservableObject {
     /// that was refused gets its own; host I/O starts once.
     private func begin(screen: String? = nil, frameLimit: Int = 0) {
         running = true
+        ArtworkMemoryCache.shared.release()
         MemorySafetyWatch.shared.start()
         // Steam work stops before the runtime starts (decision 0004); the JIT
         // wait ahead of wine_host_init leaves it ample time to disconnect. A play

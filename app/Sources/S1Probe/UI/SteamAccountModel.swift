@@ -71,7 +71,6 @@ final class SteamAccountModel: ObservableObject {
     private var catalogWatch: AnyCancellable?
     private var started = false
     private var preparingCloudLaunch = 0
-    private var images: [String: UIImage] = [:]
 
     /// A background refresh after a restore happens at most this often.
     static let refreshAge: TimeInterval = 15 * 60
@@ -408,7 +407,7 @@ final class SteamAccountModel: ObservableObject {
         await LibraryModel.shared.removeSteamTickets("at sign-out").value
         // Which apps have art cached says what the account owned (decision 0004).
         try? await art.clear()
-        images = [:]
+        ArtworkMemoryCache.shared.release()
         games = []
         gamesFetchedAt = nil
         lastRenewal = nil
@@ -445,14 +444,14 @@ final class SteamAccountModel: ObservableObject {
 
     /// Art already loaded, without waiting: a view drawn again shows it at once.
     func cachedImage(_ app: SteamAppInfo, _ kind: ArtworkCache.Kind) -> UIImage? {
-        images["\(app.appID)/\(kind.rawValue)"]
+        ArtworkMemoryCache.shared["steam/\(app.appID)/\(kind.rawValue)"]
     }
 
     func image(_ app: SteamAppInfo, _ kind: ArtworkCache.Kind) async -> UIImage? {
-        let key = "\(app.appID)/\(kind.rawValue)"
-        if let hit = images[key] { return hit }
+        let key = "steam/\(app.appID)/\(kind.rawValue)"
+        if let hit = ArtworkMemoryCache.shared[key] { return hit }
         guard let url = try? await art.image(app, kind), let img = UIImage(contentsOfFile: url.path) else { return nil }
-        images[key] = img
+        ArtworkMemoryCache.shared[key] = img
         return img
     }
 }

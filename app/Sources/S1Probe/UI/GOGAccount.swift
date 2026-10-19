@@ -228,8 +228,9 @@ extension JSONEncoder {
 /// A GOG game's art from GOG's image CDN, kept under Caches (re-fetchable).
 @MainActor
 final class GOGArt: ObservableObject {
+    /// Cache contents can be evicted; a small revision publishes arrivals.
+    @Published private var imageRevision = 0
     static let shared = GOGArt()
-    @Published private var images: [String: UIImage] = [:]
     private var loading = Set<String>()
 
     /// `_800` (800×370) for a tile; `_bg_crop_1920x655` behind a page.
@@ -243,7 +244,7 @@ final class GOGArt: ObservableObject {
     func image(_ g: GOGGame, wide: Bool) -> UIImage? {
         let suffix = Self.suffix(wide: wide)
         let key = "\(g.id)\(suffix)"
-        if let i = images[key] { return i }
+        if let i = ArtworkMemoryCache.shared["gog/" + key] { return i }
         guard let url = g.art(suffix), loading.insert(key).inserted else { return nil }
         let file = GOGAccount.art.appendingPathComponent(key + ".jpg")
         Task.detached(priority: .utility) {
@@ -255,7 +256,11 @@ final class GOGArt: ObservableObject {
             }
             let image = data.flatMap(UIImage.init(data:))
             await MainActor.run {
-                if let image { GOGArt.shared.images[key] = image }
+                if let image {
+                    GOGArt.shared.imageRevision &+= 1
+                    ArtworkMemoryCache.shared["gog/" + key] = image
+                    GOGArt.shared.loading.remove(key)
+                }
             }
         }
         return nil
