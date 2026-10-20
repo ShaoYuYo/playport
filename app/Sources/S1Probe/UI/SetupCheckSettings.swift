@@ -56,7 +56,7 @@ struct SetupCheckSettings: View {
                         subtitle: router.controller.map { "\($0.name) connected" } ?? "None connected; touch works too",
                         value: router.controller == nil ? "Optional" : "Ready")
         jitRows
-        SettingsNote(text: "遊戲下載的行動數據開關不影響 JIT。行動數據可能使 iOS 的本機 VPN 迴路無法連線；目前核心建議使用 Wi‑Fi。只有行動數據時，可先連接 LocalDevVPN，再暫時開啟飛航模式並返回啟用 JIT；首次下載元件仍需網路。Playport 無法替你切換系統網路，遊戲結束後的 App 重啟也可能需要本機隧道。")
+        SettingsNote(text: "啟動時會先嘗試實際連線與 JIT，不會因 VPN 顯示關閉就攔截。已下載的元件與已掛載的開發者映像可供離線嘗試；實際啟用失敗後才需開啟 LocalDevVPN 重試。首次下載元件仍需網路，行動數據可能影響 iOS 本機迴路。")
         SettingsInfoRow(id: "setup:jit-engine", title: "Windows 指令轉譯", subtitle: "目前核心需要 JIT。UTM SE 使用另一種較慢的解譯器，不能直接套用至此核心。", value: "JIT")
         SettingsNote(text: "JIT 啟用完成、遊戲開始後，可手動恢復行動數據，JIT 本身不需持續連網；App 被系統結束或重新啟動後仍需再次啟用。自己的個人熱點無法讓同一支手機連回自己，也不能把行動數據偽裝成 Wi‑Fi。")
         PadRow(id: "set:setup:vpn", title: "LocalDevVPN", subtitle: "JIT reaches this phone through it",

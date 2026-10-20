@@ -72,6 +72,7 @@ enum JitProvider {
         var helper: HelperOutcome?
         let method = Self.method
         log("method \(method.rawValue)" + (inLiveContainer ? " (in LiveContainer)" : ""))
+        log("launch-direct-v1: pid=\(getpid()); actual debugger/pool handshake decides readiness; no VPN route gate")
         if debuggerAttached {
             log("debugger already attached; \(method.label) not asked")
         } else {

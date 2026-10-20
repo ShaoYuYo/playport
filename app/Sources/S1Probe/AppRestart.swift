@@ -25,6 +25,7 @@
 //   close Playport and launch it again (with JIT), and the page offers Close Playport.
 
 import Foundation
+import PlayportKit
 import Relaunch
 import SwiftUI
 
@@ -35,7 +36,7 @@ final class AppRestart: ObservableObject {
     /// Between asking and this process's end: the UI shows a black screen, no text (RootView).
     @Published private(set) var restarting = false
     private var waiting: Record?
-    /// LocalDevVPN was opened once for this restart: the request goes next, tunnel or not.
+    /// LocalDevVPN recovery was offered after a failed real request, at most once.
     private var askedVPN = false
 
     #if !PLAYPORT_RELEASE
@@ -100,18 +101,8 @@ final class AppRestart: ObservableObject {
     }
 
     private func send(_ r: Record) {
-        // The request goes over LocalDevVPN's tunnel: turn it on first (LocalDevVPN.swift).
-        if !askedVPN, !LocalDevVPN.tunnelUp {
-            askedVPN = true
-            LocalDevVPN.connect { outcome in
-                if outcome == .notInstalled {
-                    AppRestart.shared.failed("LocalDevVPN is not installed", r)
-                } else {
-                    AppRestart.shared.send(r)
-                }
-            }
-            return
-        }
+        // Try CoreDevice first. A missing utun route is not a failed request.
+        Self.log("launch-direct-v1: restart request before VPN recovery=\(!askedVPN)")
         do {
             try JSONEncoder().encode(r).write(to: Self.url, options: .atomic)
         } catch {
@@ -130,6 +121,18 @@ final class AppRestart: ObservableObject {
     /// The request returned: the service replied (this process should be gone
     /// by now) or it failed. Either way this process stays, and says so.
     private func failed(_ failure: String?, _ r: Record) {
+        // Only an actual failed request allows VPN recovery. Do not retry a
+        // successful response: it may be replacing the process asynchronously.
+        if JitLaunchPolicy.recoverVPN(requestFailed: failure != nil,
+                                     recoveryAttempted: askedVPN, tunnelUp: LocalDevVPN.tunnelUp) {
+            askedVPN = true
+            Self.log("launch-direct-v1: real restart request failed; offering VPN recovery")
+            LocalDevVPN.connect { outcome in
+                if outcome == .connected { self.send(r) }
+                else { self.failed(failure, r) }
+            }
+            return
+        }
         try? FileManager.default.removeItem(at: Self.url)
         #if !PLAYPORT_RELEASE
         restartFailed?()

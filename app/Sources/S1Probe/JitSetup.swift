@@ -28,7 +28,8 @@ final class JitSetup: ObservableObject {
 
 
     /// Same entry for the game button and driver. Existing credentials with an
-    /// active VPN do not require another sheet/check before each ordinary Play.
+    /// existing pairing do not require a VPN route precheck. The actual helper
+    /// attempt decides whether local access works, including while offline.
     var isActive: Bool { presented || visible || dismissing }
 
     func ensureReady() async -> Bool {
@@ -43,7 +44,10 @@ final class JitSetup: ObservableObject {
         // JIT from another app (JitMethod): that app has its own pairing and tunnel.
         guard JitProvider.method.usesPairing else { return true }
         do {
-            if try BuiltInJit.storedPairingData() != nil, LocalDevVPN.tunnelUp { return true }
+            if try BuiltInJit.storedPairingData() != nil {
+                BuiltInJitStatus.log("launch-direct-v1: pairing present; attempting JIT before any VPN recovery")
+                return true
+            }
         } catch { /* Present a recoverable Keychain error, not an automatic replacement. */ }
         return await withCheckedContinuation { continuation in
             waiter = continuation

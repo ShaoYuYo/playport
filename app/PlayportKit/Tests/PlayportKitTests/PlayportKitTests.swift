@@ -1848,9 +1848,9 @@ final class SetupChecklistTests: XCTestCase {
         f.pairing = true
         XCTAssertEqual(SetupChecklist.beforeLaunch(f), .go)
         f.tunnelUp = false
-        XCTAssertEqual(SetupChecklist.beforeLaunch(f), .fixesItself(.vpn))
+        XCTAssertEqual(SetupChecklist.beforeLaunch(f), .go)
         f.tunnelUp = nil
-        XCTAssertEqual(SetupChecklist.beforeLaunch(f), .fixesItself(.vpn))
+        XCTAssertEqual(SetupChecklist.beforeLaunch(f), .go)
         // A controller and Steam never stop a launch; the launch screen names them.
         XCTAssertEqual(SetupChecklist.notes(f, steamGame: true).count, 2)
         XCTAssertEqual(SetupChecklist.notes(f, steamGame: false).count, 1)

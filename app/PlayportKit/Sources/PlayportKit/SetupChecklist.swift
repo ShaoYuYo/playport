@@ -193,7 +193,8 @@ public enum SetupChecklist {
         case needs(SetupStep, String)
     }
 
-    /// The check a Play runs before JIT: the pairing, then LocalDevVPN. A
+    /// The check a Play runs before JIT: the pairing. The helper attempts
+    /// the actual connection; a route snapshot must not veto a launch. A
     /// controller and Steam never stop a launch; `notes` names them. JIT from
     /// another app (StikDebug, LiveContainer) is that app's to set up: the
     /// launch goes on and waits for it.
@@ -203,7 +204,6 @@ public enum SetupChecklist {
             return f.pairsOnPhone ? .fixesItself(.pairing)
                 : .needs(.pairing, "Playport needs a pairing file to run games. Choose it from Files on the Pairing file step.")
         }
-        if f.tunnelUp != true { return .fixesItself(.vpn) }
         return .go
     }
 
