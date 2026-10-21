@@ -1,0 +1,50 @@
+From e1cc00ea58ea47260ce208cf5fe220c8f0b0d163 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Tue, 20 Oct 2026 20:03:02 +0800
+Subject: [PATCH] ntdll: honor the kernel virtual address ceiling
+
+Use the kernel task ceiling in both directions, avoiding repeated 786306-call scans above it. Fall back to the hint walk if the query is invalid.
+
+Class: upstream-bug
+Evidence: docs/evidence/2026-10-20-riddle-display-and-va.md
+Offered-upstream: no
+---
+ build/ntdll-unix/virtual_ios.c | 15 ++++++++-------
+ 1 file changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/build/ntdll-unix/virtual_ios.c b/build/ntdll-unix/virtual_ios.c
+index 31ebafa..d718b17 100644
+--- a/build/ntdll-unix/virtual_ios.c
++++ b/build/ntdll-unix/virtual_ios.c
+@@ -13625,10 +13625,8 @@ static void *get_host_addr_space_limit(void)
+          * hint to be honoured. It is EXCLUSIVE, which is what is_beyond_limit()
+          * wants, matching the ml122 note above.
+          *
+-         * Only ever RAISE the walk's answer, never lower it: the walk is proven
+-         * on hardware, and a device reporting a small or bogus max_address must
+-         * not shrink a limit that already works. Both values are logged so the
+-         * two can be compared on any device. */
++         * The kernel bound is authoritative in both directions. A successful
++         * mmap hint is not proof that the requested address was mapped. */
+         void *walked = (void *)(addr << 1);
+         task_vm_info_data_t vmi;
+         mach_msg_type_number_t cnt = TASK_VM_INFO_COUNT;
+@@ -13637,9 +13635,12 @@ static void *get_host_addr_space_limit(void)
+         {
+             void *kern = (void *)(uintptr_t)vmi.max_address;
+ 
+-            dprintf( 2, "[va-limit] ml749 walk=%p kernel_max=%p -> %s\n",
+-                     walked, kern, kern > walked ? "USING KERNEL (walk underestimated)" : "keeping walk" );
+-            if (kern > walked && (uintptr_t)kern >= 0x100000000ULL) return kern;
++            dprintf( 2, "[va-limit-v2] walk=%p kernel_max=%p selected=%p\n",
++                     walked, kern, (uintptr_t)kern >= 0x100000000ULL ? kern : walked );
++            /* The hint walk can overshoot the task's real exclusive ceiling.
++             * Scanning an impossible high band costs hundreds of thousands of
++             * failed Mach mappings per ordinary stack allocation. */
++            if ((uintptr_t)kern >= 0x100000000ULL) return kern;
+         }
+         else dprintf( 2, "[va-limit] ml749 walk=%p kernel_max=UNAVAILABLE -> keeping walk\n", walked );
+ 
+-- 
+2.53.0.windows.3
+

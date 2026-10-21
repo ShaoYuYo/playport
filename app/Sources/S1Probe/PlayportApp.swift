@@ -47,6 +47,7 @@ struct RootView: View {
     @ObservedObject private var web = GameWebSheet.shared
     @ObservedObject private var restart = AppRestart.shared
     @ObservedObject private var setup = JitSetup.shared
+    @ObservedObject private var appleMemory = AppleMemoryModel.shared
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The page has dived away after Play (0.7 s): the shell leaves the hierarchy.
@@ -126,6 +127,7 @@ struct RootView: View {
         // `playport://` only brings Playport back to the front (LocalDevVPN's
         // return); what a URL carries does nothing (decision 0012).
         .onOpenURL { _ in }
+        .sheet(isPresented: Binding(get: { appleMemory.presented }, set: { if !$0 { appleMemory.close() } })) { AppleMemoryView() }
         // Why a launch did not end cleanly (here, or in the process before a restart),
         // or why Playport could not restart itself (UI/LaunchViews.swift, LaunchMessage).
         // A step that failed shows on the launch failure screen instead (PadModal).

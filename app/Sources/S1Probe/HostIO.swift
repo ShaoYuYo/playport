@@ -602,13 +602,20 @@ final class PacedMetalLayer: CAMetalLayer {
     static var lastPresented: (any MTLTexture)? { shown.withLockUnchecked { $0 } }
 
     private static let firstFrame = OSAllocatedUnfairLock<(() -> Void)?>(uncheckedState: nil)
+    private static let firstDrawable = OSAllocatedUnfairLock<(() -> Void)?>(uncheckedState: nil)
+    private static let firstRequest = OSAllocatedUnfairLock<(() -> Void)?>(uncheckedState: nil)
+    private let recovery = OSAllocatedUnfairLock(initialState: DrawableRecovery())
 
     /// 0 for none. Set before the runtime starts; read on the encode thread.
     static func limit(fps: Int) { pacer.withLock { $0 = FramePacer(fps: fps) } }
 
-    /// Runs `then` once, on the encode thread, when the game next asks for a
-    /// drawable: its first frame (LaunchCoordinator's `first frame` mark).
+    /// Runs once only after Metal confirms a drawable was presented.
+    /// A drawable request or a nil return is not a visible first frame.
     static func onFirstFrame(_ then: @escaping () -> Void) { firstFrame.withLockUnchecked { $0 = then } }
+    static func onFirstDrawable(_ then: @escaping () -> Void) { firstDrawable.withLockUnchecked { $0 = then } }
+    /// Uncover the surface on demand, even if acquisition fails while covered.
+    /// This is a bootstrap/UI event, never proof of a rendered frame.
+    static func onFirstDrawableRequest(_ then: @escaping () -> Void) { firstRequest.withLockUnchecked { $0 = then } }
 
     #if !PLAYPORT_RELEASE
     private static let drawables = OSAllocatedUnfairLock(initialState: 0)
@@ -629,6 +636,7 @@ final class PacedMetalLayer: CAMetalLayer {
     #endif
 
     override func nextDrawable() -> (any CAMetalDrawable)? {
+        if let then = Self.firstRequest.withLockUnchecked({ h in defer { h = nil }; return h }) { then() }
         let pacingStart = CACurrentMediaTime()
         Self.health.withLock { $0.requested(at: pacingStart) }
         let deadline = Self.pacer.withLock { pacingStart + $0.delay(now: pacingStart) }
@@ -636,6 +644,11 @@ final class PacedMetalLayer: CAMetalLayer {
         let drawable = super.nextDrawable()
         let t1 = CACurrentMediaTime()
         let succeeded = drawable != nil
+        let retry = recovery.withLock { $0.returned(succeeded: succeeded) }
+        if retry.report {
+            HostIO.log("drawable-recovery-v1: nil device=\(device?.name ?? "none") format=\(pixelFormat.rawValue) pixels=\(Int(drawableSize.width))x\(Int(drawableSize.height)) bounds=\(Int(bounds.width))x\(Int(bounds.height)) hidden=\(isHidden) opacity=\(opacity)")
+        }
+        if retry.delay > 0 { Thread.sleep(forTimeInterval: retry.delay) }
         let wait = succeeded ? FramePacer.remainingDelay(deadline: deadline, now: t1) : 0
         if wait > 0 { Thread.sleep(forTimeInterval: wait) }
         let returned = CACurrentMediaTime()
@@ -648,8 +661,9 @@ final class PacedMetalLayer: CAMetalLayer {
             guard let t = (d as? CAMetalDrawable)?.texture else { return }
             Self.shown.withLockUnchecked { $0 = t }
             Self.health.withLock { $0.presented(at: d.presentedTime > 0 ? d.presentedTime : CACurrentMediaTime()) }
+            if let then = Self.firstFrame.withLockUnchecked({ h in defer { h = nil }; return h }) { then() }
         }
-        if let then = Self.firstFrame.withLockUnchecked({ h in defer { h = nil }; return h }) { then() }
+        if succeeded, let then = Self.firstDrawable.withLockUnchecked({ h in defer { h = nil }; return h }) { then() }
         return drawable
     }
 }
@@ -691,6 +705,12 @@ final class GameSurfaceView: UIView {
         super.init(frame: .zero)
         backgroundColor = .black
         layer.contentsGravity = .resizeAspect
+        if let metal = layer as? CAMetalLayer {
+            metal.device = MTLCreateSystemDefaultDevice()
+            metal.pixelFormat = .bgra8Unorm
+            metal.framebufferOnly = false
+            metal.allowsNextDrawableTimeout = true
+        }
         isMultipleTouchEnabled = true
         // Counted only (hostio: input … hover=N): whether iOS shows a mouse to
         // UIKit as a hovering pointer when GCMouse's handlers stay silent.
@@ -731,14 +751,29 @@ final class GameSurfaceView: UIView {
         // Landscape before the runtime starts, so the swap chain is made at the final size.
         window.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
         window.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape))
-        if !registered, let layer = layer as? CAMetalLayer {
+        configureRenderSize(TitleScreen.pixelSize)
+        registerSurfaceIfReady()
+        becomeFirstResponder()   // hardware keys come here
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        configureRenderSize(TitleScreen.pixelSize)
+        registerSurfaceIfReady()
+    }
+
+    private func registerSurfaceIfReady() {
+        if !registered, let layer = layer as? CAMetalLayer,
+           DrawableRecovery.canRegister(width: bounds.width, height: bounds.height,
+               pixelsWide: layer.drawableSize.width, pixelsHigh: layer.drawableSize.height,
+               hasDevice: layer.device != nil, inWindow: window != nil) {
             registered = true
             HostIO.shared.gameLayer = layer
             MetalHUD.show(on: layer)
             madeira_display_set_layer(layer)
             HostIO.surfaceReady.signal()
+            HostIO.log("drawable-recovery-v1: registered usable surface pixels=\(Int(layer.drawableSize.width))x\(Int(layer.drawableSize.height))")
         }
-        becomeFirstResponder()   // hardware keys come here
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) { forward(touches) }

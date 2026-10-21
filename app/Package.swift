@@ -62,6 +62,7 @@ let package = Package(
         .package(path: "EpicClient"),
         // The product UI's catalogue, adoption and launch options, tested on the Linux host.
         .package(path: "PlayportKit"),
+        .package(path: "AppleAccountKit"),
     ],
     targets: [
         .target(
@@ -157,7 +158,8 @@ let package = Package(
                            .product(name: "SteamClientKit", package: "SteamClient"),
                            .product(name: "GOGClientKit", package: "GOGClient"),
                            .product(name: "EpicClientKit", package: "EpicClient"),
-                           .product(name: "PlayportKit", package: "PlayportKit")]
+                           .product(name: "PlayportKit", package: "PlayportKit"),
+                           .product(name: "AppleAccountKit", package: "AppleAccountKit")]
                 + ["Relaunch"] + (release ? [] : ["AuthProbe"]),
             path: "Sources/S1Probe",
             // Runtime/ ships at the app root through xtool.yml `resources`, not

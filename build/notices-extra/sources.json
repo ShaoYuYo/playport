@@ -29,6 +29,34 @@
       "for": "the plist_ffi 0.1.6 crate, which has no licence file anywhere (docs/release-audits/stikjit-rust.md, 2026-09-30); owner's decision 0039",
       "derived_from": "the crate's Cargo.toml license and authors fields",
       "sha256": "8c3d4429551e42f691f4ea29e14743ed31ae18d7728227b20e0c219673ab49a0"
+    },
+    "AppleAccount-SRP-LICENSE": {
+      "repository": "https://github.com/adam-fowler/swift-srp",
+      "commit": "ce202c48f8ca68f44b71732f945eb8221d6fe135",
+      "path": "LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "for": "AppleAccountKit pinned dependencies and SRP protocol reference; no OpenSSL-linked dependency ships in the Apple target"
+    },
+    "AppleAccount-CryptoSwift-CONTRIBUTORS.txt": {
+      "repository": "https://github.com/krzyzanowskim/CryptoSwift",
+      "commit": "e45a26384239e028ec87fbcc788f513b67e10d8f",
+      "path": "CONTRIBUTORS.txt",
+      "sha256": "3217eb798fc7830da82b719ddf15f086afa4480285592c5dd181dde643755e26",
+      "for": "AppleAccountKit pinned dependencies and SRP protocol reference; no OpenSSL-linked dependency ships in the Apple target"
+    },
+    "AppleAccount-CryptoSwift-LICENSE": {
+      "repository": "https://github.com/krzyzanowskim/CryptoSwift",
+      "commit": "e45a26384239e028ec87fbcc788f513b67e10d8f",
+      "path": "LICENSE",
+      "sha256": "e4ea9188602dd4217309aec044481b0a7d2f9d539b1d1673b9a1809709c804e0",
+      "for": "AppleAccountKit pinned dependencies and SRP protocol reference; no OpenSSL-linked dependency ships in the Apple target"
+    },
+    "AppleAccount-BigInt-LICENSE.md": {
+      "repository": "https://github.com/attaswift/BigInt",
+      "commit": "e07e00fa1fd435143a2dcf8b7eec9a7710b2fdfe",
+      "path": "LICENSE.md",
+      "sha256": "c3dfd0dca467f6d198bf365a954d4be6cb6b0e3d848ec724f86e5f579ca38d9e",
+      "for": "AppleAccountKit pinned dependencies and SRP protocol reference; no OpenSSL-linked dependency ships in the Apple target"
     }
   }
 }

@@ -504,11 +504,15 @@ enum LaunchCoordinator {
                                            steamAppID: r.steamAppID, fex: r.fex)
         step(.startingGame)
         let frame = FirstDrawable()
-        defer { PacedMetalLayer.onFirstFrame { } }
+        defer { PacedMetalLayer.onFirstFrame { }; PacedMetalLayer.onFirstDrawable { }; PacedMetalLayer.onFirstDrawableRequest { } }
+        PacedMetalLayer.onFirstDrawableRequest {
+            mark("surface drawable requested")
+            step(.drawing)
+        }
+        PacedMetalLayer.onFirstDrawable { mark("first usable drawable") }
         PacedMetalLayer.onFirstFrame {
             frame.mark()
             mark("first frame")
-            step(.drawing)
         }
         let pool = PoolLog()
         let t0 = Date()

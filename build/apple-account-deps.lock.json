@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "native_pins_sha256": "ce677c8a6b43bf2d4ec0a70998f44782968c18b3ae23af314907e35d9949c8ff",
+  "baseline_inventory_sha256": "564f1474bf9fe139f11a814cdbd29c606c31f4fdb1f0c2af483148dcf6fcee55",
+  "files": [
+    {
+      "name": "AppleAccount-SRP-LICENSE",
+      "repository": "https://github.com/adam-fowler/swift-srp",
+      "commit": "ce202c48f8ca68f44b71732f945eb8221d6fe135",
+      "path": "LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "name": "AppleAccount-CryptoSwift-CONTRIBUTORS.txt",
+      "repository": "https://github.com/krzyzanowskim/CryptoSwift",
+      "commit": "e45a26384239e028ec87fbcc788f513b67e10d8f",
+      "path": "CONTRIBUTORS.txt",
+      "sha256": "3217eb798fc7830da82b719ddf15f086afa4480285592c5dd181dde643755e26"
+    },
+    {
+      "name": "AppleAccount-CryptoSwift-LICENSE",
+      "repository": "https://github.com/krzyzanowskim/CryptoSwift",
+      "commit": "e45a26384239e028ec87fbcc788f513b67e10d8f",
+      "path": "LICENSE",
+      "sha256": "e4ea9188602dd4217309aec044481b0a7d2f9d539b1d1673b9a1809709c804e0"
+    },
+    {
+      "name": "AppleAccount-BigInt-LICENSE.md",
+      "repository": "https://github.com/attaswift/BigInt",
+      "commit": "e07e00fa1fd435143a2dcf8b7eec9a7710b2fdfe",
+      "path": "LICENSE.md",
+      "sha256": "c3dfd0dca467f6d198bf365a954d4be6cb6b0e3d848ec724f86e5f579ca38d9e"
+    }
+  ]
+}

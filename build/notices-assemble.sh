@@ -229,6 +229,11 @@ tar_ GnuTLS-COPYING.LESSERv2.txt gnutls-3.8.9.tar.xz gnutls-3.8.9/COPYING.LESSER
 tar_ Nettle-COPYING.LESSERv3.txt nettle-3.10.1.tar.gz nettle-3.10.1/COPYING.LESSERv3
 tar_ Nettle-COPYINGv2.txt nettle-3.10.1.tar.gz nettle-3.10.1/COPYINGv2
 
+# Apple account setup: fixed revisions and hashes in apple-account-deps.lock.json.
+for f in AppleAccount-SRP-LICENSE AppleAccount-CryptoSwift-CONTRIBUTORS.txt AppleAccount-CryptoSwift-LICENSE AppleAccount-BigInt-LICENSE.md; do
+    cp_ "$f" "$REPO/build/notices-extra/$f"
+done
+
 python3 "$REPO/build/notices-provenance.py" copies "$REPO" "$OUT/.copy-sources.tsv" "$OUT/notice-origins.json"
 python3 "$REPO/build/notices-provenance.py" derived "$REPO" "$OUT/.derived-sources.tsv" "$OUT/derived-origins.json"
 rm -- "$OUT/.copy-sources.tsv" "$OUT/.derived-sources.tsv"

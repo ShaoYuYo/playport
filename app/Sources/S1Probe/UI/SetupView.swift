@@ -423,18 +423,7 @@ enum SetupRing {
     /// A on Memory: how to get a copy signed with Increased Memory Limit
     /// (README "Install", docs/DISTRIBUTION.md section 6).
     static func memoryHowTo() {
-        let bundleID = Bundle.main.bundleIdentifier ?? "Unknown"
-        let status = MemoryLimit.entitled.map { $0 ? "目前簽章已具備權限。" : "目前簽章未具備權限。" } ?? "無法讀取目前簽章權限。"
-        PadModal.shared.picker(
-            title: "增加記憶體權限／GetMoreRam",
-            note: status + "\n目前 App ID：" + bundleID + "\nPlayport 已請求 Increased Memory Limit，但最終權限由側載簽章決定。GetMoreRam 需要以側載所用的 Apple 帳號登入，在 App IDs 選取這個 App ID 並加入 Increased Memory Limit，再用原側載工具覆蓋安裝 Playport，保留資料。若側載工具改過 App ID，請以目前顯示的為準。\n這不是執行中可調高的 RAM 開關；權限生效後，可用上限仍由 iOS 與裝置決定。Playport 不會在這裡收取 Apple 帳號密碼。",
-            options: [PadOption(id: "ok", label: "完成"),
-                      PadOption(id: "copy", label: "複製目前 App ID"),
-                      PadOption(id: "project", label: "開啟 GetMoreRam 官方專案")], selected: "ok") { action in
-                if action == "copy" { UIPasteboard.general.string = bundleID }
-                if action == "project", let url = URL(string: "https://github.com/hugeBlack/GetMoreRam") {
-                    UIApplication.shared.open(url)
-                }
-            }
+        PadModal.shared.close()
+        AppleMemoryModel.shared.show()
     }
 }

@@ -209,7 +209,7 @@ struct SetupCheckSettings: View {
                         value: reading.entitled.map { $0 ? "On" : "Off" } ?? "Unknown")
         SettingsInfoRow(id: "setup:pool", title: "JIT memory", value: MemoryNeed.format(mb: MemoryLimit.poolMB(reading)))
         PadRow(id: "set:setup:memory-help", title: "增加記憶體權限／GetMoreRam",
-               subtitle: "檢查目前簽章並查看如何啟用；需要重新簽署安裝，不會憑空增加實體 RAM。",
+               subtitle: "內置 Apple 登入與 App ID 權限管理；啟用後仍需重新簽署安裝。",
                value: reading.entitled.map { $0 ? "已具備權限" : "尚未具備" } ?? "未知",
                accessory: .chevron, hint: "查看") { SetupRing.memoryHowTo() }
         #if !PLAYPORT_RELEASE

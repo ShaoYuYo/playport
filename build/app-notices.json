@@ -27,7 +27,8 @@
     "StikJIT": "PlugIns/PlayportJIT.appex/Frameworks/StikJIT.framework (prebuilt StikJIT 1.9.0)",
     "rust-std": "the Rust standard library linked into libidevice_ffi.a (P10-idevice)",
     "llvm-mingw-runtime": "llvm-mingw's libc++, libc++abi, libunwind and compiler-rt code in every PE DLL built with it",
-    "mingw-crt": "the mingw-w64 CRT and headers in every PE DLL built with llvm-mingw"
+    "mingw-crt": "the mingw-w64 CRT and headers in every PE DLL built with llvm-mingw",
+    "AppleAccountKit": "Native Apple account and memory capability management; pinned MIT BigInt and zlib CryptoSwift; attributed Apache-2.0 SRP protocol reference"
   },
   "components": [
     {
@@ -296,6 +297,19 @@
         "mingw-source-*",
         "cephes-LICENSE.txt"
       ]
+    },
+    {
+      "name": "Apple account cryptography libraries",
+      "covers": [
+        "AppleAccountKit"
+      ],
+      "licence": "MIT, zlib; protocol reference Apache-2.0",
+      "include": [
+        "AppleAccount-SRP-LICENSE",
+        "AppleAccount-CryptoSwift-CONTRIBUTORS.txt",
+        "AppleAccount-CryptoSwift-LICENSE",
+        "AppleAccount-BigInt-LICENSE.md"
+      ]
     }
   ],
   "exclude": [
@@ -325,6 +339,7 @@
   "credits": [
     "This software is based in part on the work of the Independent JPEG Group.",
     "Regular-expression code: copyright 1992, 1993, 1994 Henry Spencer, and copyright 1992, 1993, 1994 The Regents of the University of California. This is an altered version of the original software (see LLVM-Support-COPYRIGHT.regex.txt).",
-    "Portions of this software are copyright © 2026 The FreeType Project (https://freetype.org). All rights reserved."
+    "Portions of this software are copyright \u00a9 2026 The FreeType Project (https://freetype.org). All rights reserved.",
+    "Apple account setup uses BigInt (MIT) and CryptoSwift (zlib). SRP formulae were cross-checked against Adam Fowler's swift-srp (Apache-2.0); its licence is included as attribution. Exact dependency revisions are recorded in apple-account-deps.lock.json."
   ]
 }
