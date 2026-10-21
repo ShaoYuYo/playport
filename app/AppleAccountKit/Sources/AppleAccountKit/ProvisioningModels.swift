@@ -9,6 +9,7 @@ public enum AppleProvisioningError: Error, LocalizedError {
         case .invalidReply: return "Apple 回覆格式無法辨識，無法確認設定結果。請重新整理。"
         case .http(let status): return "服務回覆 HTTP \(status)，無法確認設定結果。請稍後重試；如持續發生，請提供這個狀態碼。"
         case .transport: return "無法安全連接服務，請檢查網路後重試。"
+        case .rejected(-80045): return "Apple 暫時拒絕此登入用戶端（-80045），未完成帳號驗證。這個代碼不能用來判定密碼錯誤；請稍後重試或使用原側載工具處理權限。"
         case .rejected(let code): return "Apple 拒絕要求（\(code)）。請確認帳號、驗證碼與開發者協議。"
         case .cancelled: return "已取消登入。"
         case .unsupportedAuthentication: return "此帳號的驗證方式目前無法完成，未更動權限。"

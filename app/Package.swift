@@ -113,7 +113,7 @@ let package = Package(
             name: "WinIOS",
             cSettings: [
                 // Madeira.xcodeproj builds it with CLANG_ENABLE_OBJC_ARC = YES.
-                .unsafeFlags(["-fobjc-arc"]),
+                .unsafeFlags(["-fobjc-arc"] + (release ? ["-O2"] : [])),
             ],
             linkerSettings: [
                 .linkedFramework("UIKit"),
@@ -166,7 +166,7 @@ let package = Package(
             // as a SwiftPM resource bundle: ntdll resolves nls/ and <arch>-windows/
             // against the executable's directory. Dev/ is the UI driver and the scripted pad.
             exclude: ["Runtime"] + (release ? ["Dev"] : []),
-            swiftSettings: release ? [.define("PLAYPORT_RELEASE")] : [],
+            swiftSettings: release ? [.define("PLAYPORT_RELEASE"), .unsafeFlags(["-O"], .when(configuration: .debug))] : [],
             linkerSettings: [
                 .linkedFramework("GameController"),
                 .linkedFramework("AVFAudio"),

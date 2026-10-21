@@ -58,8 +58,13 @@ public actor AppleMemoryClient {
         defer { transient?.invalidateAndCancel() }
         let (data, response) = try await (transient ?? http).data(for: request)
         guard let response = response as? HTTPURLResponse else { throw AppleProvisioningError.transport }
-        guard (200..<300).contains(response.statusCode) else { throw AppleProvisioningError.http(response.statusCode) }
         guard data.count <= 2 << 20 else { throw AppleProvisioningError.invalidReply }
+        if !(200..<300).contains(response.statusCode) {
+            if AppleRequestPolicy.grandSlam(request.url), let code = AppleRequestPolicy.rejection(in: data) {
+                throw AppleProvisioningError.rejected(code)
+            }
+            throw AppleProvisioningError.http(response.statusCode)
+        }
         return data
     }
     private func dictionary(_ data: Data, json: Bool = false) throws -> [String: Any] {
@@ -77,6 +82,7 @@ public actor AppleMemoryClient {
         request.setValue(AppleRequestPolicy.clientInfo(clientInfo, url: url), forHTTPHeaderField: "X-MMe-Client-Info")
         request.setValue("close", forHTTPHeaderField: "Connection")
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        for (key, value) in AppleRequestPolicy.authenticationHeaders(url) { request.setValue(value, forHTTPHeaderField: key) }
         if let body {
             request.httpBody = try json ? JSONSerialization.data(withJSONObject: body)
                 : PropertyListSerialization.data(fromPropertyList: body, format: .xml, options: 0)

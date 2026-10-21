@@ -134,6 +134,22 @@ final class TitleMemoryTests: XCTestCase {
         XCTAssertFalse(TitleMemory(steamAppID: 1277930, i386: false, enabled: true).engineProfile)
     }
 
+    func testD3D9HasOnePresentationLimiterAndPreservesOverrides() {
+        let base = ["DXVK_CONFIG": "dxvk.tilerMode = False;d3d9.presentInterval = 2", "OTHER": "kept"]
+        for id: UInt32 in [1144400, 2458530, 1277930] {
+            let profile = TitleMemory(steamAppID: id, i386: true, enabled: true)
+            let result = profile.d3d9PresentationEnvironment(over: base)
+            XCTAssertEqual(result["DXVK_CONFIG"], "d3d9.presentInterval = 0;d3d9.maxFrameRate = -1;" + base["DXVK_CONFIG"]!)
+            XCTAssertEqual(result["OTHER"], "kept")
+            XCTAssertEqual(profile.d3d9PresentationEnvironment(over: [:])["DXVK_CONFIG"], "d3d9.presentInterval = 0;d3d9.maxFrameRate = -1")
+        }
+        for profile in [TitleMemory(steamAppID: 1277930, i386: true, enabled: false),
+                        TitleMemory(steamAppID: 1277930, i386: false, enabled: true),
+                        TitleMemory(steamAppID: 42, i386: true, enabled: true)] {
+            XCTAssertEqual(profile.d3d9PresentationEnvironment(over: base), base)
+        }
+    }
+
     func testExplicitSettingsWinAndUnrelatedArgumentsSurvive() {
         let profile = TitleMemory(steamAppID: 1144400, i386: true, enabled: true)
         XCTAssertEqual(profile.config(over: [:]), ["cpu-count": "2"])

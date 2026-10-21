@@ -29,6 +29,18 @@ public struct TitleMemory: Equatable, Sendable {
         return result
     }
 
+    /// These measured i386 titles use DXVK's D3D9 presenter. The host already
+    /// limits drawable acquisition and iOS controls physical scanout. Avoid a
+    /// second D3D9 refresh limiter/FIFO cadence in front of that same surface.
+    /// Defaults go first so explicit player graphics options still win.
+    public func d3d9PresentationEnvironment(over base: [String: String]) -> [String: String] {
+        guard engineProfile else { return base }
+        var result = base
+        let defaults = "d3d9.presentInterval = 0;d3d9.maxFrameRate = -1"
+        result["DXVK_CONFIG"] = defaults + (base["DXVK_CONFIG"].map { ";" + $0 } ?? "")
+        return result
+    }
+
     public func arguments(over base: [String], frameLimit: Int? = nil, displayRefreshRate: Int? = nil) -> [String] {
         guard engineProfile else { return base }
         var result = base

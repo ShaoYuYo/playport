@@ -19,7 +19,9 @@ let package = Package(
         .library(name: "HostIOKit", targets: ["HostIOKit"]),
     ],
     targets: [
-        .target(name: "HostIOKit"),
+        // xtool uses debug configuration for the IPA. Keep per-frame pacing,
+        // input and health bookkeeping optimized on-device too.
+        .target(name: "HostIOKit", swiftSettings: [.unsafeFlags(["-O"], .when(platforms: [.iOS], configuration: .debug))]),
         .testTarget(name: "HostIOKitTests", dependencies: ["HostIOKit"]),
     ]
 )

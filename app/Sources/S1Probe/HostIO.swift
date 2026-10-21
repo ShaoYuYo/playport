@@ -589,13 +589,14 @@ final class PacedMetalLayer: CAMetalLayer {
         guard let s = health.withLock({ $0.sample(at: CACurrentMediaTime(), cpuSeconds: cpuSeconds) }) else { return nil }
         latest.withLock { $0 = s }
         let size = lastPresented.map { "\($0.width)x\($0.height)" } ?? "none"
+        let budget = " producer_over_60hz_budget=\(s.producerOverBudget) drawable_over_60hz_budget=\(s.drawableOverBudget)"
         return String(format: "render-health: fps=%.1f frames=%d gaps_over50ms=%d max_gap_ms=%.1f drawable_wait_avg_ms=%.1f drawable_wait_max_ms=%.1f failed=%d pixels=%@ pacer_wait_avg_ms=%.1f pacer_wait_max_ms=%.1f present_gap_avg_ms=%.1f present_jitter_ms=%.1f request_gap_max_ms=%.1f request_gap_avg_ms=%.1f producer_gap_avg_ms=%.1f producer_gap_max_ms=%.1f process_cpu_pct=%@ thermal=%@ low_power=%d",
             s.fps, s.frames, s.longGaps, s.maximumGapMS, s.averageDrawableWaitMS,
             s.maximumDrawableWaitMS, s.failedDrawables, size, s.averagePacerWaitMS, s.maximumPacerWaitMS,
             s.averagePresentationGapMS, s.presentationJitterMS, s.maximumRequestGapMS, s.averageRequestGapMS,
             s.averageProducerGapMS, s.maximumProducerGapMS,
             s.processCPUPercent.map { String(format: "%.1f", $0) } ?? "unknown",
-            ThermalLog.name(ProcessInfo.processInfo.thermalState), ProcessInfo.processInfo.isLowPowerModeEnabled ? 1 : 0)
+            ThermalLog.name(ProcessInfo.processInfo.thermalState), ProcessInfo.processInfo.isLowPowerModeEnabled ? 1 : 0) + budget
     }
 
     /// The frame on screen, nil before the first.

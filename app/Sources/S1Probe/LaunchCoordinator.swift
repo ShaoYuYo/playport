@@ -492,12 +492,19 @@ enum LaunchCoordinator {
 
         // After the session root started: its environment is the app's without the title's.
         var backend = r.graphics.runtimeEnvironment
-        #if !PLAYPORT_RELEASE
-        if !r.graphicsEnvironment.isEmpty {
-            log("graphics options: " + r.graphicsEnvironment.keys.sorted().map { "\($0)=\(r.graphicsEnvironment[$0]!)" }
-                .joined(separator: " "))
-            backend = r.graphics.environment(graphicsOptions: r.graphicsEnvironment)
+        if r.graphics == .vulkan {
+            backend = titleMemory.d3d9PresentationEnvironment(over: backend)
+            if titleMemory.engineProfile {
+                log("render-pacing-v1: KiriKiri D3D9 uses host drawable pacing; secondary D3D9 refresh limiter disabled; player graphics options take precedence")
+            }
         }
+        if !r.graphicsEnvironment.isEmpty {
+            for (key, value) in r.graphicsEnvironment {
+                if key == "DXVK_CONFIG", let own = backend[key] { backend[key] = own + ";" + value }
+                else { backend[key] = value }
+            }
+        }
+        #if !PLAYPORT_RELEASE
         backend.merge(Diagnostics.launchEnvironment(exe: r.exe, dir: dir, graphics: r.graphics, log: log)) { own, _ in own }
         #endif
         let environment = applyEnvironment(backend: backend.merging(steamEnvironment) { _, save in save },

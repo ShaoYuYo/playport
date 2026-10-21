@@ -26,4 +26,19 @@ final class DrawableRecoveryTests: XCTestCase {
         XCTAssertEqual(sample?.failedDrawables, 1000)
         XCTAssertEqual(sample?.fps, 0)
     }
+    func testProducerAndSurfaceBudgetMissesAreSeparateAndReset() {
+        var health = FrameHealth()
+        health.requested(at: 0)
+        health.drawable(at: 0, wait: 0.020, succeeded: true, returnedAt: 0.020)
+        health.requested(at: 0.070)
+        health.drawable(at: 0.070, wait: 0.001, succeeded: true, returnedAt: 0.071)
+        health.requested(at: 0.075)
+        let sample = health.sample(at: 2)
+        XCTAssertEqual(sample?.producerOverBudget, 1)
+        XCTAssertEqual(sample?.drawableOverBudget, 1)
+        let next = health.sample(at: 4)
+        XCTAssertEqual(next?.producerOverBudget, 0)
+        XCTAssertEqual(next?.drawableOverBudget, 0)
+        XCTAssertEqual(sample?.frames, 0) // Requests and waits are not frames.
+    }
 }

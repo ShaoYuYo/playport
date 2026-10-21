@@ -21,6 +21,9 @@ public struct FrameHealth: Sendable {
         /// submission and other waits; this is not a pure CPU or GPU timer.
         public let averageProducerGapMS: Double
         public let maximumProducerGapMS: Double
+        /// Counts above a 60 Hz frame budget, independently of the chosen cap.
+        public let producerOverBudget: Int
+        public let drawableOverBudget: Int
         /// All process threads combined: 100% means one fully occupied core.
         public let processCPUPercent: Double?
     }
@@ -34,6 +37,7 @@ public struct FrameHealth: Sendable {
     private var gapCount = 0, gapMean = 0.0, gapM2 = 0.0
     private var lastReturn: Double?, producerTotal = 0.0, producerMax = 0.0
     private var producerGaps = 0
+    private var producerOverBudget = 0, drawableOverBudget = 0
     private var cpuBaseline: (time: Double, seconds: Double)?
     public init() {}
 
@@ -44,6 +48,7 @@ public struct FrameHealth: Sendable {
         if let lastReturn, time >= lastReturn {
             let gap = time - lastReturn
             producerTotal += gap; producerMax = max(producerMax, gap); producerGaps += 1
+            if gap > 1.0 / 60 { producerOverBudget += 1 }
         }
         lastReturn = nil
         if let lastRequest, time >= lastRequest {
@@ -63,6 +68,7 @@ public struct FrameHealth: Sendable {
         lastReturn = max(returned, lastReturn ?? returned)
         totalWait += duration
         maxWait = max(maxWait, duration)
+        if duration > 1.0 / 60 { drawableOverBudget += 1 }
         totalPacerWait += max(0, pacerWait)
         maxPacerWait = max(maxPacerWait, max(0, pacerWait))
         if !succeeded { failures += 1 }
@@ -103,7 +109,8 @@ public struct FrameHealth: Sendable {
             maximumRequestGapMS: requestGap * 1000,
             averageRequestGapMS: requestGaps > 0 ? requestTotal * 1000 / Double(requestGaps) : 0,
             averageProducerGapMS: producerGaps > 0 ? producerTotal * 1000 / Double(producerGaps) : 0,
-            maximumProducerGapMS: producerMax * 1000, processCPUPercent: cpuPercent)
+            maximumProducerGapMS: producerMax * 1000, producerOverBudget: producerOverBudget,
+            drawableOverBudget: drawableOverBudget, processCPUPercent: cpuPercent)
         self.start = time
         frames = 0; gaps = 0; calls = 0; failures = 0
         maxGap = 0; totalWait = 0; maxWait = 0
@@ -111,6 +118,7 @@ public struct FrameHealth: Sendable {
         gapCount = 0; gapMean = 0; gapM2 = 0; requestGap = 0
         requestGaps = 0; requestTotal = 0
         producerTotal = 0; producerMax = 0; producerGaps = 0
+        producerOverBudget = 0; drawableOverBudget = 0
         return result
     }
 }
