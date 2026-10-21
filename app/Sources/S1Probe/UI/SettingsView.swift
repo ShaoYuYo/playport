@@ -51,14 +51,24 @@ struct SettingsView: View {
     @State private var scrollOffset: CGFloat = 0
 
     var body: some View {
-        HStack(alignment: .top, spacing: 22) {
-            sidebar.frame(width: 218)
-            content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        GeometryReader { geometry in
+            let layout = LauncherLayout(width: geometry.size.width)
+            Group {
+                if layout.stackedSettings {
+                    VStack(spacing: 14) {
+                        sidebar(horizontal: true).frame(height: 64)
+                        content
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: 20) {
+                        sidebar(horizontal: false).frame(width: layout.settingsSidebar)
+                        content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    }
+                }
+            }
+            .padding(.top, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .padding(.horizontal, 44).padding(.top, 12)
-        // The height the shell offers, from the top: a sidebar a few points taller must
-        // not push the shell's footer off its place.
-        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .top)
         .task(id: navigation.pageSection) {
             // A dev build's `open:settings#SECTION`.
             guard navigation.settings, let name = navigation.pageSection else { return }
@@ -71,23 +81,33 @@ struct SettingsView: View {
         }
     }
 
-    private var sidebar: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-        GlassEffectContainer(spacing: 0) {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(SettingsSection.shown, id: \.self) { s in
-                let on = navigation.settingsSection == s
-                GlassSidebarRowLabel(title: s.title, icon: sectionIcon(s), selected: on)
-                    .padItem(s.navItem, hint: "Open", cornerRadius: 13) {
-                        navigation.settingsSection = s
-                        SettingsRing.enter()
+    private func sidebar(horizontal: Bool) -> some View {
+        ScrollViewReader { scroll in
+            ScrollView(horizontal ? .horizontal : .vertical, showsIndicators: false) {
+                GlassEffectContainer(spacing: 6) {
+                    if horizontal {
+                        HStack(spacing: 10) { sectionLinks }.padding(8)
+                    } else {
+                        VStack(alignment: .leading, spacing: 10) { sectionLinks }.padding(8)
                     }
+                }
+            }
+            .onChange(of: focus.focused) { _, id in
+                guard let id, SettingsSection.isNavItem(id) else { return }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { scroll.scrollTo(id, anchor: .center) }
             }
         }
-        .padding(8)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: navigation.settingsSection)
+    }
+
+    private var sectionLinks: some View {
+        ForEach(SettingsSection.shown, id: \.self) { s in
+            GlassSidebarRowLabel(title: s.title, icon: sectionIcon(s), selected: navigation.settingsSection == s)
+                .padItem(s.navItem, hint: "Open", cornerRadius: 13) {
+                    navigation.settingsSection = s
+                    SettingsRing.enter()
+                }
         }
-        }
-        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: navigation.settingsSection)
     }
 
     private func sectionIcon(_ section: SettingsSection) -> String {
@@ -107,7 +127,9 @@ struct SettingsView: View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(LocalizedStringKey(navigation.settingsSection.title))
+                            .font(PP.display(24)).foregroundStyle(PP.text).padding(.bottom, 2)
                         section(navigation.settingsSection)
                             .id(navigation.settingsSection)
                             .transition(.opacity)

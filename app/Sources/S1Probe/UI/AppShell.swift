@@ -55,7 +55,7 @@ struct AppShell: View {
                     .padding(.horizontal, 12)
             }
             .frame(height: 52)
-            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            content.frame(maxWidth: .infinity, maxHeight: .infinity).padding(.horizontal, 16)
             // Reserve the ordinary footer's height without mounting a second footer
             // when a game panel moves the same controls to the leading edge.
             Color.clear.frame(height: router.controller == nil || panelUp ? 0 : 44 + Self.footerBottom)
@@ -401,16 +401,17 @@ private struct TopBar: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: openMenu) {
-                Image(systemName: "sidebar.left").font(.system(size: 17, weight: .medium)).frame(width: 42, height: 42)
+                Label("選單", systemImage: "sidebar.left").font(.system(size: 14, weight: .semibold))
+                    .padding(.horizontal, 14).frame(minHeight: 44)
             }
-            .buttonStyle(.plain).glassEffect(.regular.interactive(), in: Circle())
+            .buttonStyle(.plain).ppGlass(cornerRadius: 22)
             .accessibilityLabel("選單").accessibilityIdentifier("navigation-menu")
             if secondary {
                 Button { _ = nav.back() } label: {
                     Label("Back", systemImage: "chevron.left").font(.system(size: 14, weight: .semibold))
                         .padding(.horizontal, 14).padding(.vertical, 10)
                 }
-                .buttonStyle(.plain).glassEffect(.regular.interactive(), in: Capsule())
+                .buttonStyle(.plain).ppGlass(cornerRadius: 22)
                 .disabled(!nav.canGoBack).accessibilityIdentifier("navigation-back")
             }
             if !nav.onGamePage { Text(LocalizedStringKey(title)).font(.system(size: 16, weight: .semibold)) }

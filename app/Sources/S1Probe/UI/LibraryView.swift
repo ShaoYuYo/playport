@@ -128,7 +128,6 @@ private struct LibraryGridView: View {
     @State private var maxOffset = CGFloat.zero
     @State private var position = ScrollPosition(edge: .top)
 
-    private static let columns = 5
     private static let spacing = CGSize(width: 14, height: 16)
     private static let artHeight: CGFloat = 78
     private static let metaHeight: CGFloat = 16
@@ -177,7 +176,7 @@ private struct LibraryGridView: View {
                 }
                 .font(.system(size: 15, weight: .semibold)).frame(minHeight: 44)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).padding(.horizontal, 12).ppGlass(cornerRadius: 22)
             .accessibilityLabel("Filter & sort")
             .accessibilityIdentifier("library-sort")
             if library.scanning || model.gamesLoading { ProgressView().controlSize(.small) }
@@ -189,7 +188,7 @@ private struct LibraryGridView: View {
                 }
                 .frame(minWidth: 44, minHeight: 44)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).ppGlass(cornerRadius: 22)
             .accessibilityLabel("Search")
             .accessibilityIdentifier("library-search")
             if !grid.search.isEmpty {
@@ -222,14 +221,15 @@ private struct LibraryGridView: View {
 
     private func tiles(_ shown: [LibraryEntry], duplicateIDs: Set<String>, addTile: Bool) -> some View {
         GeometryReader { outer in
-            let width = outer.size.width - 2 * Self.inset
-            let tileWidth = (width - CGFloat(Self.columns - 1) * Self.spacing.width) / CGFloat(Self.columns)
+            let columns = LauncherLayout(width: outer.size.width).libraryColumns
+            let width = max(0, outer.size.width - 2 * Self.inset)
+            let tileWidth = (width - CGFloat(columns - 1) * Self.spacing.width) / CGFloat(columns)
             let tile = CGSize(width: tileWidth, height: min(220, tileWidth * 1.5))
             let pitch = CGSize(width: Self.spacing.width, height: Self.spacing.height + Self.metaGap + Self.metaHeight)
             let games = Dictionary(model.games.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             ScrollView(.vertical, showsIndicators: false) {
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(tile.width), spacing: Self.spacing.width, alignment: .top),
-                                             count: Self.columns),
+                                             count: columns),
                               alignment: .leading, spacing: Self.spacing.height) {
                         ForEach(shown) { entry in
                             LibraryTile(entry: entry, game: entry.appID.flatMap { games[$0] }, installs: installs,
@@ -254,7 +254,7 @@ private struct LibraryGridView: View {
                 })
                 // Every tile's art on screen, drawn or not: the ring's targets. The drawn
                 // ones report the same frames themselves.
-                .padFrames(offscreenFrames(shown.map { "lib:\($0.id)" } + (addTile ? [AddGameTile.item] : []), tile: tile, pitch: pitch),
+                .padFrames(offscreenFrames(shown.map { "lib:\($0.id)" } + (addTile ? [AddGameTile.item] : []), tile: tile, pitch: pitch, columns: columns),
                            hint: "Open")
                 .refreshable {
                     library.refresh()
@@ -284,10 +284,10 @@ private struct LibraryGridView: View {
     }
 
     /// The frames on screen of the tiles the viewport does not show, as the grid lays them out.
-    private func offscreenFrames(_ ids: [String], tile: CGSize, pitch: CGSize) -> [String: CGRect] {
+    private func offscreenFrames(_ ids: [String], tile: CGSize, pitch: CGSize, columns: Int) -> [String: CGRect] {
         guard viewport.width > 0 else { return [:] }
         let origin = CGPoint(x: viewport.minX + Self.inset, y: viewport.minY + Self.inset - offset)
-        let frames = LibraryList.tileFrames(count: ids.count, columns: Self.columns, tile: tile, spacing: pitch, origin: origin)
+        let frames = LibraryList.tileFrames(count: ids.count, columns: columns, tile: tile, spacing: pitch, origin: origin)
         var out: [String: CGRect] = [:]
         for (id, frame) in zip(ids, frames) where frame.maxY <= viewport.minY || frame.minY >= viewport.maxY {
             out[id] = frame

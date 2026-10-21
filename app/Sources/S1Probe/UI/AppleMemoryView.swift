@@ -19,7 +19,7 @@ final class AppleMemoryModel: ObservableObject {
     private let store = KeychainSecretStore(service: "dev.playport.apple-memory")
     private var client: AppleMemoryClient?
     private var job: Task<Void, Never>?
-    private var codeWaiter: CheckedContinuation<String, Error>?
+    private var verification: AppleVerificationCode?
     private var generation = 0
     func show() {
         guard !TitleLaunch.shared.running else { return }
@@ -33,13 +33,17 @@ final class AppleMemoryModel: ObservableObject {
         generation += 1; let id = generation
         let record = (try? store.read("anisette-identity"))?.value.map { $0 }
         let client = AppleMemoryClient(identityRecord: record.map { Data($0) })
+        let verification = AppleVerificationCode()
+        self.verification = verification
         self.client = client; busy = true; message = "正在安全登入 Apple…"
         job = Task {
-            defer { if id == generation { busy = false; job = nil } }
+            defer { if id == generation { verification.cancel(); self.verification = nil; needsCode = false; busy = false; job = nil } }
             do {
-                let values = try await client.signIn(email: email, password: password) { sms in
-                    try await self.code(sms: sms)
-                }
+                let values = try await client.signIn(email: email, password: password, verificationRequested: { sms in
+                    await self.showCode(sms: sms, generation: id)
+                }, verification: { _ in
+                    try await verification.value()
+                })
                 await saveIdentity(client)
                 guard id == generation, presented else { await client.forgetSession(); return }
                 teams = values
@@ -51,15 +55,14 @@ final class AppleMemoryModel: ObservableObject {
             }
         }
     }
-    private func code(sms: Bool) async throws -> String {
-        guard presented, !Task.isCancelled else { throw AppleProvisioningError.cancelled }
-        needsCode = true; message = sms ? "請輸入 Apple 傳送的六位簡訊驗證碼。" : "請輸入受信任裝置顯示的六位驗證碼。"
-        return try await withCheckedThrowingContinuation { codeWaiter = $0 }
+    private func showCode(sms: Bool, generation id: Int) {
+        guard id == generation, presented else { return }
+        needsCode = true
+        message = sms ? "請輸入 Apple 傳送的六位簡訊驗證碼。" : "請先在受信任裝置允許登入，再輸入顯示的六位驗證碼。"
     }
     func submitCode(_ value: String) {
-        guard value.count == 6, value.allSatisfy(\.isNumber) else { return }
-        let waiter = codeWaiter; codeWaiter = nil; needsCode = false
-        message = "正在驗證…"; waiter?.resume(returning: value)
+        guard needsCode, verification?.submit(value) == true else { return }
+        needsCode = false; message = "正在驗證…"
     }
     func choose(_ team: DeveloperTeam) {
         guard !busy, let client else { return }
@@ -93,7 +96,7 @@ final class AppleMemoryModel: ObservableObject {
     }
     func close() {
         generation += 1; job?.cancel(); job = nil
-        let waiter = codeWaiter; codeWaiter = nil; waiter?.resume(throwing: AppleProvisioningError.cancelled)
+        verification?.cancel(); verification = nil
         if let client { Task { await client.forgetSession() } }
         client = nil; teams = []; app = nil; team = nil; remoteEnabled = nil
         needsCode = false; busy = false; presented = false
@@ -107,59 +110,116 @@ struct AppleMemoryView: View {
     @State private var password = ""
     @State private var code = ""
     @State private var confirmsUpdate = false
+    @FocusState private var field: Field?
+    private enum Field { case email, password, code }
     var body: some View {
         NavigationStack {
-            Form {
-                Section("目前安裝") {
-                    LabeledContent("App ID", value: model.bundleID).textSelection(.enabled)
-                    LabeledContent("簽章記憶體權限", value: MemoryLimit.entitled.map { $0 ? "已具備" : "尚未具備" } ?? "未確認")
-                    Text("此功能會更新 Apple 帳號中的 App ID；仍須重新簽署並覆蓋安裝才會生效，無法增加實體 RAM。")
-                }
-                if model.teams.isEmpty && !model.needsCode {
-                    Section("內置 Apple 登入") {
-                        TextField("Apple 帳號", text: $email).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        SecureField("密碼", text: $password).textContentType(.password)
-                        Text("密碼只用於與 Apple 進行 SRP 驗證，不會儲存或寫入報告。驗證資料服務使用 ani.sidestore.io，不會收到 Apple 密碼或登入 token；其裝置驗證資料保存在本機鑰匙圈。")
-                            .font(.footnote)
-                        Button("登入 Apple") { model.signIn(email: email, password: password); password = "" }
-                            .disabled(model.busy || email.isEmpty || password.isEmpty)
+            ScrollViewReader { scroll in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        activeStep.id("active-step")
+                        installation
                     }
+                    .frame(maxWidth: 640)
+                    .padding(20)
+                    .frame(maxWidth: .infinity)
                 }
-                if model.needsCode {
-                    Section("雙重驗證") {
-                        TextField("六位驗證碼", text: $code).textContentType(.oneTimeCode).keyboardType(.numberPad)
-                        Button("驗證") { model.submitCode(code); code = "" }.disabled(code.count != 6)
-                    }
-                }
-                if !model.teams.isEmpty {
-                    Section("開發者團隊") {
-                        ForEach(model.teams) { team in
-                            Button { model.choose(team) } label: {
-                                HStack { Text(team.name); Spacer(); if model.team?.id == team.id { Image(systemName: "checkmark") } }
-                            }.disabled(model.busy)
-                        }
-                    }
-                }
-                if let app = model.app {
-                    Section("已核對的 Playport App ID") {
-                        Text(app.bundleID).textSelection(.enabled)
-                        LabeledContent("Apple 端權限", value: model.remoteEnabled.map { $0 ? "已啟用" : "尚未啟用" } ?? "未確認")
-                        Button("啟用 Increased Memory Limit") { confirmsUpdate = true }
-                            .disabled(model.busy || model.remoteEnabled == true)
-                        Button("重新整理") { if let team = model.team { model.choose(team) } }.disabled(model.busy)
-                    }
-                }
-                Section {
-                    if model.busy { ProgressView() }
-                    Text(model.message)
+                .scrollDismissesKeyboard(.interactively)
+                .background(PP.background)
+                .task(id: model.needsCode) {
+                    guard model.needsCode else { return }
+                    code = ""
+                    scroll.scrollTo("active-step", anchor: .top)
+                    // Wait for the former password keyboard's view to unmount.
+                    do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+                    if model.needsCode { field = .code }
                 }
             }
-            .navigationTitle("增加記憶體權限")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { model.close() } } }
+            .navigationTitle(model.needsCode ? "Apple 驗證碼" : "增加記憶體權限")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("關閉") { field = nil; model.close() } }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Button("收起鍵盤") { field = nil }
+                    Spacer()
+                    if model.needsCode { Button("驗證", action: verify).disabled(AppleVerificationCode.normalized(code) == nil) }
+                }
+            }
             .confirmationDialog("更新這個 Playport App ID 的權限？", isPresented: $confirmsUpdate) {
                 Button("保留原權限並啟用") { model.enable() }
-            } message: { Text("只加入 Increased Memory Limit，不刪除其他權限；完成後仍需重新側載。") }
+            } message: { Text("只加入 Increased Memory Limit；完成後仍需重新側載。") }
         }
-        .onDisappear { password = ""; code = ""; model.close() }
+        .preferredColorScheme(.dark).tint(PP.accent)
+        .onAppear { AppDelegate.allowsPortrait = true }
+        .onDisappear { password = ""; code = ""; AppDelegate.allowsPortrait = false; model.close() }
     }
+
+    private var activeStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label(model.needsCode ? "雙重驗證" : model.teams.isEmpty ? "Apple 帳號" : "開發者團隊",
+                  systemImage: model.needsCode ? "number.circle" : "person.crop.circle.badge.checkmark")
+                .font(.title3.weight(.semibold))
+            Text(model.message).font(.subheadline).foregroundStyle(PP.soft).fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("apple-account-status")
+            if model.needsCode {
+                TextField("六位驗證碼", text: $code)
+                    .textContentType(.oneTimeCode).keyboardType(.numberPad)
+                    .font(.system(size: 28, weight: .semibold, design: .monospaced))
+                    .multilineTextAlignment(.center).focused($field, equals: .code)
+                    .privacySensitive().accessibilityLabel("Apple 六位驗證碼")
+                    .accessibilityIdentifier("apple-verification-code")
+                    .padding(14).background(PP.background, in: RoundedRectangle(cornerRadius: 12))
+                Button("驗證並繼續", action: verify)
+                    .disabled(AppleVerificationCode.normalized(code) == nil)
+                    .ppGlassButton(prominent: true).controlSize(.large)
+                    .accessibilityIdentifier("apple-verification-submit")
+                Text("可直接貼上或使用簡訊自動填寫；這是 Apple 驗證碼，無須匯入配對檔案。")
+                    .font(.footnote).foregroundStyle(PP.muted)
+            } else if model.teams.isEmpty && !model.busy {
+                TextField("Apple 帳號", text: $email).textContentType(.username).keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().focused($field, equals: .email)
+                    .submitLabel(.next).onSubmit { field = .password }
+                    .padding(14).background(PP.background, in: RoundedRectangle(cornerRadius: 12))
+                SecureField("密碼", text: $password).textContentType(.password).focused($field, equals: .password)
+                    .submitLabel(.go).onSubmit(signIn)
+                    .padding(14).background(PP.background, in: RoundedRectangle(cornerRadius: 12))
+                Button("登入 Apple", action: signIn).disabled(email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                    .ppGlassButton(prominent: true).controlSize(.large)
+                Text("密碼只用於 Apple SRP 驗證，不會儲存或寫入報告。裝置驗證服務 ani.sidestore.io 不會收到密碼或登入 token；裝置驗證資料保存在本機鑰匙圈。")
+                    .font(.footnote).foregroundStyle(PP.muted)
+            } else if !model.teams.isEmpty {
+                ForEach(model.teams) { team in
+                    Button { model.choose(team) } label: {
+                        HStack { Text(team.name); Spacer(); Image(systemName: model.team?.id == team.id ? "checkmark.circle.fill" : "chevron.right") }
+                            .padding(14).background(PP.background, in: RoundedRectangle(cornerRadius: 12))
+                    }.buttonStyle(.plain).disabled(model.busy)
+                }
+                if let app = model.app {
+                    Text(app.bundleID).font(.footnote).textSelection(.enabled)
+                    LabeledContent("Apple 端權限", value: model.remoteEnabled.map { $0 ? "已啟用" : "尚未啟用" } ?? "未確認")
+                    Button("啟用 Increased Memory Limit") { confirmsUpdate = true }
+                        .disabled(model.busy || model.remoteEnabled == true).ppGlassButton(prominent: true)
+                    Button("重新整理") { if let team = model.team { model.choose(team) } }.disabled(model.busy).ppGlassButton()
+                }
+            }
+            if model.busy && !model.needsCode { ProgressView().frame(maxWidth: .infinity) }
+        }
+        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        .background(PP.surface, in: RoundedRectangle(cornerRadius: 20))
+    }
+    private var installation: some View {
+        DisclosureGroup("目前安裝與生效方式") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(model.bundleID).font(.footnote).textSelection(.enabled)
+                LabeledContent("簽章記憶體權限", value: MemoryLimit.entitled.map { $0 ? "已具備" : "尚未具備" } ?? "未確認")
+                Text("更新 Apple App ID 後，請用原側載工具重新簽署並覆蓋安裝，保留資料。這項權限無法增加實體 RAM。")
+                    .font(.footnote).foregroundStyle(PP.muted)
+            }.padding(.top, 12)
+        }
+    }
+    private func signIn() {
+        guard !model.busy, !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !password.isEmpty else { return }
+        field = nil; model.signIn(email: email, password: password); password = ""
+    }
+    private func verify() { model.submitCode(code); code = ""; field = nil }
 }

@@ -10,8 +10,8 @@ hashes = {}
 for folder in ['Sources/PlayportKit', 'Tests/PlayportKitTests']:
     (out / folder).mkdir(parents=True, exist_ok=True)
 for folder, names in [
-    ('Sources/PlayportKit', ['StorageCleanup', 'TitleMemory', 'SetupChecklist', 'JitMethod', 'JitLaunchPolicy']),
-    ('Tests/PlayportKitTests', ['StorageCleanupTests', 'TitleMemoryTests', 'JitLaunchPreflightTests'])]:
+    ('Sources/PlayportKit', ['StorageCleanup', 'TitleMemory', 'SetupChecklist', 'JitMethod', 'JitLaunchPolicy', 'LauncherLayout']),
+    ('Tests/PlayportKitTests', ['StorageCleanupTests', 'TitleMemoryTests', 'JitLaunchPreflightTests', 'LauncherLayoutTests'])]:
     for name in names:
         filename = name + '.swift'
         path = r / 'app/PlayportKit' / folder / filename

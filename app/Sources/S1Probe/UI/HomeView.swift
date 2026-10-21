@@ -44,7 +44,7 @@ struct HomeView: View {
 
     var body: some View {
         GeometryReader { viewport in
-            let coverHeight = min(250, max(120, viewport.size.height - 78))
+            let coverHeight = min(300, max(96, viewport.size.height - 90))
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {

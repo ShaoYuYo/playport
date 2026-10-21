@@ -127,7 +127,7 @@ struct RootView: View {
         // `playport://` only brings Playport back to the front (LocalDevVPN's
         // return); what a URL carries does nothing (decision 0012).
         .onOpenURL { _ in }
-        .sheet(isPresented: Binding(get: { appleMemory.presented }, set: { if !$0 { appleMemory.close() } })) { AppleMemoryView() }
+        .fullScreenCover(isPresented: Binding(get: { appleMemory.presented }, set: { if !$0 { appleMemory.close() } })) { AppleMemoryView() }
         // Why a launch did not end cleanly (here, or in the process before a restart),
         // or why Playport could not restart itself (UI/LaunchViews.swift, LaunchMessage).
         // A step that failed shows on the launch failure screen instead (PadModal).

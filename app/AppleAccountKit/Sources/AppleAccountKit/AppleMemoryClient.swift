@@ -166,6 +166,7 @@ public actor AppleMemoryClient {
     /// SRP server proof is verified before opening Apple's encrypted session.
     /// Credentials/proofs only go to gsa.apple.com, not the anisette service.
     public func signIn(email: String, password: String,
+                       verificationRequested: @Sendable (_ sms: Bool) async -> Void = { _ in },
                        verification: @Sendable (_ sms: Bool) async throws -> String) async throws -> [DeveloperTeam] {
         accountID = ""; token = ""
         let email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -197,7 +198,7 @@ public actor AppleMemoryClient {
             let auth = (finish["Status"] as? [String: Any])?["au"] as? String
             if auth == "trustedDeviceSecondaryAuth" || auth == "secondaryAuth" {
                 guard round == 0 else { throw AppleProvisioningError.unsupportedAuthentication }
-                try await twoFactor(dsid: dsid, idms: idms, sms: auth == "secondaryAuth", verification: verification)
+                try await twoFactor(dsid: dsid, idms: idms, sms: auth == "secondaryAuth", verificationRequested: verificationRequested, verification: verification)
                 continue
             }
             guard auth == nil, let sessionKey = spd["sk"] as? Data, let cookie = spd["c"] as? Data else { throw AppleProvisioningError.unsupportedAuthentication }
@@ -222,12 +223,16 @@ public actor AppleMemoryClient {
         throw AppleProvisioningError.unsupportedAuthentication
     }
     private func twoFactor(dsid: String, idms: String, sms: Bool,
+                           verificationRequested: @Sendable (Bool) async -> Void,
                            verification: @Sendable (Bool) async throws -> String) async throws {
         var headers = anisette
         headers["X-Apple-Identity-Token"] = Data((dsid + ":" + idms).utf8).base64EncodedString()
         headers["X-Apple-App-Info"] = "com.apple.gs.xcode.auth"
         let path = sms ? "auth/verify/phone/put?mode=sms" : "auth/verify/trusteddevice"
         let body: [String: Any]? = sms ? ["serverInfo": ["phoneNumber.id": "1"]] : nil
+        // Show entry before sending: the trusted-device alert can arrive before
+        // this HTTP response. Entry remains available while delivery completes.
+        await verificationRequested(sms)
         _ = try await receive(request(try checkedURL("https://gsa.apple.com/" + path), method: sms ? "POST" : "GET", body: body, headers: headers))
         let code = try await verification(sms)
         guard code.count == 6, code.utf8.allSatisfy({ (48...57).contains($0) }) else { throw AppleProvisioningError.cancelled }

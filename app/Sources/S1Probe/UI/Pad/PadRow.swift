@@ -50,7 +50,7 @@ struct PadRow: View {
             HStack(spacing: 6) {
                 if changed { Circle().fill(PP.accent).frame(width: 7, height: 7) }
                 if let value {
-                    Text(LocalizedStringKey(value)).lineLimit(1)
+                    Text(LocalizedStringKey(value)).lineLimit(2).multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true)
                 }
                 switch accessory {
                 case .none: EmptyView()
@@ -84,7 +84,7 @@ struct PadRowBody<Trailing: View>: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(LocalizedStringKey(title)).font(.system(size: 15, weight: .medium))
                     .foregroundStyle(selected ? (destructive ? Color(hex: 0xB0301E) : PP.background)
                                      : destructive ? Color(hex: 0xFF9A8A) : PP.text)
@@ -92,14 +92,17 @@ struct PadRowBody<Trailing: View>: View {
                     Text(LocalizedStringKey(subtitle)).font(.system(size: 12)).foregroundStyle(selected ? Color(hex: 0x3A4452) : PP.muted)
                 }
             }
-            .lineLimit(1)
+            .lineLimit(style == .card ? 3 : 2)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
             Spacer(minLength: 8)
             trailing()
         }
-        .padding(.horizontal, 14).padding(.vertical, style == .card ? 6 : 0)
-        .frame(minHeight: style == .card ? 46 : 38)
+        .padding(.horizontal, 14).padding(.vertical, style == .card ? 12 : 8)
+        .frame(minHeight: style == .card ? 56 : 44)
         .frame(maxWidth: .infinity)
-        .background(selected ? PP.text : style == .card ? PP.surface : .clear, in: RoundedRectangle(cornerRadius: 10))
+        .background(selected ? PP.text : style == .card ? PP.surface.opacity(0.8) : .clear, in: RoundedRectangle(cornerRadius: 12))
+        .overlay { if style == .card { RoundedRectangle(cornerRadius: 12).strokeBorder(PP.line.opacity(0.45), lineWidth: 0.5) } }
     }
 }
 

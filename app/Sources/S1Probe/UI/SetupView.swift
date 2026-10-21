@@ -237,7 +237,8 @@ struct SetupView: View {
     var body: some View {
         let _ = storedMethod
         let f = state.shown
-        VStack(alignment: .leading, spacing: 0) {
+        ScrollView(.vertical, showsIndicators: false) {
+          VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Let's get you playing").font(PP.display(30))
                 Text("A few steps, once. Playport checks them again by itself before every game.")
@@ -247,7 +248,7 @@ struct SetupView: View {
                         .accessibilityIdentifier("setup-message")
                 }
             }
-            .padding(.top, 24).padding(.bottom, 16)
+            .padding(.top, 8).padding(.bottom, 16)
             HStack(alignment: .top, spacing: 12) {
                 ForEach(SetupChecklist.items(f), id: \.step) { item in
                     card(item)
@@ -257,8 +258,9 @@ struct SetupView: View {
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
+          }
         .foregroundStyle(PP.text)
-        .padding(.horizontal, 44)
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             state.follow()

@@ -56,11 +56,11 @@ struct GlassSidebar<Content: View>: View {
                                 Text(title).font(PP.display(23)).lineLimit(2).minimumScaleFactor(0.8)
                             }
                             Spacer(minLength: 0)
-                            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).frame(width: 36, height: 36) }
+                            Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).frame(width: 44, height: 44) }
                                 .buttonStyle(.plain).background(.white.opacity(0.08), in: Circle())
                                 .accessibilityLabel("Close")
                         }
-                        GlassEffectContainer(spacing: 0) { content() }
+                        GlassEffectContainer(spacing: 6) { content() }
                     }
                     .padding(18)
                     .padding(.leading, max(0, safe.insets.leading - 12))
@@ -111,12 +111,12 @@ struct GlassSidebarRowLabel: View {
     var body: some View {
             HStack(spacing: 12) {
                 Image(systemName: icon).font(.system(size: 17, weight: .medium)).frame(width: 23)
-                Text(LocalizedStringKey(title)).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                Text(LocalizedStringKey(title)).font(.system(size: 15, weight: .semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true).layoutPriority(1)
                 Spacer(minLength: 4)
-                if let detail { Text(LocalizedStringKey(detail)).font(.system(size: 11)).foregroundStyle(PP.muted).lineLimit(1) }
+                if let detail { Text(LocalizedStringKey(detail)).font(.system(size: 11)).foregroundStyle(PP.muted).lineLimit(2).multilineTextAlignment(.trailing) }
             }
             .foregroundStyle(destructive ? Color(hex: 0xFF9A8A) : PP.text)
-            .padding(.horizontal, 14).frame(minHeight: 48)
+            .padding(.horizontal, 14).padding(.vertical, 10).frame(minHeight: 48)
             .ppGlass(cornerRadius: 13, tint: selected ? PP.accent.opacity(0.2) : nil)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: selected)
             .contentShape(RoundedRectangle(cornerRadius: 13))

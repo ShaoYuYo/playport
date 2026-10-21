@@ -218,24 +218,30 @@ struct SignInView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                Text("Sign in to Steam").font(PP.display(28))
-                Text("Your games, cloud saves and achievements. Playport keeps no password.")
-                    .font(.system(size: 13)).foregroundStyle(PP.muted).lineLimit(1).minimumScaleFactor(0.8)
+        GeometryReader { geometry in
+            let compact = geometry.size.width < 660
+            ScrollViewReader { scroll in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Sign in to Steam").font(PP.display(26))
+                            Text("Your games, cloud saves and achievements. Playport keeps no password.")
+                                .font(.system(size: 13)).foregroundStyle(PP.muted)
+                        }
+                        let columns = compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16)) : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+                        columns {
+                            phoneCard.frame(minHeight: 250)
+                            qrCard.frame(width: compact ? nil : 310).frame(minHeight: 250)
+                        }
+                    }.padding(8)
+                }
+                .onChange(of: focus.focused) { _, id in
+                    guard let id, id == Self.cardItem || id == Self.qrItem else { return }
+                    withAnimation(.easeOut(duration: 0.15)) { scroll.scrollTo(id, anchor: .center) }
+                }
             }
-            .padding(.top, 20).padding(.bottom, 12)
-            HStack(alignment: .top, spacing: 16) {
-                phoneCard
-                qrCard.frame(width: 330)
-            }
-            // Clear of the footer's line, the ring too (SignIn.dc.html: 14 pt).
-            .padding(.bottom, 14)
-            .frame(maxHeight: .infinity, alignment: .top)
         }
         .foregroundStyle(PP.text)
-        .padding(.horizontal, 44)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // Signed in (either card, not a preview): back where the sign-in came from.
         .onChange(of: model.state) { _, s in
             guard state.preview == nil, case .signedIn = s else { return }

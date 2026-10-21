@@ -35,7 +35,10 @@ struct DownloadsPage: View {
 
     var body: some View {
         let order = installs.order
-        HStack(alignment: .top, spacing: 16) {
+        GeometryReader { geometry in
+          let compact = geometry.size.width < 660
+          let columns = compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16)) : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+          columns {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -61,13 +64,14 @@ struct DownloadsPage: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            VStack(spacing: 10) {
-                whileYouWait
-                doneToday
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 10) { whileYouWait; doneToday }
             }
-            .frame(width: 240)
+            .frame(width: compact ? nil : 230)
+            .frame(maxHeight: compact ? 130 : .infinity)
         }
-        .padding(.top, 6)
+          }
+        .padding(.top, 8)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 

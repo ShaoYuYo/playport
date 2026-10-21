@@ -176,44 +176,46 @@ private struct GameDetailPage: View {
 
     private func content(_ t: InstalledTitle?, _ g: SteamGame?) -> some View {
         let panel = navigation.gamePanels.last
-        return ZStack(alignment: .topLeading) {
-            page(t, g)
-                // Under a panel the page's controls leave the ring.
-                .transformPreference(PadItemsKey.self) { if panel != nil { $0 = [:] } }
-            if let panel {
-                Color(hex: 0x05070A).opacity(0.72).ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture { _ = navigation.back() }
-                HStack(spacing: 0) {
-                    // The note sits low at the left, just above the footer the shell
-                    // draws there (36 pt), clear of the page's dimmed title and
-                    // subtitle (GameOptions.dc.html puts it under the title).
-                    VStack(alignment: .leading) {
-                        Spacer()
-                        if panel == .options {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Circle().fill(PP.accent).frame(width: 7, height: 7)
-                                Text("Changed for this game. The rest follow Settings › Graphics.")
-                                    .fixedSize(horizontal: false, vertical: true)
+        return GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                page(t, g)
+                    // Under a panel the page's controls leave the ring.
+                    .transformPreference(PadItemsKey.self) { if panel != nil { $0 = [:] } }
+                if let panel {
+                    Color(hex: 0x05070A).opacity(0.72).ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { _ = navigation.back() }
+                    HStack(spacing: 0) {
+                        // The note sits low at the left, just above the footer the shell
+                        // draws there (36 pt), clear of the page's dimmed title and
+                        // subtitle (GameOptions.dc.html puts it under the title).
+                        VStack(alignment: .leading) {
+                            Spacer()
+                            if panel == .options {
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Circle().fill(PP.accent).frame(width: 7, height: 7)
+                                    Text("Changed for this game. The rest follow Settings › Graphics.")
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .font(.system(size: 13)).foregroundStyle(PP.soft)
+                                .padding(.bottom, AppShell.footerBottom + 36 + 12)
                             }
-                            .font(.system(size: 13)).foregroundStyle(PP.soft)
-                            .padding(.bottom, AppShell.footerBottom + 36 + 12)
                         }
-                    }
-                    .allowsHitTesting(false)
-                    Spacer(minLength: 0)
-                    Group {
-                        switch panel {
-                        case .options: if let t { optionsPanel(t, g) }
-                        case .achievements: achievementsPanel
+                        .allowsHitTesting(false)
+                        Spacer(minLength: 0)
+                        Group {
+                            switch panel {
+                            case .options: if let t { optionsPanel(t, g) }
+                            case .achievements: achievementsPanel
+                            }
                         }
+                        .frame(width: LauncherLayout(width: geometry.size.width).panelWidth)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .background(PP.surface.ignoresSafeArea(edges: [.top, .trailing, .bottom]))
+                        .overlay(alignment: .leading) { Rectangle().fill(PP.line).frame(width: 1).ignoresSafeArea(edges: [.top, .bottom]) }
                     }
-                    .frame(width: 410)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .background(PP.surface.ignoresSafeArea(edges: [.top, .trailing, .bottom]))
-                    .overlay(alignment: .leading) { Rectangle().fill(PP.line).frame(width: 1).ignoresSafeArea(edges: [.top, .bottom]) }
+                    .transition(.move(edge: .trailing))
                 }
-                .transition(.move(edge: .trailing))
             }
         }
         .animation(.easeOut(duration: 0.15), value: panel)
@@ -274,33 +276,46 @@ private struct GameDetailPage: View {
                                 ?? gogGame.map { PageArt(appID: nil, name: $0.title, info: nil, storeKey: StoreGameKey(store: .gog, id: $0.id)) }
                                 ?? epicGame.map { PageArt(appID: nil, name: $0.title, info: nil, storeKey: StoreGameKey(store: .epic, id: $0.id)) })
 
-            HStack(alignment: .top, spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(name).font(PP.display(48)).foregroundStyle(PP.text)
-                        .lineLimit(1).minimumScaleFactor(0.5)
-                    Group {
-                        if let line = subtitle(t, g) {
-                            Text(line).font(.system(size: 13)).foregroundStyle(PP.soft)
+            GeometryReader { geometry in
+                let layout = LauncherLayout(width: geometry.size.width)
+                ScrollView(.vertical, showsIndicators: false) {
+                    let columns = layout.stackedGame ? AnyLayout(VStackLayout(alignment: .leading, spacing: 22)) : AnyLayout(HStackLayout(alignment: .top, spacing: 24))
+                    columns {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(name).font(PP.display(layout.stackedGame ? 32 : 40)).foregroundStyle(PP.text)
+                                .lineLimit(2).minimumScaleFactor(0.8)
+                            Group {
+                                if let line = subtitle(t, g) {
+                                    Text(line).font(.system(size: 13)).foregroundStyle(PP.soft)
+                                }
+                                ScrollViewReader { buttons in
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 10) {
+                                            if let t { installedButtons(t, g) } else if let g { installButtons(g) } else if let gg = gogGame { gogInstallButtons(gg) } else if let eg = epicGame { epicInstallButtons(eg) }
+                                        }.padding(.vertical, 6).padding(.horizontal, 6)
+                                    }
+                                    .onChange(of: focus.focused) { _, id in
+                                        guard let id, ["game:play", "game:install", "game:job", "game:close", "game:achievements", "game:options", "game:update", "game:version", "game:discard"].contains(id) else { return }
+                                        withAnimation(.easeOut(duration: 0.15)) { buttons.scrollTo(id, anchor: .center) }
+                                    }
+                                }
+                                .padding(.horizontal, -6).padding(.top, 8)
+                                notes(t, g)
+                                    .font(.system(size: 13)).foregroundStyle(PP.muted)
+                                    .lineSpacing(2)
+                                    .padding(.top, 12)
+                            }
+                            .opacity(under ? 0 : 1)
                         }
-                        HStack(spacing: 12) {
-                            if let t { installedButtons(t, g) } else if let g { installButtons(g) } else if let gg = gogGame { gogInstallButtons(gg) } else if let eg = epicGame { epicInstallButtons(eg) }
-                        }
-                        .padding(.top, 14)
-                        notes(t, g)
-                            .font(.system(size: 13)).foregroundStyle(PP.muted)
-                            .lineSpacing(2)
-                            .padding(.top, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        facts(t, g)
+                            .frame(width: layout.stackedGame ? nil : 250)
+                            .padding(.top, layout.stackedGame ? 0 : 52)
+                            .opacity(under ? 0 : 1)
                     }
-                    .opacity(under ? 0 : 1)
+                    .padding(.top, layout.gameTopInset).padding(.bottom, 24)
                 }
-                .frame(maxWidth: 500, alignment: .leading)
-                Spacer(minLength: 0)
-                facts(t, g)
-                    .frame(width: 270)
-                    .padding(.top, 94)
-                    .opacity(under ? 0 : 1)
             }
-            .padding(.top, 76)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
