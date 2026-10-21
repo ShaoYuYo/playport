@@ -116,6 +116,24 @@ final class TitleMemoryTests: XCTestCase {
         XCTAssertTrue(witch.arguments(over: [], frameLimit: 60).contains("-gclim=64"))
     }
 
+    func testRiddleJokerUsesMeasuredKirikiriProfileAndCanOptOut() {
+        let profile = TitleMemory(steamAppID: 1277930, i386: true, enabled: true)
+        XCTAssertTrue(profile.engineProfile)
+        XCTAssertEqual(profile.poolMB, 256)
+        XCTAssertGreaterThan(profile.poolMB!, 26 + 161 + 64)
+        let args = profile.arguments(over: [], frameLimit: 60, displayRefreshRate: 60)
+        for option in ["-memusage=normal", "-gclim=64", "-drawthread=2", "-contfreq=60"] {
+            XCTAssertTrue(args.contains(option))
+        }
+        let explicit = ["-drawthread=1", "-memusage=low", "-contfreq=30", "-gclim=32"]
+        XCTAssertEqual(profile.arguments(over: explicit, frameLimit: 60), explicit)
+        let disabled = TitleMemory(steamAppID: 1277930, i386: true, enabled: false)
+        XCTAssertNil(disabled.poolMB)
+        XCTAssertEqual(disabled.arguments(over: []), [])
+        XCTAssertEqual(disabled.config(over: [:]), [:])
+        XCTAssertFalse(TitleMemory(steamAppID: 1277930, i386: false, enabled: true).engineProfile)
+    }
+
     func testExplicitSettingsWinAndUnrelatedArgumentsSurvive() {
         let profile = TitleMemory(steamAppID: 1144400, i386: true, enabled: true)
         XCTAssertEqual(profile.config(over: [:]), ["cpu-count": "2"])

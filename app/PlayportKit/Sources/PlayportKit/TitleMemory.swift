@@ -11,10 +11,10 @@ public struct TitleMemory: Equatable, Sendable {
 
     public init(steamAppID: UInt32?, i386: Bool, enabled: Bool) {
         active = enabled
-        engineProfile = enabled && i386 && [UInt32(1144400), 2458530].contains(steamAppID ?? 0)
+        engineProfile = enabled && i386 && [UInt32(1144400), 2458530, 1277930].contains(steamAppID ?? 0)
         // Supplied startup report: head 26 + tail 33 MiB, no pool refusals.
         // Keep room for the normal 128 MiB translation buffer and later images.
-        // Both supplied KiriKiri reports fit head + tail below 188 MiB.
+        // The three supplied KiriKiri reports fit head + tail below 188 MiB.
         // Other engines retain the general pool: a smaller one is not safe
         // merely because a game opted into fewer automatic workers.
         poolMB = engineProfile ? 256 : nil

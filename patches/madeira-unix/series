@@ -110,3 +110,4 @@
 0109-ntdll-record-bounded-save-backend-open-results.patch
 0110-ntdll-describe-compact-return-predictions-in-reports.patch
 0111-ntdll-honor-the-kernel-virtual-address-ceiling.patch
+0112-ntdll-retain-kernel-placement-below-the-furniture-ceiling.patch

@@ -1,0 +1,62 @@
+From ae88641faf456a6b9486c7b7d871a96c9b70c100 Mon Sep 17 00:00:00 2001
+From: Playport <playport@localhost>
+Date: Wed, 21 Oct 2026 19:41:33 +0800
+Subject: [PATCH] ntdll: retain kernel placement fallback below the furniture
+ ceiling
+
+Class: upstream-bug
+Evidence: docs/evidence/2026-10-21-riddle-thread-fallback.md
+Offered-upstream: no
+---
+ build/ntdll-unix/virtual_ios.c | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/build/ntdll-unix/virtual_ios.c b/build/ntdll-unix/virtual_ios.c
+index d718b17..65c6144 100644
+--- a/build/ntdll-unix/virtual_ios.c
++++ b/build/ntdll-unix/virtual_ios.c
+@@ -12104,7 +12104,12 @@ static NTSTATUS map_view( struct file_view **view_ret, void *base, size_t size,
+          * below 16GB (TEBs, stacks, anon views, section views incl. the 4GB
+          * top-of-space tenant from ml106) stay below 464G-64K; only the PA
+          * 16GB/32GB pool reserves may use the slots above. */
+-        int ceiling_relaxable = 0;
++        /* An absent/advisory floor permits a kernel pick independently of
++         * whether the furniture ceiling clamped this request. A task ceiling
++         * below the furniture ceiling used to leave this false, turning a
++         * failed fixed scan for an 8 MB thread stack into STATUS_NO_MEMORY. */
++        int ceiling_relaxable = !limit_high && limit_low <= 0x100010000ULL;
++        int kernel_pick_fallback = 0;
+         int ceiling_applied = 0;
+         if (ios_furniture_ceiling && !limit_high && size < 0x400000000ULL &&
+             (void *)ios_furniture_ceiling < end)
+@@ -12224,7 +12229,8 @@ static NTSTATUS map_view( struct file_view **view_ret, void *base, size_t size,
+                          ios_scan_fail_addr, ios_scan_fail_errno,
+                          ios_scan_fail_errno ? strerror( ios_scan_fail_errno ) : "-", what,
+                          ptr ? "" : (ceiling_applied ? "  --> retrying above the ceiling"
+-                                                       : "  <-- STATUS_NO_MEMORY (callers see a NULL alloc)") );
++                                  : ceiling_relaxable ? "  --> retrying kernel placement"
++                                                      : "  <-- STATUS_NO_MEMORY (callers see a NULL alloc)") );
+                 }
+             }
+             if (ptr)
+@@ -12285,6 +12291,7 @@ static NTSTATUS map_view( struct file_view **view_ret, void *base, size_t size,
+                 }
+                 return STATUS_NO_MEMORY;
+             }
++            kernel_pick_fallback = 1;
+             start = address_space_start;
+             end = min( user_space_limit, host_addr_space_limit );
+             if (limit_low && (void *)limit_low > start) start = (void *)limit_low;
+@@ -12317,6 +12324,12 @@ static NTSTATUS map_view( struct file_view **view_ret, void *base, size_t size,
+             if (unmap_size) munmap( ptr, unmap_size );
+         }
+         ptr = unmap_extra_space( ptr, view_size, host_size, align_mask );
++        if (kernel_pick_fallback)
++        {
++            static unsigned int reported;
++            if (reported++ < 16)
++                dprintf( 2, "[va-kernel-pick-v1] recovered size=%p at=%p\n", (void *)size, ptr );
++        }
+     }
+ done:
+     status = create_view( view_ret, ptr, size, vprot );
