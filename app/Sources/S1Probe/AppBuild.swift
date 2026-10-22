@@ -3,9 +3,9 @@ import Foundation
 
 /// Public build identity travels with every log, including post-game restarts.
 enum AppBuild {
-    static let revision = "SteamGlass-20261022-r36"
+    static let revision = "SteamGlass-20261022-r37"
     static var summary: String {
-        var lines = ["build: revision=\(revision) ui=adaptive-glass-v2 cpuid=ios-index-0 vm=subpage-v1 arena=subgig-v1 root=handoff-v2 memory=safety-v1 menu=shared-v2 economy=all-games-v3 callret=prediction4-v2 callback=guard-v1 exception=seh-v2 suspend=gate-v1 scratch=reuse-v1 init=oom-v1 rpm=span2-v1 lists=head-v1 drawable=ready-v1 va=kernel-pick-v1 apple-memory=code-entry-v3 render=single-pacer-v1 host=optimized-v1"]
+        var lines = ["build: revision=\(revision) ui=console-glass-v3 cpuid=ios-index-0 vm=subpage-v1 arena=subgig-v1 root=handoff-v2 memory=safety-v1 menu=shared-v2 economy=all-games-v3 callret=prediction4-v2 callback=guard-v1 exception=seh-v2 suspend=gate-v1 scratch=reuse-v1 init=oom-v1 rpm=span2-v1 lists=head-v1 drawable=ready-v1 va=kernel-pick-v1 apple-memory=explicit-dismiss-v4 render=single-pacer-v1 host=optimized-v1"]
         if let runtime = Manifest.runtime,
            let records = try? String(contentsOf: runtime.appendingPathComponent("artifacts.tsv"), encoding: .utf8) {
             for line in records.split(separator: "\n") {

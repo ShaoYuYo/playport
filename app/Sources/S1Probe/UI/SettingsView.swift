@@ -343,7 +343,7 @@ private struct GraphicsSettings: View {
                 options: [PadOption(id: "off", label: "保持關閉"), PadOption(id: "on", label: "開啟所有遊戲的預讀")],
                 selected: "off") { startupReadAhead = $0 == "on" }
         }))
-        SettingsSwitchRow(id: "metalHUD", title: "Metal HUD", subtitle: "Frame rate, frame time and memory over a game",
+        SettingsSwitchRow(id: "metalHUD", title: "效能資訊", subtitle: "正式版使用輕量浮層顯示五秒平均 FPS 與 RAM，不啟用 Metal 開發者 HUD。",
                           on: $metalHUD)
         SettingsNote(text: "預設 720p／60 FPS 上限，先控制繪圖負載。原生解析度與更高 FPS 仍可手動選擇；若卡頓可試 30 FPS 或更低解析度。"
                      + "FPS 是上限，不會加速遊戲邏輯或產生額外影格。解析度從下次啟動生效，FPS 可在遊戲選單即時調整。 " + LaunchSettingsText.graphicsFooter)

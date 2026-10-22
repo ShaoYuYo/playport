@@ -82,6 +82,7 @@ struct RootView: View {
                     // A web page the game opened, over the running game (UI/GameWebSheet.swift).
                     .overlay { if web.isUp { GameWebSheetView() } }
                     .overlay(alignment: .top) { MemorySafetyBanner() }
+                    .overlay(alignment: .topTrailing) { GamePerformanceOverlay() }
                     .statusBarHidden().persistentSystemOverlays(.hidden)
                     .transition(.identity)
             } else if restart.restarting {
@@ -127,7 +128,7 @@ struct RootView: View {
         // `playport://` only brings Playport back to the front (LocalDevVPN's
         // return); what a URL carries does nothing (decision 0012).
         .onOpenURL { _ in }
-        .fullScreenCover(isPresented: Binding(get: { appleMemory.presented }, set: { if !$0 { appleMemory.close() } })) { AppleMemoryView() }
+        .fullScreenCover(isPresented: Binding(get: { appleMemory.presented }, set: { if !$0 && !appleMemory.busy { appleMemory.close() } }), onDismiss: { if !appleMemory.presented { appleMemory.close() } }) { AppleMemoryView() }
         // Why a launch did not end cleanly (here, or in the process before a restart),
         // or why Playport could not restart itself (UI/LaunchViews.swift, LaunchMessage).
         // A step that failed shows on the launch failure screen instead (PadModal).

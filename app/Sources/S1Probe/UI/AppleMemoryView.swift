@@ -14,6 +14,7 @@ final class AppleMemoryModel: ObservableObject {
     @Published private(set) var team: DeveloperTeam?
     @Published private(set) var message = "請使用原側載工具所用的 Apple 帳號。"
     @Published private(set) var needsCode = false
+    @Published var codeEntry = ""
     @Published private(set) var remoteEnabled: Bool?
     let bundleID = Bundle.main.bundleIdentifier ?? ""
     private let store = KeychainSecretStore(service: "dev.playport.apple-memory")
@@ -23,13 +24,14 @@ final class AppleMemoryModel: ObservableObject {
     private var generation = 0
     func show() {
         guard !TitleLaunch.shared.running else { return }
+        AppDelegate.allowsPortrait = true
         presented = true
     }
     private func saveIdentity(_ client: AppleMemoryClient) async {
         if let data = try? await client.identityRecord() { try? store.write("anisette-identity", Secret(Array(data))) }
     }
     func signIn(email: String, password: String) {
-        guard !busy else { return }
+        guard presented, !busy else { return }
         generation += 1; let id = generation
         let record = (try? store.read("anisette-identity"))?.value.map { $0 }
         let client = AppleMemoryClient(identityRecord: record.map { Data($0) })
@@ -57,12 +59,12 @@ final class AppleMemoryModel: ObservableObject {
     }
     private func showCode(sms: Bool, generation id: Int) {
         guard id == generation, presented else { return }
-        needsCode = true
+        needsCode = true; codeEntry = ""
         message = sms ? "請輸入 Apple 傳送的六位簡訊驗證碼。" : "請先在受信任裝置允許登入，再輸入顯示的六位驗證碼。"
     }
     func submitCode(_ value: String) {
         guard needsCode, verification?.submit(value) == true else { return }
-        needsCode = false; message = "正在驗證…"
+        needsCode = false; codeEntry = ""; message = "正在驗證…"
     }
     func choose(_ team: DeveloperTeam) {
         guard !busy, let client else { return }
@@ -96,6 +98,7 @@ final class AppleMemoryModel: ObservableObject {
     }
     func close() {
         generation += 1; job?.cancel(); job = nil
+        AppDelegate.allowsPortrait = false; codeEntry = ""
         verification?.cancel(); verification = nil
         if let client { Task { await client.forgetSession() } }
         client = nil; teams = []; app = nil; team = nil; remoteEnabled = nil
@@ -108,7 +111,7 @@ struct AppleMemoryView: View {
     @ObservedObject private var model = AppleMemoryModel.shared
     @State private var email = ""
     @State private var password = ""
-    @State private var code = ""
+    @Environment(\.scenePhase) private var scenePhase
     @State private var confirmsUpdate = false
     @FocusState private var field: Field?
     private enum Field { case email, password, code }
@@ -126,9 +129,8 @@ struct AppleMemoryView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .background(PP.background)
-                .task(id: model.needsCode) {
-                    guard model.needsCode else { return }
-                    code = ""
+                .task(id: "\(model.needsCode)-\(scenePhase)") {
+                    guard model.needsCode, scenePhase == .active else { return }
                     scroll.scrollTo("active-step", anchor: .top)
                     // Wait for the former password keyboard's view to unmount.
                     do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
@@ -142,7 +144,7 @@ struct AppleMemoryView: View {
                 ToolbarItemGroup(placement: .keyboard) {
                     Button("收起鍵盤") { field = nil }
                     Spacer()
-                    if model.needsCode { Button("驗證", action: verify).disabled(AppleVerificationCode.normalized(code) == nil) }
+                    if model.needsCode { Button("驗證", action: verify).disabled(AppleVerificationCode.normalized(model.codeEntry) == nil) }
                 }
             }
             .confirmationDialog("更新這個 Playport App ID 的權限？", isPresented: $confirmsUpdate) {
@@ -150,8 +152,10 @@ struct AppleMemoryView: View {
             } message: { Text("只加入 Increased Memory Limit；完成後仍需重新側載。") }
         }
         .preferredColorScheme(.dark).tint(PP.accent)
-        .onAppear { AppDelegate.allowsPortrait = true }
-        .onDisappear { password = ""; code = ""; AppDelegate.allowsPortrait = false; model.close() }
+        // System authentication alerts may deactivate/rebuild this view. Only
+        // the close button or the presentation owner's dismissal ends a session.
+        .interactiveDismissDisabled(model.busy)
+        .onDisappear { password = "" }
     }
 
     private var activeStep: some View {
@@ -162,7 +166,7 @@ struct AppleMemoryView: View {
             Text(model.message).font(.subheadline).foregroundStyle(PP.soft).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("apple-account-status")
             if model.needsCode {
-                TextField("六位驗證碼", text: $code)
+                TextField("六位驗證碼", text: $model.codeEntry)
                     .textContentType(.oneTimeCode).keyboardType(.numberPad)
                     .font(.system(size: 28, weight: .semibold, design: .monospaced))
                     .multilineTextAlignment(.center).focused($field, equals: .code)
@@ -170,7 +174,7 @@ struct AppleMemoryView: View {
                     .accessibilityIdentifier("apple-verification-code")
                     .padding(14).background(PP.background, in: RoundedRectangle(cornerRadius: 12))
                 Button("驗證並繼續", action: verify)
-                    .disabled(AppleVerificationCode.normalized(code) == nil)
+                    .disabled(AppleVerificationCode.normalized(model.codeEntry) == nil)
                     .ppGlassButton(prominent: true).controlSize(.large)
                     .accessibilityIdentifier("apple-verification-submit")
                 Text("可直接貼上或使用簡訊自動填寫；這是 Apple 驗證碼，無須匯入配對檔案。")
@@ -205,7 +209,7 @@ struct AppleMemoryView: View {
             if model.busy && !model.needsCode { ProgressView().frame(maxWidth: .infinity) }
         }
         .padding(20).frame(maxWidth: .infinity, alignment: .leading)
-        .background(PP.surface, in: RoundedRectangle(cornerRadius: 20))
+        .ppOverlayPanel(cornerRadius: 20)
     }
     private var installation: some View {
         DisclosureGroup("目前安裝與生效方式") {
@@ -221,5 +225,5 @@ struct AppleMemoryView: View {
         guard !model.busy, !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !password.isEmpty else { return }
         field = nil; model.signIn(email: email, password: password); password = ""
     }
-    private func verify() { model.submitCode(code); code = ""; field = nil }
+    private func verify() { model.submitCode(model.codeEntry); field = nil }
 }

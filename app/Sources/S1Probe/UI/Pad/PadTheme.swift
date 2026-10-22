@@ -8,17 +8,23 @@ import SwiftUI
 import UIKit
 
 enum PP {
-    static let background = Color(hex: 0x10151D)
-    static let surface = Color(hex: 0x1B2838)
-    static let raised = Color(hex: 0x25364A)
-    static let line = Color(hex: 0x35465A)
-    static let text = Color(hex: 0xEEF1F5)
-    static let soft = Color(hex: 0xC9D1DC)
-    static let muted = Color(hex: 0x9AA5B4)
-    static let accent = Color(hex: 0x66C0F4)
-    static let onAccent = Color(hex: 0x071B2A)
-    static let progress = Color(hex: 0x3DA9F5)
-    static let ok = Color(hex: 0x6FCF7F)
+    static let background = Color(hex: 0x101216)
+    static let surface = Color(hex: 0x1C2027)
+    static let raised = Color(hex: 0x282F3A)
+    static let line = Color(hex: 0x3B4655)
+    static let text = Color(hex: 0xF4F7FA)
+    static let soft = Color(hex: 0xCFD8E3)
+    static let muted = Color(hex: 0x98A7B8)
+    static let accent = Color(hex: 0x58B9FF)
+    static let onAccent = Color(hex: 0x061B2A)
+    static let progress = Color(hex: 0x1A9FFF)
+    static let ok = Color(hex: 0x7BD9A2)
+    static let focus = Color(hex: 0xD6F0FF)
+    static let warning = Color(hex: 0xF3C77B)
+    static let danger = Color(hex: 0xFF9C9C)
+    static let scrim = Color(hex: 0x070B12)
+    static let glassTint = Color(hex: 0x293B50)
+    static let overlay = Color(hex: 0x151D28)
     /// Art tiles without store art, in the design's colours, picked by name.
     static let tiles: [Color] = [0x24324A, 0x5B3A8C, 0x3E6A3A, 0x6E2B2B, 0x2F5A66, 0x6A5326].map { Color(hex: $0) }
 
@@ -46,12 +52,12 @@ struct GlassSidebar<Content: View>: View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 if isPresented {
-                    Color.black.opacity(0.38).contentShape(Rectangle())
+                    PP.scrim.opacity(0.66).contentShape(Rectangle())
                         .onTapGesture(perform: dismiss).transition(.opacity)
                     VStack(alignment: .leading, spacing: 16) {
                         HStack(alignment: .top, spacing: 10) {
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(LocalizedStringKey(subtitle)).font(.system(size: 11, weight: .semibold))
+                                Text(LocalizedStringKey(subtitle)).font(.system(size: 10, weight: .bold)).tracking(1.3)
                                     .foregroundStyle(PP.muted)
                                 Text(title).font(PP.display(23)).lineLimit(2).minimumScaleFactor(0.8)
                             }
@@ -68,7 +74,7 @@ struct GlassSidebar<Content: View>: View {
                     .padding(.bottom, max(0, safe.insets.bottom - 12))
                     .frame(width: min(360 + max(0, safe.insets.leading - 12), max(0, geometry.size.width - 24)))
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .ppGlass(cornerRadius: 26, interactive: false)
+                    .ppOverlayPanel(cornerRadius: 24)
                     .padding(12)
                     .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
                 }
@@ -115,9 +121,10 @@ struct GlassSidebarRowLabel: View {
                 Spacer(minLength: 4)
                 if let detail { Text(LocalizedStringKey(detail)).font(.system(size: 11)).foregroundStyle(PP.muted).lineLimit(2).multilineTextAlignment(.trailing) }
             }
-            .foregroundStyle(destructive ? Color(hex: 0xFF9A8A) : PP.text)
+            .foregroundStyle(destructive ? PP.danger : PP.text)
             .padding(.horizontal, 14).padding(.vertical, 10).frame(minHeight: 48)
-            .ppGlass(cornerRadius: 13, tint: selected ? PP.accent.opacity(0.2) : nil)
+            .ppGlass(cornerRadius: 14, tint: selected ? PP.accent.opacity(0.32) : PP.glassTint.opacity(0.35))
+            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(selected ? PP.focus.opacity(0.8) : PP.line.opacity(0.35), lineWidth: selected ? 1.5 : 0.5) }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: selected)
             .contentShape(RoundedRectangle(cornerRadius: 13))
     }

@@ -112,7 +112,7 @@ struct PadKeyboardView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             // Outside the keyboard: dimmed a little, and a tap there is Done.
-            Color.black.opacity(0.35).ignoresSafeArea()
+            PP.scrim.opacity(0.66).ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { session.finish() }
             VStack(spacing: 0) {
@@ -121,11 +121,8 @@ struct PadKeyboardView: View {
                 footer
             }
             .frame(maxWidth: .infinity)
-            .background {
-                PP.surface
-                    .overlay(alignment: .top) { Rectangle().fill(PP.line).frame(height: 1) }
-                    .ignoresSafeArea(edges: [.horizontal, .bottom])
-            }
+            .ppOverlayPanel(cornerRadius: 20)
+            .padding(.horizontal, 12).padding(.bottom, 8)
         }
         .accessibilityIdentifier("pad-keyboard")
     }

@@ -125,50 +125,43 @@ struct CloudConflictView: View {
     @ObservedObject var session: CloudConflictSession
 
     var body: some View {
-        ZStack {
-            // The design's own screen, not a scrim: the page and its footer do not show through.
-            Color.black.opacity(0.38).ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 14) {
-                Text("選擇 \(session.name) 的存檔版本").font(PP.display(24)).lineLimit(2)
-                Text("兩邊的存檔版本不同。選 Steam Cloud 會恢復整組雲端檔案；被取代的內容會保留備份 30 天。")
-                    .font(.system(size: 13)).foregroundStyle(PP.muted).lineSpacing(2).padding(.top, -6)
-                    .fixedSize(horizontal: false, vertical: true)
-                if recovered {
-                    Text("手機已放入所選備份。選「手機（已恢復備份）」才會將它同步回 Steam；選 Steam Cloud 會再次以現有雲端內容替換它。")
-                        .font(.system(size: 13)).foregroundStyle(PP.accent).fixedSize(horizontal: false, vertical: true)
-                } else if session.conflicts.contains(where: { $0.localCopiesDiffer == true }) {
-                    Text("手機的本機與 Steam 儲存區也有不同內容。「手機」使用遊戲本機資料夾的版本；其他版本會先備份。若要載入電腦上的進度，請選 Steam Cloud。")
-                        .font(.system(size: 13)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                }
-                HStack(spacing: 14) {
-                    card(.phone, heading: recovered ? "手機（已恢復備份）" : "手機", time: session.sides.phone.newest, line: phoneLine, button: .a)
-                    card(.steam, heading: "Steam Cloud", time: session.sides.steam.newest, line: steamLine, button: .x)
-                }
-                if let e = session.error {
-                    Text(e).font(.system(size: 12)).foregroundStyle(Color(hex: 0xFF9A6B))
-                }
-            }
-            .padding(.horizontal, 24).padding(.vertical, 22)
-            .frame(width: 600)
-            .ppGlass(cornerRadius: 22, interactive: false)
-            .padding(.bottom, 20)
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    if session.canPlayPhoneOffline {
-                        PadModalHint(button: .y, label: "使用手機存檔離線啟動") { session.press(.y) }
+        GeometryReader { geometry in
+            ZStack {
+                PP.scrim.opacity(0.72).ignoresSafeArea()
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        Label("STEAM CLOUD", systemImage: "cloud").font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundStyle(PP.accent)
+                        Text("選擇 \(session.name) 的存檔版本").font(PP.display(25)).lineLimit(2)
+                        Text("兩邊的存檔不同。被取代的版本會先備份並保留 30 天；選擇前請核對時間與進度。")
+                            .font(.system(size: 13)).foregroundStyle(PP.soft).fixedSize(horizontal: false, vertical: true)
+                        if recovered {
+                            Text("手機已放入所選備份。選「手機（已恢復備份）」才會同步回 Steam；選 Steam Cloud 會再次以現有雲端內容替換它。")
+                                .font(.system(size: 13)).foregroundStyle(PP.warning).fixedSize(horizontal: false, vertical: true)
+                        } else if session.conflicts.contains(where: { $0.localCopiesDiffer == true }) {
+                            Text("手機的遊戲資料與 Steam 儲存區也不同。「手機」使用遊戲本機版本；其他版本會先備份。")
+                                .font(.system(size: 13)).foregroundStyle(PP.warning)
+                        }
+                        let columns = geometry.size.width < 600 ? AnyLayout(VStackLayout(spacing: 14)) : AnyLayout(HStackLayout(spacing: 14))
+                        columns {
+                            card(.phone, heading: recovered ? "手機（已恢復備份）" : "手機", time: session.sides.phone.newest, line: phoneLine, button: .a)
+                            card(.steam, heading: "Steam Cloud", time: session.sides.steam.newest, line: steamLine, button: .x)
+                        }
+                        if let error = session.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(PP.warning) }
+                        let actions = geometry.size.width < 660 ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+                        actions {
+                            if session.canPlayPhoneOffline {
+                                PadModalHint(button: .y, label: "手機存檔離線啟動") { session.press(.y) }
+                            }
+                            if geometry.size.width >= 660 { Spacer(minLength: 0) }
+                            PadModalHint(button: .b, label: session.thenPlay ? "稍後再選，暫不啟動" : "稍後再選") { session.press(.b) }
+                        }
                     }
-                    PadModalHint(button: .b, label: session.thenPlay ? "稍後再選（暫不啟動）" : "稍後再選") {
-                        session.press(.b)
-                    }
+                    .padding(24).frame(maxWidth: 680).ppOverlayPanel()
+                    .padding(16).frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 36)
-                .frame(height: 36)
             }
         }
-        .foregroundStyle(PP.text)
-        .accessibilityIdentifier("cloud-conflict")
+        .foregroundStyle(PP.text).accessibilityIdentifier("cloud-conflict")
     }
 
     private var recovered: Bool { session.conflicts.contains { $0.recoveredBackup == true } }

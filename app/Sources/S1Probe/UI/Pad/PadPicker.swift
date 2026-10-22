@@ -73,22 +73,19 @@ struct PadPickerPanel: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Color.black.opacity(0.38).ignoresSafeArea()
+                PP.scrim.opacity(0.66).ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture { session.press(.b) }
-                HStack(spacing: 12) {
-                    VStack {
+                VStack(spacing: 12) {
+                    panel
+                    HStack(spacing: 12) {
                         Spacer()
-                        HStack(spacing: 12) {
-                            PadModalHint(button: .a, label: "Choose") { session.press(.a) }
-                            PadModalHint(button: .b, label: "Back") { session.press(.b) }
-                        }
-                        .padding(.bottom, 12)
+                        PadModalHint(button: .a, label: "Choose") { session.press(.a) }
+                        PadModalHint(button: .b, label: "Back") { session.press(.b) }
                     }
-                    .frame(maxWidth: .infinity)
-                    panel.frame(width: min(430, max(0, geometry.size.width - 144)))
                 }
-                .padding(12)
+                .frame(width: min(500, max(0, geometry.size.width - 32)))
+                .padding(16).frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .accessibilityIdentifier("pad-picker")
@@ -127,7 +124,7 @@ struct PadPickerPanel: View {
         }
         .padding(.top, 18).padding(.leading, 20).padding(.trailing, 28)
         .frame(maxHeight: .infinity, alignment: .top)
-        .ppGlass(cornerRadius: 22, interactive: false)
+        .ppOverlayPanel()
     }
 
     /// Detail stays below its label so long save/graphics descriptions fit.

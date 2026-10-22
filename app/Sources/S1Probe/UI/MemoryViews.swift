@@ -15,7 +15,7 @@ struct MemoryWarning: View {
     var body: some View {
         VStack(alignment: .leading) {
             if let text = MemoryNote.warning(need, limitMB: limitMB) {
-                Text(text).foregroundStyle(.orange)
+                Text(text).foregroundStyle(PP.warning)
             }
         }
         .task { await MemoryLimit.follow { limitMB = $0.effectiveMB } }

@@ -546,8 +546,8 @@ enum MetalHUD {
 
     /// Before anything creates a Metal device.
     static func loadAtStart() {
-        if !inherited { setenv("MTL_HUD_ENABLED", "1", 1) }
         #if !PLAYPORT_RELEASE
+        if !inherited { setenv("MTL_HUD_ENABLED", "1", 1) }
         if !inherited, enabled { setenv("MTL_HUD_LOG_ENABLED", "1", 1) }
         #endif
     }
@@ -560,8 +560,15 @@ enum MetalHUD {
     /// The HUD on the game layer now (the in-game menu's performance overlay),
     /// for this game only: the setting stays as Settings has it.
     static func set(_ on: Bool, on layer: CAMetalLayer) {
+        #if PLAYPORT_RELEASE
+        // The product overlay consumes the existing five-second health samples.
+        // Do not enable developer Metal HUD/profiling for ordinary gameplay.
+        if !inherited { layer.developerHUDProperties = ["mode": "off"] }
+        HostIO.log("hostio: console-performance-v1 " + (on ? "on" : "off"))
+        #else
         layer.developerHUDProperties = ["mode": on ? "default" : "off"]
         HostIO.log("hostio: Metal HUD " + (on ? "on" : "off"))
+        #endif
     }
 }
 

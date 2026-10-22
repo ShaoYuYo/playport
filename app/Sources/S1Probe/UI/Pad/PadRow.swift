@@ -58,7 +58,7 @@ struct PadRow: View {
                 case .toggle(let on): PadSwitch(on: on)
                 }
             }
-            .font(.system(size: 13)).foregroundStyle(selected ? Color(hex: 0x3A4452) : PP.muted)
+            .font(.system(size: 13)).foregroundStyle(selected ? PP.raised : PP.muted)
         }
         .padItem(id, hint: hint, cornerRadius: 10, reset: reset, ring: style != .plain, action: action)
         .accessibilityValue(accessibilityValue)
@@ -87,9 +87,9 @@ struct PadRowBody<Trailing: View>: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(LocalizedStringKey(title)).font(.system(size: 15, weight: .medium))
                     .foregroundStyle(selected ? (destructive ? Color(hex: 0xB0301E) : PP.background)
-                                     : destructive ? Color(hex: 0xFF9A8A) : PP.text)
+                                     : destructive ? PP.danger : PP.text)
                 if let subtitle {
-                    Text(LocalizedStringKey(subtitle)).font(.system(size: 12)).foregroundStyle(selected ? Color(hex: 0x3A4452) : PP.muted)
+                    Text(LocalizedStringKey(subtitle)).font(.system(size: 12)).foregroundStyle(selected ? PP.raised : PP.muted)
                 }
             }
             .lineLimit(style == .card ? 3 : 2)
@@ -101,7 +101,7 @@ struct PadRowBody<Trailing: View>: View {
         .padding(.horizontal, 14).padding(.vertical, style == .card ? 12 : 8)
         .frame(minHeight: style == .card ? 56 : 44)
         .frame(maxWidth: .infinity)
-        .background(selected ? PP.text : style == .card ? PP.surface.opacity(0.8) : .clear, in: RoundedRectangle(cornerRadius: 12))
+        .background(selected ? PP.text : style == .card ? PP.surface.opacity(0.94) : .clear, in: RoundedRectangle(cornerRadius: 12))
         .overlay { if style == .card { RoundedRectangle(cornerRadius: 12).strokeBorder(PP.line.opacity(0.45), lineWidth: 0.5) } }
     }
 }

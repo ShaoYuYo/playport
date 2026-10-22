@@ -19,7 +19,7 @@ struct SteamInstallStatus: View {
             let update = Self.updateAvailable(t, game.info)
             Text(update ? "Update available" : "Installed")
                 .font(.caption.bold())
-                .foregroundStyle(update ? Color.orange : Color.green)
+                .foregroundStyle(update ? PP.warning : PP.ok)
         }
     }
 

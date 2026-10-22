@@ -152,7 +152,7 @@ private struct PadItemModifier: ViewModifier {
         // The design's ring: 3 pt of amber, 3 pt outside the item.
         .overlay {
             RoundedRectangle(cornerRadius: cornerRadius + 5)
-                .strokeBorder(PP.accent, lineWidth: 3)
+                .strokeBorder(PP.focus, lineWidth: 2)
                 .padding(-6)
                 .opacity(ring && router.controller != nil && focus.focused == id ? 1 : 0)
                 .allowsHitTesting(false)

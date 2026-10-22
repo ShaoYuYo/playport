@@ -223,9 +223,9 @@ struct AppShell: View {
             PP.background
             if let title = HomeView.continueTitle(library.catalog.titles) {
                 GameArt(appID: title.appID, name: title.name, kind: .hero, titleID: title.id)
-                    .blur(radius: 30).opacity(0.28)
+                    .opacity(0.14)
             }
-            LinearGradient(colors: [PP.background.opacity(0.15), PP.background.opacity(0.7)],
+            LinearGradient(colors: [PP.background.opacity(0.55), PP.background.opacity(0.95)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
         }
         .ignoresSafeArea().allowsHitTesting(false)
@@ -414,7 +414,7 @@ private struct TopBar: View {
                 .buttonStyle(.plain).ppGlass(cornerRadius: 22)
                 .disabled(!nav.canGoBack).accessibilityIdentifier("navigation-back")
             }
-            if !nav.onGamePage { Text(LocalizedStringKey(title)).font(.system(size: 16, weight: .semibold)) }
+            if !nav.onGamePage { Text(LocalizedStringKey(title)).font(.system(size: 18, weight: .bold)) }
             Spacer(minLength: 8)
             if let controller = router.controller {
                 Image(systemName: "gamecontroller.fill").font(.system(size: 15)).foregroundStyle(PP.muted)

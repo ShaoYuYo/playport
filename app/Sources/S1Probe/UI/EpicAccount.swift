@@ -317,7 +317,7 @@ struct EpicSignInSheet: View {
             VStack(spacing: 0) {
                 if let notice {
                     Text(notice)
-                        .font(.system(size: 13)).foregroundStyle(.orange)
+                        .font(.system(size: 13)).foregroundStyle(PP.warning)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16).padding(.vertical, 10)
                 }

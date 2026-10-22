@@ -56,7 +56,11 @@ public actor AppleMemoryClient {
             transient = URLSession(configuration: configuration, delegate: SameOriginRedirects(), delegateQueue: nil)
         } else { transient = nil }
         defer { transient?.invalidateAndCancel() }
-        let (data, response) = try await (transient ?? http).data(for: request)
+        let data: Data, response: URLResponse
+        do { (data, response) = try await (transient ?? http).data(for: request) }
+        catch let error as URLError where error.code == .cancelled && !Task.isCancelled {
+            throw AppleProvisioningError.transport
+        }
         guard let response = response as? HTTPURLResponse else { throw AppleProvisioningError.transport }
         guard data.count <= 2 << 20 else { throw AppleProvisioningError.invalidReply }
         if !(200..<300).contains(response.statusCode) {
@@ -195,13 +199,16 @@ public actor AppleMemoryClient {
             let plain = try CryptoSwift.AES(key: Array(aesKey), blockMode: CBC(iv: Array(iv)), padding: .pkcs7).decrypt(Array(encrypted))
             let spd = try dictionary(Data(plain))
             guard let dsid = spd["adsid"] as? String, let idms = spd["GsIdmsToken"] as? String else { throw AppleProvisioningError.invalidReply }
-            let auth = (finish["Status"] as? [String: Any])?["au"] as? String
-            if auth == "trustedDeviceSecondaryAuth" || auth == "secondaryAuth" {
+            let authChallenge = AppleTwoFactorPolicy.challenge(in: finish)
+            if authChallenge != .none {
+                guard authChallenge != .unsupported else { throw AppleProvisioningError.unsupportedAuthentication }
                 guard round == 0 else { throw AppleProvisioningError.unsupportedAuthentication }
-                try await twoFactor(dsid: dsid, idms: idms, sms: auth == "secondaryAuth", verificationRequested: verificationRequested, verification: verification)
+                let sms = authChallenge == .sms
+                let sent = authChallenge == .trustedDevice(alreadySent: true)
+                try await twoFactor(dsid: dsid, idms: idms, sms: sms, alreadySent: sent, verificationRequested: verificationRequested, verification: verification)
                 continue
             }
-            guard auth == nil, let sessionKey = spd["sk"] as? Data, let cookie = spd["c"] as? Data else { throw AppleProvisioningError.unsupportedAuthentication }
+            guard let sessionKey = spd["sk"] as? Data, let cookie = spd["c"] as? Data else { throw AppleProvisioningError.unsupportedAuthentication }
             let app = "com.apple.gs.xcode.auth"
             let checksum = Self.mac(sessionKey, Data(("apptokens" + dsid + app).utf8))
             let reply = try await authenticateRequest(["o": "apptokens", "app": [app], "c": cookie, "checksum": checksum,
@@ -222,7 +229,7 @@ public actor AppleMemoryClient {
         }
         throw AppleProvisioningError.unsupportedAuthentication
     }
-    private func twoFactor(dsid: String, idms: String, sms: Bool,
+    private func twoFactor(dsid: String, idms: String, sms: Bool, alreadySent: Bool,
                            verificationRequested: @Sendable (Bool) async -> Void,
                            verification: @Sendable (Bool) async throws -> String) async throws {
         var headers = anisette
@@ -233,17 +240,16 @@ public actor AppleMemoryClient {
         // Show entry before sending: the trusted-device alert can arrive before
         // this HTTP response. Entry remains available while delivery completes.
         await verificationRequested(sms)
-        _ = try await receive(request(try checkedURL("https://gsa.apple.com/" + path), method: sms ? "POST" : "GET", body: body, headers: headers))
+        if !alreadySent {
+            _ = try await receive(request(try checkedURL("https://gsa.apple.com/" + path), method: sms ? "POST" : "GET", body: body, headers: headers))
+        }
         let code = try await verification(sms)
-        guard code.count == 6, code.utf8.allSatisfy({ (48...57).contains($0) }) else { throw AppleProvisioningError.cancelled }
+        guard code.count == 6, code.utf8.allSatisfy({ (48...57).contains($0) }) else { throw AppleProvisioningError.invalidVerificationCode }
         headers["security-code"] = code
         let validate = sms ? "auth/verify/phone/securitycode?referrer=/auth/verify/phone/put" : "grandslam/GsService2/validate"
         let payload: [String: Any]? = sms ? ["securityCode.code": code, "serverInfo": ["mode": "sms", "phoneNumber.id": "1"]] : nil
         let data = try await receive(request(try checkedURL("https://gsa.apple.com/" + validate), method: sms ? "POST" : "GET", body: payload, headers: headers))
-        if !sms {
-            let result = try dictionary(data)
-            if let code = (result["ec"] as? NSNumber)?.intValue, code != 0 { throw AppleProvisioningError.rejected(code) }
-        }
+        if let code = AppleTwoFactorPolicy.rejection(in: data) { throw AppleProvisioningError.rejected(code) }
     }
     private func developer(_ path: String, team: String? = nil, method: String = "POST",
                            body: [String: Any]? = nil, json: Bool = false) async throws -> [String: Any] {

@@ -137,12 +137,12 @@ struct GameHeroArt<Art: View>: View {
 
     var body: some View {
         ZStack {
-            Color(hex: 0x131C2B)
+            PP.background
             art
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
                 .opacity(0.28)
-            LinearGradient(colors: [.clear, Color(hex: 0x05070A).opacity(0.7)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [.clear, PP.scrim.opacity(0.7)], startPoint: .top, endPoint: .bottom)
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
@@ -258,7 +258,7 @@ struct LaunchSteps<Detail: View>: View {
                         if s < at {
                             Image(systemName: "checkmark.circle.fill").foregroundStyle(PP.ok)
                         } else if s == at, failed != nil {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(Color(hex: 0xFF7A6B))
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(PP.danger)
                         } else if s == at {
                             Image(systemName: "circle").hidden().overlay { ProgressView().tint(PP.text).scaleEffect(0.7) }
                         } else {
@@ -380,8 +380,8 @@ struct LaunchFailureView: View {
             Group {
                 if let app = m.appID { GameArt(appID: app, name: m.title, kind: .hero).opacity(0.28) } else { Color.clear }
             }
-            .background(Color(hex: 0x131C2B))
-            .overlay(LinearGradient(colors: [.clear, Color(hex: 0x05070A).opacity(0.7)], startPoint: .top, endPoint: .bottom))
+            .background(PP.background)
+            .overlay(LinearGradient(colors: [.clear, PP.scrim.opacity(0.7)], startPoint: .top, endPoint: .bottom))
             .clipped()
             .ignoresSafeArea()
         }

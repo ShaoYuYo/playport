@@ -3,7 +3,7 @@ import Foundation
 
 public enum AppleProvisioningError: Error, LocalizedError {
     case invalidReply, transport, http(Int), rejected(Int), cancelled, unsupportedAuthentication
-    case missingApp, ambiguousApp, capabilityNotConfirmed, invalidCapabilitySnapshot
+    case missingApp, ambiguousApp, capabilityNotConfirmed, invalidCapabilitySnapshot, invalidVerificationCode
     public var errorDescription: String? {
         switch self {
         case .invalidReply: return "Apple 回覆格式無法辨識，無法確認設定結果。請重新整理。"
@@ -11,6 +11,7 @@ public enum AppleProvisioningError: Error, LocalizedError {
         case .transport: return "無法安全連接服務，請檢查網路後重試。"
         case .rejected(-80045): return "Apple 暫時拒絕此登入用戶端（-80045），未完成帳號驗證。這個代碼不能用來判定密碼錯誤；請稍後重試或使用原側載工具處理權限。"
         case .rejected(let code): return "Apple 拒絕要求（\(code)）。請確認帳號、驗證碼與開發者協議。"
+        case .invalidVerificationCode: return "請輸入 Apple 的六位數字驗證碼，驗證尚未完成。"
         case .cancelled: return "已取消登入。"
         case .unsupportedAuthentication: return "此帳號的驗證方式目前無法完成，未更動權限。"
         case .missingApp: return "所選團隊找不到目前 Playport 的 App ID；請使用側載時的 Apple 帳號與團隊。"

@@ -303,7 +303,7 @@ struct SignInView: View {
         .padding(.horizontal, 12)
         .frame(height: 40)
         .background(PP.background, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(hex: 0x4A5667), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(PP.line, lineWidth: 1))
         .padding(.top, 4)
     }
 
@@ -319,7 +319,7 @@ struct SignInView: View {
                     Image(uiImage: image).interpolation(.none).resizable().scaledToFit().padding(6)
                         .accessibilityLabel("Steam sign-in QR code \(code.fingerprint)")
                 } else {
-                    Image(systemName: "qrcode").font(.system(size: 54, weight: .light)).foregroundStyle(Color(hex: 0x3A4452))
+                    Image(systemName: "qrcode").font(.system(size: 54, weight: .light)).foregroundStyle(PP.raised)
                 }
             }
             .frame(width: 132, height: 132)

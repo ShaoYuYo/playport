@@ -44,11 +44,14 @@ struct HomeView: View {
 
     var body: some View {
         GeometryReader { viewport in
-            let coverHeight = min(300, max(96, viewport.size.height - 90))
+            let coverHeight = min(300, max(96, viewport.size.height - 126))
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("Recent games").font(.system(size: 19, weight: .semibold))
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("最近遊玩").font(.system(size: 11, weight: .bold)).tracking(1.5).foregroundStyle(PP.accent)
+                            Text(selected?.name ?? "你的遊戲庫").font(PP.display(25)).lineLimit(1)
+                        }
                         Spacer()
                         if let job = installs.order.first {
                             Button { nav.show(.downloads) } label: {
@@ -108,12 +111,12 @@ struct HomeView: View {
                         Text(entry.installed ? "Continue" : "Open")
                             .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                             .padding(.horizontal, 9).padding(.vertical, 5)
-                            .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 5))
+                            .background(PP.overlay.opacity(0.9), in: Capsule())
                             .padding(8)
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.white.opacity(0.1), lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PP.focus.opacity(0.14), lineWidth: 1))
                 .padItem(itemID(entry), hint: "Open", cornerRadius: 8) { nav.openGame(.title(entry.id)) }
             Text(entry.name).font(.system(size: 13, weight: .medium)).foregroundStyle(PP.text).lineLimit(1)
                 .frame(width: height * 2 / 3, alignment: .leading)

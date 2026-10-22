@@ -286,7 +286,7 @@ struct StorageBar: View {
             GeometryReader { geo in
                 HStack(spacing: 0) {
                     Rectangle().fill(PP.progress).frame(width: part(games, total) * geo.size.width)
-                    Rectangle().fill(Color(hex: 0x4A5667)).frame(width: part(other, total) * geo.size.width)
+                    Rectangle().fill(PP.line).frame(width: part(other, total) * geo.size.width)
                     Spacer(minLength: 0)
                 }
             }
@@ -411,13 +411,13 @@ struct DownloadModeView: View {
                             Spacer(minLength: 8)
                             if let f = job.fraction { Text("\(Int(f * 100))%").font(.system(size: 14)) }
                         }
-                        .foregroundStyle(Color(hex: 0x8A94A3))
-                        ProgressBar(fraction: job.fraction ?? 0, height: 4, track: Color(hex: 0x1A1F27))
+                        .foregroundStyle(PP.muted)
+                        ProgressBar(fraction: job.fraction ?? 0, height: 4, track: PP.surface)
                             .opacity(0.75)
-                        Text(queueLine).font(.system(size: 13)).foregroundStyle(Color(hex: 0x6F7885))
+                        Text(queueLine).font(.system(size: 13)).foregroundStyle(PP.muted)
                     } else {
                         Text(installs.doneToday.isEmpty ? "Nothing downloading" : "Downloads finished")
-                            .font(PP.display(24, .semibold)).foregroundStyle(Color(hex: 0x8A94A3))
+                            .font(PP.display(24, .semibold)).foregroundStyle(PP.muted)
                     }
                 }
                 .frame(width: 300)

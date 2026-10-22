@@ -65,7 +65,7 @@ private struct LicenceParagraph: View {
     var body: some View {
         Text(text)
             .font(monospaced ? .system(size: 12, design: .monospaced) : .system(size: 13))
-            .foregroundStyle(warning ? Color(hex: 0xFF9A8A) : PP.soft)
+            .foregroundStyle(warning ? PP.danger : PP.soft)
             .lineSpacing(2)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14).padding(.vertical, 9)

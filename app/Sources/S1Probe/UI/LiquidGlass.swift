@@ -12,7 +12,7 @@ private struct PlayportGlass: ViewModifier {
 
     private var glass: Glass {
         let base = Glass.regular.interactive(interactive && !reduceMotion)
-        return tint.map { base.tint($0) } ?? base
+        return base.tint(tint ?? PP.glassTint.opacity(0.4))
     }
 
     func body(content: Content) -> some View {
@@ -51,5 +51,23 @@ extension View {
 
     func ppGlassButton(prominent: Bool = false) -> some View {
         modifier(PlayportGlassButton(prominent: prominent))
+    }
+}
+
+/// A unified tinted glass surface for dialogs, drawers and game option panels.
+/// Flat backing preserves contrast over bright artwork without an extra blur.
+private struct ConsoleOverlayPanel: ViewModifier {
+    let cornerRadius: CGFloat
+    func body(content: Content) -> some View {
+        content
+            .background(PP.overlay.opacity(0.82), in: RoundedRectangle(cornerRadius: cornerRadius))
+            .ppGlass(cornerRadius: cornerRadius, tint: PP.glassTint.opacity(0.5), interactive: false)
+            .overlay { RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(PP.focus.opacity(0.14), lineWidth: 0.75) }
+    }
+}
+extension View {
+    func ppOverlayPanel(cornerRadius: CGFloat = 22) -> some View { modifier(ConsoleOverlayPanel(cornerRadius: cornerRadius)) }
+    func ppSettingsSurface() -> some View {
+        scrollContentBackground(.hidden).background(PP.background).foregroundStyle(PP.text).tint(PP.accent)
     }
 }

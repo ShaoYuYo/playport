@@ -274,6 +274,7 @@ struct JitSetupSheet: View {
                 }
                 .padding(24)
             }
+            .ppSettingsSurface()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { setup.cancel() } } }
         }
         .interactiveDismissDisabled()

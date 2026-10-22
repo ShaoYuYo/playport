@@ -182,7 +182,7 @@ private struct GameDetailPage: View {
                     // Under a panel the page's controls leave the ring.
                     .transformPreference(PadItemsKey.self) { if panel != nil { $0 = [:] } }
                 if let panel {
-                    Color(hex: 0x05070A).opacity(0.72).ignoresSafeArea()
+                    PP.scrim.opacity(0.72).ignoresSafeArea()
                         .contentShape(Rectangle())
                         .onTapGesture { _ = navigation.back() }
                     HStack(spacing: 0) {
@@ -211,8 +211,8 @@ private struct GameDetailPage: View {
                         }
                         .frame(width: LauncherLayout(width: geometry.size.width).panelWidth)
                         .frame(maxHeight: .infinity, alignment: .top)
-                        .background(PP.surface.ignoresSafeArea(edges: [.top, .trailing, .bottom]))
-                        .overlay(alignment: .leading) { Rectangle().fill(PP.line).frame(width: 1).ignoresSafeArea(edges: [.top, .bottom]) }
+                        .ppOverlayPanel(cornerRadius: 22)
+                        .padding(.vertical, 8)
                     }
                     .transition(.move(edge: .trailing))
                 }
@@ -495,9 +495,9 @@ private struct GameDetailPage: View {
                          ? "Playport cannot start another game in this session. Close it and launch it again from LiveContainer with JIT to play again."
                          : "Playport cannot start another game in this session. Close it and reopen it from the Home Screen to play again.")
                 } else if !t.canPlay {
-                    Text("No Windows executable in this folder.").foregroundStyle(.orange)
+                    Text("No Windows executable in this folder.").foregroundStyle(PP.warning)
                 } else if let job {
-                    if case let .paused(reason?) = job.phase { Text(reason).foregroundStyle(.orange) }
+                    if case let .paused(reason?) = job.phase { Text(reason).foregroundStyle(PP.warning) }
                     // An update Playport queued by itself holds Play too: say how to play now.
                     Text(job.kind == .repair ? "Play is available once the repair finishes, or after Cancel."
                          : job.record.automatic ? "Playport queued this update by itself. Play is available once it finishes, or after Cancel: it waits for Steam's next version then."
@@ -510,7 +510,7 @@ private struct GameDetailPage: View {
             } else if let g {
                 installNote(g)
             } else if let eg = epicGame, let why = epic.refusal(eg.id) {
-                Text(why).foregroundStyle(.orange)
+                Text(why).foregroundStyle(PP.warning)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -533,7 +533,7 @@ private struct GameDetailPage: View {
         } else if model.state.account == nil || model.state == .expired {
             Text("Sign in to Steam to download.")
         } else if let job {
-            if case let .paused(reason?) = job.phase { Text(reason).foregroundStyle(.orange) }
+            if case let .paused(reason?) = job.phase { Text(reason).foregroundStyle(PP.warning) }
             if job.isRunning { Text("Keep Playport open: the download pauses when it leaves the screen.") }
         } else {
             let need = g.info.installSize(branch: selectedBranch).map { "Needs \(ByteCount.format($0))" }
@@ -547,7 +547,7 @@ private struct GameDetailPage: View {
         let source: LibrarySource = key?.store ?? (appID == nil ? .local : .steam)
         var rows: [(String, String, Color?)] = [("Store", source.label, nil)]
         if let t {
-            if t.badge != .ready { rows.append(("State", t.badge.rawValue, .orange)) }
+            if t.badge != .ready { rows.append(("State", t.badge.rawValue, PP.warning)) }
             rows.append(("Last played", t.lastPlayed.map { $0.formatted(.relative(presentation: .named)) } ?? "Never", nil))
             if let played = t.playSeconds { rows.append(("Play time", PlayTime.format(played), nil)) }
             if t.source == .installed, let b = t.branch, b != Branch.publicName {
@@ -587,10 +587,10 @@ private struct GameDetailPage: View {
         guard launchSettings.settings(for: t.id).cloudSync ?? true else { return ("Off", nil) }
         guard let app = t.appID else { return ("Not synced", nil) }
         if model.cloudSyncing.contains(app) { return ("Syncing…", nil) }
-        if model.cloudErrors[app] != nil { return ("Not synced", .orange) }
+        if model.cloudErrors[app] != nil { return ("Not synced", PP.warning) }
         guard let c = model.cloud[app] else { return ("Not synced yet", nil) }
-        if !c.conflicts.isEmpty { return ("\(c.conflicts.count) to settle", .orange) }
-        if !c.failed.isEmpty { return ("\(c.failed.count) not synced", .orange) }
+        if !c.conflicts.isEmpty { return ("\(c.conflicts.count) to settle", PP.warning) }
+        if !c.failed.isEmpty { return ("\(c.failed.count) not synced", PP.warning) }
         return ("Up to date", PP.ok)
     }
 
@@ -1186,21 +1186,21 @@ private struct GameDetailPage: View {
         return HStack(spacing: 12) {
             Image(systemName: unlocked ? "trophy.fill" : "lock.fill")
                 .font(.system(size: 14))
-                .foregroundStyle(unlocked ? PP.accent : selected ? Color(hex: 0x3A4452) : PP.muted)
+                .foregroundStyle(unlocked ? PP.accent : selected ? PP.raised : PP.muted)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(hidden ? "Hidden achievement" : a.text(a.displayName)).font(.system(size: 15, weight: .medium))
                     .foregroundStyle(selected ? PP.background : unlocked ? PP.text : PP.soft)
                 let desc = hidden ? "Unlock it to see what it is." : a.text(a.description)
                 if !desc.isEmpty, desc != a.name {
-                    Text(desc).font(.system(size: 12)).foregroundStyle(selected ? Color(hex: 0x3A4452) : PP.muted)
+                    Text(desc).font(.system(size: 12)).foregroundStyle(selected ? PP.raised : PP.muted)
                 }
             }
             .lineLimit(1)
             Spacer(minLength: 8)
             if unlocked, time > 0 {
                 Text(Date(timeIntervalSince1970: TimeInterval(time)).formatted(date: .abbreviated, time: .omitted))
-                    .font(.system(size: 12)).foregroundStyle(selected ? Color(hex: 0x3A4452) : PP.muted)
+                    .font(.system(size: 12)).foregroundStyle(selected ? PP.raised : PP.muted)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 5)

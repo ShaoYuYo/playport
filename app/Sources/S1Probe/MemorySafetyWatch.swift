@@ -47,6 +47,7 @@ final class MemorySafetyWatch: ObservableObject {
                 self.lastDenials = denials
                 if ticks % 5 == 0, !InGameMenu.shared.isOpen, let report = PacedMetalLayer.healthReport() {
                     AppLog.append(report)
+                    GamePerformanceStats.shared.update(PacedMetalLayer.latestHealth, footprint: reading.footprintMB)
                 }
                 ticks += 1
                 do { try await Task.sleep(for: .seconds(1)) } catch { break }
@@ -58,16 +59,21 @@ final class MemorySafetyWatch: ObservableObject {
 
 struct MemorySafetyBanner: View {
     @ObservedObject private var watch = MemorySafetyWatch.shared
+    @ObservedObject private var menu = InGameMenu.shared
+    @ObservedObject private var safe = WindowInsets.shared
     @AppStorage(MemorySafety.warningPreferenceKey) private var showWarnings = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Group {
-            if showWarnings, let warning = watch.warning {
+            if showWarnings, !menu.isOpen, let warning = watch.warning {
                 Label(warning, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(PP.warning)
                     .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .padding(.top, 8).padding(.horizontal, 24)
+                    .ppOverlayPanel(cornerRadius: 14)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+                    .padding(.leading, max(24, safe.insets.leading + 8))
+                    .padding(.trailing, menu.overlay ? safe.insets.trailing + 230 : max(24, safe.insets.trailing + 8))
                     .transition(.opacity)
                     .accessibilityLabel(warning)
             }

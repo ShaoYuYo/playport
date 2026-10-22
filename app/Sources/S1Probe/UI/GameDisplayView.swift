@@ -83,7 +83,8 @@ struct GameDisplayView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("畫面與聲音")
+            .ppSettingsSurface()
+            .navigationTitle("畫面與聲音").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }.preferredColorScheme(.dark)
     }

@@ -45,13 +45,13 @@ private struct OpeningDrawing {
 
     private typealias T = OpeningTime
     private static let hold = AppOpening.introSeconds
-    private static let accent = Color(hex: 0xF5B544)
-    private static let tint = Color(hex: 0xFFD08A)
-    private static let lip = Color(hex: 0xB7822A)
-    private static let glass = Color(hex: 0x1D242E)
-    private static let deepSea = Color(hex: 0x24324A)
-    private static let nearSea = Color(hex: 0x151A21)
-    private static let line = Color(hex: 0x2A3340)
+    private static let accent = PP.accent
+    private static let tint = PP.focus
+    private static let lip = PP.progress
+    private static let glass = PP.surface
+    private static let deepSea = PP.glassTint
+    private static let nearSea = PP.background
+    private static let line = PP.line
     private static let iconCentre = CGPoint(x: 512, y: 512)
     /// The play button's box centre, for its pop.
     private static let playCentre = CGPoint(x: 531, y: 512)

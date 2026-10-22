@@ -7,7 +7,7 @@ import SwiftUI
 struct SetupCompletionView: View {
     var body: some View {
         ZStack {
-            Color.black.opacity(0.7).ignoresSafeArea()
+            PP.scrim.opacity(0.72).ignoresSafeArea()
             VStack(spacing: 18) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 38)).foregroundStyle(PP.ok)
@@ -30,7 +30,7 @@ struct SetupCompletionView: View {
             }
             .padding(28)
             .frame(width: 370)
-            .background(PP.surface, in: RoundedRectangle(cornerRadius: 18))
+            .ppOverlayPanel()
         }
         .foregroundStyle(PP.text)
         .accessibilityIdentifier("setup-complete")

@@ -232,7 +232,7 @@ struct GameWebSheetView: View {
         GeometryReader { geo in
             ZStack {
                 // The game shows dimmed around the panel; touches stop here.
-                Color.black.opacity(0.6).ignoresSafeArea().contentShape(Rectangle()).onTapGesture {}
+                PP.scrim.opacity(0.72).ignoresSafeArea().contentShape(Rectangle()).onTapGesture {}
                 if let s = sheet.shown {
                     VStack(spacing: 0) {
                         bar(s)

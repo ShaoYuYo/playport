@@ -68,12 +68,13 @@ final class GameSurfaceContainer: UIView {
         addSubview(surface)
         for button in [addButton] {
             var appearance = UIButton.Configuration.glass()
-            appearance.baseForegroundColor = .white
+            appearance.baseBackgroundColor = UIColor(PP.glassTint)
+        appearance.baseForegroundColor = UIColor(PP.text)
             appearance.cornerStyle = .capsule
             appearance.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 5, bottom: 4, trailing: 5)
             button.configuration = appearance
             button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
-            button.setTitleColor(.white, for: .normal)
+            button.setTitleColor(UIColor(PP.text), for: .normal)
             addSubview(button)
         }
         menuButton.accessibilityLabel = "遊戲設定"
@@ -184,7 +185,8 @@ private final class EdgeMenuControl: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         var appearance = UIButton.Configuration.glass()
-        appearance.baseForegroundColor = .white; appearance.cornerStyle = .capsule
+        appearance.baseBackgroundColor = UIColor(PP.glassTint)
+        appearance.baseForegroundColor = UIColor(PP.text); appearance.cornerStyle = .capsule
         appearance.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4)
         visual.configuration = appearance
         visual.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -303,7 +305,8 @@ private final class MappedTouchControl: UIButton {
     override init(frame: CGRect) {
         super.init(frame: frame)
         var appearance = UIButton.Configuration.glass()
-        appearance.baseForegroundColor = .white
+        appearance.baseBackgroundColor = UIColor(PP.glassTint)
+        appearance.baseForegroundColor = UIColor(PP.text)
         appearance.cornerStyle = .capsule
         appearance.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 5, bottom: 4, trailing: 5)
         configuration = appearance
@@ -341,7 +344,7 @@ private final class MappedTouchControl: UIButton {
         // Keep native glass at full view alpha; dim its text/tint instead of
         // flattening a partially transparent effect view every frame.
         if lastOpacity != opacity {
-            configuration?.baseForegroundColor = UIColor.white.withAlphaComponent(max(0.45, opacity))
+            configuration?.baseForegroundColor = UIColor(PP.text).withAlphaComponent(max(0.45, opacity))
             lastOpacity = opacity
         }
         guard visible != wantsVisible else { return }
@@ -435,7 +438,8 @@ struct TouchMappingEditor: View {
                     }
                 }.padding(20)
             }
-            .navigationTitle("自訂螢幕按鈕")
+            .ppSettingsSurface()
+            .navigationTitle("自訂螢幕按鈕").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }
         .preferredColorScheme(.dark)
